@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
   readAnonymousCountryPreference,
   writeAnonymousCountryPreference,
@@ -22,11 +24,14 @@ import {
 } from "@/config/regions";
 import { brand } from "@/config/brand";
 import { CountrySelect } from "@/components/country-select";
+import { AccountSignInSheet } from "@/features/account/account-screen";
+import { useAccountWallet } from "@/features/account/cdp-client";
 
 type HomeExperienceProps = {
   detectedCountry?: string | null;
   investContent?: ReactNode;
   savingsContent?: ReactNode;
+  initialAccountOpen?: boolean;
 };
 
 type RegionStyle = CSSProperties & {
@@ -46,7 +51,10 @@ export function HomeExperience({
   detectedCountry = null,
   investContent,
   savingsContent,
+  initialAccountOpen = false,
 }: HomeExperienceProps) {
+  const router = useRouter();
+  const account = useAccountWallet();
   const initial = resolvePresentation({ detectedCountry });
   const [regionId, setRegionId] = useState<RegionId>(initial.region.id);
   const [resolutionSource, setResolutionSource] =
@@ -57,6 +65,14 @@ export function HomeExperience({
   const panelStageRef = useRef<HTMLElement>(null);
   const [isPreferenceReady, setIsPreferenceReady] = useState(false);
   const [preferenceMessage, setPreferenceMessage] = useState("");
+  const [isAccountOpen, setIsAccountOpen] = useState(initialAccountOpen);
+
+  const closeAccount = useCallback(() => {
+    setIsAccountOpen(false);
+    if (initialAccountOpen) {
+      router.replace("/", { scroll: false });
+    }
+  }, [initialAccountOpen, router]);
 
   useEffect(() => {
     const persistedCountry = readAnonymousCountryPreference(
@@ -127,9 +143,35 @@ export function HomeExperience({
         >
           {brand.name}
         </button>
-        <a className="header-account-link" href="/account">
-          Sign in
-        </a>
+        {account.session ? (
+          <button
+            className="header-account-link"
+            type="button"
+            onClick={() => void account.signOut().catch(() => {})}
+          >
+            Sign out
+          </button>
+        ) : account.status === "signout-error" ? (
+          <button
+            className="header-account-link"
+            type="button"
+            onClick={() => void account.signOut().catch(() => {})}
+          >
+            Retry sign out
+          </button>
+        ) : account.status === "restoring" || account.status === "validating" ? (
+          <button className="header-account-link" type="button" disabled>
+            Checking…
+          </button>
+        ) : (
+          <button
+            className="header-account-link"
+            type="button"
+            onClick={() => setIsAccountOpen(true)}
+          >
+            Sign in
+          </button>
+        )}
       </header>
 
       <main className="app-main">
@@ -181,7 +223,14 @@ export function HomeExperience({
           tabIndex={-1}
           aria-labelledby={`${activeNavigation}-nav`}
         >
-          {activeNavigation === "home" ? <HomePanel region={region} /> : null}
+          {activeNavigation === "home" ? (
+            <HomePanel
+              region={region}
+              accountAddress={account.session?.smartAccount?.address ?? null}
+              accountStatus={account.status}
+              onSignIn={() => setIsAccountOpen(true)}
+            />
+          ) : null}
           {activeNavigation === "save"
             ? (savingsContent ?? <SavePanel />)
             : null}
@@ -195,13 +244,27 @@ export function HomeExperience({
         <p>Open source on Base.</p>
         <p>Country changes display, not financial eligibility.</p>
       </footer>
+
+      <AccountSignInSheet open={isAccountOpen} onClose={closeAccount} />
     </div>
   );
 }
 
 
-function HomePanel({ region }: { region: PresentationRegion }) {
+function HomePanel({
+  region,
+  accountAddress,
+  accountStatus,
+  onSignIn,
+}: {
+  region: PresentationRegion;
+  accountAddress: string | null;
+  accountStatus: ReturnType<typeof useAccountWallet>["status"];
+  onSignIn: () => void;
+}) {
   const currencyCode = region.currency.code ?? "Local currency";
+  const isChecking = accountStatus === "restoring" || accountStatus === "validating";
+  const isVerified = accountStatus === "verified";
 
   return (
     <div className="home-panel panel-grid">
@@ -213,7 +276,13 @@ function HomePanel({ region }: { region: PresentationRegion }) {
           </div>
           <span className="connection-status">
             <span aria-hidden="true" />
-            Not connected
+            {accountAddress
+              ? "Verified on Base"
+              : isChecking
+                ? "Checking session"
+                : isVerified
+                  ? "Account pending"
+                  : "Not connected"}
           </span>
         </div>
 
@@ -226,12 +295,22 @@ function HomePanel({ region }: { region: PresentationRegion }) {
           <strong aria-hidden="true">—</strong>
         </div>
         <p className="balance-note">
-          Sign in to view your actual balance and account address.
+          {accountAddress
+            ? "Balance is not available until Home connects a verified balance reader."
+            : isChecking
+              ? "Checking for a previously verified account on this device."
+              : "Sign in to view your verified account address."}
         </p>
-        <a className="account-link" href="/account">
-          Sign in to your account
-          <ArrowRightIcon />
-        </a>
+        {accountAddress ? (
+          <div className="account-link" aria-label="Verified Base account address">
+            <code>{accountAddress}</code>
+          </div>
+        ) : isChecking ? null : (
+          <button className="account-link" type="button" onClick={onSignIn}>
+            Sign in to your account
+            <ArrowRightIcon />
+          </button>
+        )}
 
         <dl className="account-details">
           <div>
@@ -244,7 +323,15 @@ function HomePanel({ region }: { region: PresentationRegion }) {
           </div>
           <div>
             <dt>Wallet</dt>
-            <dd>Not connected</dd>
+            <dd>
+              {accountAddress
+                ? `${accountAddress.slice(0, 6)}…${accountAddress.slice(-4)}`
+                : isChecking
+                  ? "Checking"
+                  : isVerified
+                    ? "Preparing account"
+                    : "Not connected"}
+            </dd>
           </div>
         </dl>
 
