@@ -24,6 +24,7 @@ import {
   getVisibleVerifiedSession,
   SessionValidationError,
   validateAccountSession,
+  type SessionFetch,
   type VerifiedAccountSession,
   type VerifiedSessionOwner,
 } from "./session-client";
@@ -74,14 +75,34 @@ const unavailableClient: AccountWalletClient = {
   signOut: async () => {},
 };
 
-function AccountWalletBridge({ children }: { children: ReactNode }) {
-  const { isInitialized } = useIsInitialized();
-  const { isSignedIn: sdkIsSignedIn } = useIsSignedIn();
-  const { currentUser } = useCurrentUser();
-  const { signInWithEmail } = useSignInWithEmail();
-  const { verifyEmailOTP } = useVerifyEmailOTP();
-  const { getAccessToken } = useGetAccessToken();
-  const { signOut: sdkSignOut } = useSignOut();
+export type AccountWalletSdkBoundary = {
+  isInitialized: boolean;
+  isSignedIn: boolean;
+  ownerKey: string | null;
+  signInWithEmail: (email: string) => Promise<{ flowId: string }>;
+  verifyEmailOTP: (flowId: string, otp: string) => Promise<void>;
+  getAccessToken: () => Promise<string | null>;
+  signOut: () => Promise<void>;
+};
+
+export function AccountWalletSessionOwner({
+  children,
+  sdk,
+  sessionFetch,
+}: {
+  children: ReactNode;
+  sdk: AccountWalletSdkBoundary;
+  sessionFetch?: SessionFetch;
+}) {
+  const {
+    isInitialized,
+    isSignedIn: sdkIsSignedIn,
+    ownerKey,
+    signInWithEmail,
+    verifyEmailOTP,
+    getAccessToken,
+    signOut: sdkSignOut,
+  } = sdk;
   const [verifiedOwner, setVerifiedOwner] =
     useState<VerifiedSessionOwner | null>(null);
   const [status, setStatus] = useState<AccountSessionStatus>("restoring");
@@ -91,7 +112,6 @@ function AccountWalletBridge({ children }: { children: ReactNode }) {
   );
   const validationRequest = useRef<AbortController | null>(null);
   const validationSequence = useRef(0);
-  const ownerKey = currentUser?.userId ?? null;
   const isSessionSuppressed = isSessionSuppressedForOwner(
     suppressedOwnerKey,
     ownerKey,
@@ -122,7 +142,11 @@ function AccountWalletBridge({ children }: { children: ReactNode }) {
         throw new SessionValidationError("unauthenticated");
       }
 
-      const session = await validateAccountSession(accessToken, controller.signal);
+      const session = await validateAccountSession(
+        accessToken,
+        controller.signal,
+        sessionFetch,
+      );
       if (controller.signal.aborted || sequence !== validationSequence.current) {
         return;
       }
@@ -167,6 +191,7 @@ function AccountWalletBridge({ children }: { children: ReactNode }) {
     ownerKey,
     sdkIsSignedIn,
     sdkSignOut,
+    sessionFetch,
   ]);
 
   useEffect(() => {
@@ -209,7 +234,7 @@ function AccountWalletBridge({ children }: { children: ReactNode }) {
     async (email: string) => {
       setSuppressedOwnerKey(null);
       setMessage(null);
-      const { flowId } = await signInWithEmail({ email });
+      const { flowId } = await signInWithEmail(email);
       return { flowId };
     },
     [signInWithEmail],
@@ -219,7 +244,7 @@ function AccountWalletBridge({ children }: { children: ReactNode }) {
     async (flowId: string, otp: string) => {
       setSuppressedOwnerKey(null);
       setMessage(null);
-      await verifyEmailOTP({ flowId, otp });
+      await verifyEmailOTP(flowId, otp);
     },
     [verifyEmailOTP],
   );
@@ -291,6 +316,44 @@ function AccountWalletBridge({ children }: { children: ReactNode }) {
     <AccountWalletContext.Provider value={client}>
       {children}
     </AccountWalletContext.Provider>
+  );
+}
+
+function AccountWalletBridge({ children }: { children: ReactNode }) {
+  const { isInitialized } = useIsInitialized();
+  const { isSignedIn } = useIsSignedIn();
+  const { currentUser } = useCurrentUser();
+  const { signInWithEmail } = useSignInWithEmail();
+  const { verifyEmailOTP } = useVerifyEmailOTP();
+  const { getAccessToken } = useGetAccessToken();
+  const { signOut } = useSignOut();
+  const sdk = useMemo<AccountWalletSdkBoundary>(
+    () => ({
+      isInitialized,
+      isSignedIn,
+      ownerKey: currentUser?.userId ?? null,
+      signInWithEmail: async (email) => signInWithEmail({ email }),
+      verifyEmailOTP: async (flowId, otp) => {
+        await verifyEmailOTP({ flowId, otp });
+      },
+      getAccessToken,
+      signOut,
+    }),
+    [
+      currentUser?.userId,
+      getAccessToken,
+      isInitialized,
+      isSignedIn,
+      signInWithEmail,
+      signOut,
+      verifyEmailOTP,
+    ],
+  );
+
+  return (
+    <AccountWalletSessionOwner sdk={sdk}>
+      {children}
+    </AccountWalletSessionOwner>
   );
 }
 

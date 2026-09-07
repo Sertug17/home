@@ -32,7 +32,6 @@ export function SavingsExperience({
       ? { status: "ready", data: initialData }
       : { status: "loading", data: null },
   );
-  const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
 
   useEffect(() => {
     if (initialData) return;
@@ -55,87 +54,54 @@ export function SavingsExperience({
     return () => controller.abort();
   }, [initialData]);
 
-  const selected =
-    loadState.status === "ready"
-      ? loadState.data.candidates.find(
-          (candidate) => candidate.vaultAddress === selectedAddress,
-        ) ?? null
-      : null;
-
   return (
     <section className={styles.experience} aria-labelledby="savings-title">
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>USDC savings · Morpho V1</p>
-          <h2 id="savings-title">Compare live vault candidates.</h2>
+          <p className={styles.eyebrow}>Savings</p>
+          <h2 id="savings-title">USDC</h2>
         </div>
-        <div className={styles.network}>Base · USDC</div>
+        <span>Base · Morpho V1</span>
       </header>
-
-      <p className={styles.intro}>
-        These are read-only candidates, not a recommendation. Yield is variable,
-        vault-specific, and can change. No vault is selected for you.
-      </p>
-
-      {loadState.status === "loading" ? <LoadingState /> : null}
-      {loadState.status === "error" ? <ErrorState /> : null}
-      {loadState.status === "ready" ? (
-        <>
-          <div className={styles.sourceRow}>
-            <span>
-              {loadState.data.stale ? "Stale fallback" : "Live response"} from
-              Morpho GraphQL
-            </span>
-            <time dateTime={loadState.data.source.fetchedAt}>
-              fetched {formatTimestamp(loadState.data.source.fetchedAt)}
-            </time>
-          </div>
-
-          <div className={styles.candidateLayout}>
-            <div className={styles.candidateList} aria-label="Vault candidates">
-              {loadState.data.candidates.map((candidate) => {
-                const isSelected = candidate.vaultAddress === selectedAddress;
-                return (
-                  <button
-                    className={
-                      isSelected
-                        ? `${styles.candidate} ${styles.candidateSelected}`
-                        : styles.candidate
-                    }
-                    key={candidate.vaultAddress}
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() => setSelectedAddress(candidate.vaultAddress)}
-                  >
-                    <span className={styles.candidateIdentity}>
-                      <strong>{candidate.name}</strong>
-                      <small>{candidate.symbol}</small>
-                    </span>
-                    <span className={styles.rate}>
-                      <small>current net APY</small>
-                      <strong>{formatRate(candidate.netApy)}</strong>
-                    </span>
-                    <span className={styles.inspect}>Inspect details</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <VaultDetails candidate={selected} />
-          </div>
-        </>
-      ) : null}
 
       <PositionStatus session={session} />
 
-      <div className={styles.actionBar} aria-label="Savings actions unavailable">
-        <div>
-          <strong>Transactions are not enabled.</strong>
-          <span>
-            Vault selection, product review, simulation, and shared signing are
-            still required.
-          </span>
+      <section className={styles.comparison} aria-labelledby="rates-title">
+        <div className={styles.comparisonHeading}>
+          <div>
+            <p className={styles.detailsKicker}>Rate comparison</p>
+            <h3 id="rates-title">Vault candidates</h3>
+          </div>
+          <span>Variable rates · no default selection</span>
         </div>
+
+        {loadState.status === "loading" ? <LoadingState /> : null}
+        {loadState.status === "error" ? <ErrorState /> : null}
+        {loadState.status === "ready" ? (
+          <>
+            <div className={styles.sourceRow}>
+              <span>
+                {loadState.data.stale ? "Stale fallback snapshot" : "Fetched snapshot"}
+              </span>
+              <time dateTime={loadState.data.source.fetchedAt}>
+                As of {formatTimestamp(loadState.data.source.fetchedAt)}
+              </time>
+            </div>
+
+            <div className={styles.candidateList} aria-label="Vault candidates">
+              {loadState.data.candidates.map((candidate) => (
+                <VaultCandidateRow
+                  key={candidate.vaultAddress}
+                  candidate={candidate}
+                />
+              ))}
+            </div>
+          </>
+        ) : null}
+      </section>
+
+      <div className={styles.actionBar} aria-label="Savings actions unavailable">
+        <span>Transactions are not enabled.</span>
         <button type="button" disabled title="Deposits are not enabled">
           Deposit unavailable
         </button>
@@ -150,8 +116,8 @@ export function SavingsExperience({
 function LoadingState() {
   return (
     <div className={styles.notice} role="status">
-      <strong>Loading current vault data</strong>
-      <span>No yield or balance is shown until the source responds.</span>
+      <strong>Loading rate snapshots</strong>
+      <span>No rate is shown until the source responds.</span>
     </div>
   );
 }
@@ -159,86 +125,77 @@ function LoadingState() {
 function ErrorState() {
   return (
     <div className={styles.notice} role="alert">
-      <strong>Vault data is unavailable</strong>
-      <span>
-        No APY, liquidity, fee, or total is being assumed. Try again later.
-      </span>
+      <strong>Rate data unavailable</strong>
+      <span>No APY, fee, liquidity, or total is being assumed.</span>
     </div>
   );
 }
 
-function VaultDetails({ candidate }: { candidate: MorphoVaultCandidate | null }) {
-  if (!candidate) {
-    return (
-      <aside className={styles.details} aria-label="Vault details">
-        <p className={styles.detailsKicker}>Nothing selected</p>
-        <h3>Choose a candidate to inspect its sourced details.</h3>
-        <p>
-          Inspecting a row does not choose a savings product or authorize a
-          transaction.
-        </p>
-      </aside>
-    );
-  }
-
+function VaultCandidateRow({ candidate }: { candidate: MorphoVaultCandidate }) {
   return (
-    <aside className={styles.details} aria-label={`${candidate.name} details`}>
-      <div className={styles.detailsHeading}>
-        <div>
-          <p className={styles.detailsKicker}>Morpho V1 candidate</p>
-          <h3>{candidate.name}</h3>
-        </div>
-        <span>{candidate.listed ? "listed" : "not listed"}</span>
-      </div>
-
-      <dl className={styles.metrics}>
-        <Metric
-          label="Current net APY"
-          value={formatRate(candidate.netApy)}
-          note="Variable; API state, not a guarantee"
-        />
-        <Metric
-          label="Vault fee"
-          value={formatRate(candidate.feeRate)}
-          note="Rate reported by Morpho V1"
-        />
-        <Metric
-          label="Total assets"
-          value={formatTokenAmount(candidate.totalAssetsRaw, 6)}
-          note="Vault-wide, not your balance"
-        />
-        <Metric
-          label="Indexed liquidity"
-          value={formatTokenAmount(candidate.liquidityRaw, 6)}
-          note="Not the account's max withdrawal"
-        />
-      </dl>
-
-      <div className={styles.provenance}>
-        <div>
-          <span>Curator address</span>
-          <code title={candidate.curatorAddress ?? undefined}>
-            {candidate.curatorAddress
-              ? shortenAddress(candidate.curatorAddress)
-              : "Unavailable"}
-          </code>
-        </div>
-        <div>
-          <span>Vault address</span>
-          <code title={candidate.vaultAddress}>
-            {shortenAddress(candidate.vaultAddress)}
-          </code>
-        </div>
-        <div>
-          <span>State as of</span>
+    <article className={styles.candidate}>
+      <div className={styles.candidateSummary}>
+        <span className={styles.candidateIdentity}>
+          <strong>{candidate.name}</strong>
+          <small>{candidate.symbol}</small>
+        </span>
+        <span className={styles.rate}>
+          <small>Variable net APY</small>
+          <strong>{formatRate(candidate.netApy)}</strong>
           <time dateTime={candidate.stateAsOf ?? undefined}>
-            {candidate.stateAsOf
-              ? formatTimestamp(candidate.stateAsOf)
-              : "Unavailable"}
+            As of {candidate.stateAsOf ? formatTimestamp(candidate.stateAsOf) : "unavailable"}
           </time>
-        </div>
+        </span>
       </div>
-    </aside>
+
+      <details className={styles.details}>
+        <summary>Fees, liquidity, curator, addresses, and risks</summary>
+        <div className={styles.detailsContent}>
+          <p>
+            Read-only candidate, not a recommendation. Yield is variable and
+            vault-specific. Opening details does not select a product.
+          </p>
+          <dl className={styles.metrics}>
+            <Metric
+              label="Vault fee"
+              value={formatRate(candidate.feeRate)}
+              note="Reported by Morpho V1"
+            />
+            <Metric
+              label="Total assets"
+              value={formatTokenAmount(candidate.totalAssetsRaw, 6)}
+              note="Vault-wide, not your balance"
+            />
+            <Metric
+              label="Indexed liquidity"
+              value={formatTokenAmount(candidate.liquidityRaw, 6)}
+              note="Not the account's max withdrawal"
+            />
+            <Metric
+              label="Listing status"
+              value={candidate.listed ? "Listed" : "Not listed"}
+              note="Source snapshot status"
+            />
+          </dl>
+          <div className={styles.provenance}>
+            <div>
+              <span>Curator address</span>
+              <code title={candidate.curatorAddress ?? undefined}>
+                {candidate.curatorAddress
+                  ? shortenAddress(candidate.curatorAddress)
+                  : "Unavailable"}
+              </code>
+            </div>
+            <div>
+              <span>Vault address</span>
+              <code title={candidate.vaultAddress}>
+                {shortenAddress(candidate.vaultAddress)}
+              </code>
+            </div>
+          </div>
+        </div>
+      </details>
+    </article>
   );
 }
 
@@ -263,22 +220,25 @@ function Metric({
 }
 
 function PositionStatus({ session }: { session: SavingsSession | null }) {
-  let message =
-    "Sign in to establish a verified smart account before any private position read.";
+  let status = "Sign in to see a verified USDC position.";
   if (session && !session.smartAccount) {
-    message = "A verified session exists, but no Base smart account is available.";
+    status = "Verified session; Base account unavailable.";
   }
   if (session?.smartAccount) {
-    message = `Verified account ${shortenAddress(session.smartAccount.address)} is available for parent integration. Its position has not been requested in this public view.`;
+    status = `Verified account ${shortenAddress(session.smartAccount.address)}; position not requested.`;
   }
 
   return (
     <section className={styles.position} aria-labelledby="position-title">
       <div>
         <p className={styles.detailsKicker}>Your position</p>
-        <h3 id="position-title">Balance unavailable</h3>
+        <h3 id="position-title">USDC balance</h3>
       </div>
-      <p>{message}</p>
+      <div className={styles.positionValue} aria-label="USDC balance unavailable">
+        <strong aria-hidden="true">—</strong>
+        <span>Balance unavailable</span>
+      </div>
+      <p>{status}</p>
     </section>
   );
 }

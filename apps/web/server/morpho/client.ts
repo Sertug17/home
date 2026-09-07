@@ -84,8 +84,10 @@ type CacheEntry = {
   result: MorphoVaultsResult;
 };
 
-let vaultCache: CacheEntry | null = null;
-let vaultRequest: Promise<MorphoVaultsResult> | null = null;
+type VaultCandidatesReaderOptions = {
+  signal?: AbortSignal;
+  now?: () => Date;
+};
 
 export class MorphoUpstreamError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -94,51 +96,67 @@ export class MorphoUpstreamError extends Error {
   }
 }
 
+export function createMorphoVaultCandidatesReader(fetchImpl: FetchLike) {
+  let vaultCache: CacheEntry | null = null;
+  let vaultRequest: Promise<MorphoVaultsResult> | null = null;
+
+  return async function readMorphoVaultCandidates(
+    options?: VaultCandidatesReaderOptions,
+  ): Promise<MorphoVaultsResult> {
+    const now = options?.now ?? (() => new Date());
+    const useSharedCache = options?.signal === undefined;
+    const currentTime = now().getTime();
+
+    if (
+      useSharedCache &&
+      vaultCache &&
+      currentTime - vaultCache.storedAt <= FRESH_CACHE_MS
+    ) {
+      return { ...vaultCache.result, stale: false };
+    }
+
+    if (useSharedCache && vaultRequest) return vaultRequest;
+
+    const request = fetchVaultCandidates(fetchImpl, options?.signal, now).catch(
+      (error: unknown) => {
+        if (
+          useSharedCache &&
+          vaultCache &&
+          currentTime - vaultCache.storedAt <= STALE_FALLBACK_MS
+        ) {
+          return { ...vaultCache.result, stale: true };
+        }
+        throw error;
+      },
+    );
+
+    if (!useSharedCache) return request;
+
+    vaultRequest = request;
+    try {
+      const result = await request;
+      if (!result.stale) {
+        vaultCache = { storedAt: now().getTime(), result };
+      }
+      return result;
+    } finally {
+      vaultRequest = null;
+    }
+  };
+}
+
+let sharedVaultCandidatesReader = createMorphoVaultCandidatesReader(fetch);
+
 export async function getMorphoVaultCandidates(options?: {
   fetchImpl?: FetchLike;
   signal?: AbortSignal;
   now?: () => Date;
 }): Promise<MorphoVaultsResult> {
-  const fetchImpl = options?.fetchImpl ?? fetch;
-  const now = options?.now ?? (() => new Date());
-  const useSharedCache = options?.fetchImpl === undefined && options?.signal === undefined;
-  const currentTime = now().getTime();
+  const reader = options?.fetchImpl
+    ? createMorphoVaultCandidatesReader(options.fetchImpl)
+    : sharedVaultCandidatesReader;
 
-  if (
-    useSharedCache &&
-    vaultCache &&
-    currentTime - vaultCache.storedAt <= FRESH_CACHE_MS
-  ) {
-    return { ...vaultCache.result, stale: false };
-  }
-
-  if (useSharedCache && vaultRequest) return vaultRequest;
-
-  const request = fetchVaultCandidates(fetchImpl, options?.signal, now).catch(
-    (error: unknown) => {
-      if (
-        useSharedCache &&
-        vaultCache &&
-        currentTime - vaultCache.storedAt <= STALE_FALLBACK_MS
-      ) {
-        return { ...vaultCache.result, stale: true };
-      }
-      throw error;
-    },
-  );
-
-  if (!useSharedCache) return request;
-
-  vaultRequest = request;
-  try {
-    const result = await request;
-    if (!result.stale) {
-      vaultCache = { storedAt: now().getTime(), result };
-    }
-    return result;
-  } finally {
-    vaultRequest = null;
-  }
+  return reader({ signal: options?.signal, now: options?.now });
 }
 
 export async function getMorphoVaultPosition(input: {
@@ -298,6 +316,5 @@ function assertAddress(value: string, label: string): asserts value is Address {
 }
 
 export function clearMorphoCacheForTests() {
-  vaultCache = null;
-  vaultRequest = null;
+  sharedVaultCandidatesReader = createMorphoVaultCandidatesReader(fetch);
 }

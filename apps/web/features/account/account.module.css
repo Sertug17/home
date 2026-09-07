@@ -1,15 +1,8 @@
-.backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  align-items: end;
-  background: rgba(10, 11, 13, 0.48);
-  padding: 16px;
-}
-
 .sheet {
-  width: min(100%, 520px);
+  position: fixed;
+  inset: auto 16px 16px;
+  width: min(calc(100% - 32px), 520px);
+  max-width: none;
   max-height: calc(100svh - 32px);
   overflow: auto;
   margin: 0 auto;
@@ -20,6 +13,10 @@
   color: #0a0b0d;
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   padding: 24px;
+}
+
+.sheet::backdrop {
+  background: rgba(10, 11, 13, 0.48);
 }
 
 .sheetHeader,
@@ -228,13 +225,11 @@
 }
 
 @media (min-width: 640px) {
-  .backdrop {
-    align-items: center;
-  }
-
   .sheet {
+    inset: 50% auto auto 50%;
     border-radius: 4px;
     padding: 30px;
+    transform: translate(-50%, -50%);
   }
 }
 

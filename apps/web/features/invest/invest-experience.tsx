@@ -22,94 +22,81 @@ export function InvestExperience({
   memeMarket = unavailableMarketData,
 }: InvestExperienceProps = {}) {
   return (
-    <div className={styles.experience}>
-      <header className={styles.intro}>
+    <section className={styles.experience} aria-labelledby="invest-title">
+      <header className={styles.header}>
         <div>
           <p className={styles.eyebrow}>Invest · read only</p>
-          <h2>Know what you are looking at.</h2>
+          <h2 id="invest-title">Assets</h2>
         </div>
-        <p className={styles.introCopy}>
-          A concise view of verified Base contract identities. Prices and
-          trading stay unavailable until a caller supplies sourced market data
-          and a separate execution route is reviewed.
-        </p>
+        <span>Prices shown only when sourced</span>
       </header>
 
       <section className={styles.section} aria-labelledby="invest-stocks-title">
         <div className={styles.sectionHeading}>
           <div>
-            <p className={styles.sectionIndex}>01 / Stocks</p>
+            <p className={styles.sectionIndex}>Stocks</p>
             <h3 id="invest-stocks-title">Tokenized stocks</h3>
           </div>
-          <p>{stockAssets.length} verified contracts on Base</p>
+          <p>{stockAssets.length} assets</p>
         </div>
 
-        <div className={styles.restrictionNote} role="note">
-          <strong>Unavailable in the United States.</strong>
-          <span>
-            Coinbase-issued Regulation S instruments are limited to eligible
-            jurisdictions outside the US. Country selection does not unlock
-            access.
-          </span>
-        </div>
+        <p className={styles.restrictionNote} role="note">
+          Stock access is unavailable in the United States; country display does not change eligibility.
+        </p>
 
         <AssetList assets={stockAssets} market={stockMarket} />
 
-        <details className={styles.sources}>
-          <summary>Stock sources and status</summary>
-          <div>
-            <p>
-              Contract identities come from the official Base roster. Home
-              does not currently provide quotes, eligibility checks, or
-              trading.
-            </p>
-            <SourceLink
-              href={investSources.stockRoster.url}
-              label={investSources.stockRoster.label}
-            />
-            <SourceLink
-              href={investSources.stockAnnouncement.url}
-              label={investSources.stockAnnouncement.label}
-            />
-          </div>
-        </details>
+        <AssetDisclosure
+          label="Stock contracts, eligibility, and sources"
+          assets={stockAssets}
+        >
+          <p>
+            Coinbase-issued Regulation S instruments are limited to eligible
+            jurisdictions outside the US. Home does not provide eligibility
+            checks or trading.
+          </p>
+          <SourceLink
+            href={investSources.stockRoster.url}
+            label={investSources.stockRoster.label}
+          />
+          <SourceLink
+            href={investSources.stockAnnouncement.url}
+            label={investSources.stockAnnouncement.label}
+          />
+        </AssetDisclosure>
       </section>
 
       <section className={styles.section} aria-labelledby="invest-memes-title">
         <div className={styles.sectionHeading}>
           <div>
-            <p className={styles.sectionIndex}>02 / Memes</p>
-            <h3 id="invest-memes-title">Base-native corner</h3>
+            <p className={styles.sectionIndex}>Memes</p>
+            <h3 id="invest-memes-title">Base memes</h3>
           </div>
-          <p>{memeAssets.length} curated identities</p>
+          <p>{memeAssets.length} assets</p>
         </div>
-
-        <p className={styles.sectionCopy}>
-          A small informational set, not an endorsement. Meme assets are
-          volatile; no route or eligibility is implied by inclusion.
-        </p>
 
         <AssetList assets={memeAssets} market={memeMarket} />
 
-        <details className={styles.sources}>
-          <summary>Meme sources and status</summary>
-          <div>
-            <p>
-              Each entry links to its primary project site and verified Base
-              explorer contract. Home does not provide a quote or trade action.
-            </p>
-            {memeAssets.map((asset) => (
-              <span className={styles.sourceGroup} key={asset.id}>
-                {asset.projectUrl ? (
-                  <SourceLink href={asset.projectUrl} label={`${asset.name} project`} />
-                ) : null}
-                <SourceLink href={asset.contractUrl} label={`${asset.symbol} contract`} />
-              </span>
-            ))}
-          </div>
-        </details>
+        <AssetDisclosure
+          label="Meme contracts, risks, and sources"
+          assets={memeAssets}
+        >
+          <p>
+            Informational only, not an endorsement. Meme assets can be highly
+            volatile; inclusion does not imply a route or eligibility.
+          </p>
+          {memeAssets.map((asset) =>
+            asset.projectUrl ? (
+              <SourceLink
+                key={asset.id}
+                href={asset.projectUrl}
+                label={`${asset.name} project`}
+              />
+            ) : null,
+          )}
+        </AssetDisclosure>
       </section>
-    </div>
+    </section>
   );
 }
 
@@ -124,8 +111,7 @@ function AssetList({
     <div className={styles.assetTable}>
       <div className={styles.tableHeading} aria-hidden="true">
         <span>Asset</span>
-        <span>Contract</span>
-        <span>Price</span>
+        <span>Price snapshot</span>
       </div>
       <ul>
         {assets.map((asset) => (
@@ -134,8 +120,7 @@ function AssetList({
       </ul>
       {market.status === "ready" && market.snapshots.length === 0 ? (
         <p className={styles.emptyMarket} role="status">
-          No market snapshots were supplied. Verified identities remain
-          visible without prices.
+          No price snapshots supplied.
         </p>
       ) : null}
     </div>
@@ -159,35 +144,52 @@ function AssetRow({
         </span>
         <span>
           <strong>{asset.name}</strong>
-          <small>
-            {asset.symbol} · {asset.descriptor}
-          </small>
+          <small>{asset.symbol}</small>
         </span>
-      </div>
-
-      <div className={styles.contract}>
-        <span>Base · {asset.chainId}</span>
-        <a href={asset.contractUrl} target="_blank" rel="noreferrer">
-          <code>{shortenContractAddress(asset.contractAddress)}</code>
-          <ExternalIcon />
-          <span className={styles.visuallyHidden}>
-            View {asset.symbol} contract in a new tab
-          </span>
-        </a>
       </div>
 
       <div className={styles.price} data-tone={price.tone}>
         <strong>{price.value}</strong>
-        {price.sourceUrl ? (
-          <a href={price.sourceUrl} target="_blank" rel="noreferrer">
-            {price.detail}
-            <span className={styles.visuallyHidden}> in a new tab</span>
-          </a>
-        ) : (
-          <span>{price.detail}</span>
-        )}
+        <span>
+          {price.sourceUrl
+            ? <SourceLink href={price.sourceUrl} label={price.detail} />
+            : price.detail}
+        </span>
       </div>
     </li>
+  );
+}
+
+function AssetDisclosure({
+  label,
+  assets,
+  children,
+}: {
+  label: string;
+  assets: readonly InvestAsset[];
+  children: React.ReactNode;
+}) {
+  return (
+    <details className={styles.sources}>
+      <summary>{label}</summary>
+      <div className={styles.disclosureContent}>
+        {children}
+        <ul className={styles.contractList}>
+          {assets.map((asset) => (
+            <li key={asset.id}>
+              <span>{asset.symbol} · Base {asset.chainId}</span>
+              <a href={asset.contractUrl} target="_blank" rel="noreferrer">
+                <code>{shortenContractAddress(asset.contractAddress)}</code>
+                <ExternalIcon />
+                <span className={styles.visuallyHidden}>
+                  View {asset.symbol} contract in a new tab
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </details>
   );
 }
 

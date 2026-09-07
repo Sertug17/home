@@ -16,6 +16,18 @@ const source: MorphoSource = {
 
 const configuredVault = "0xeE8F4eC5672F09119b96Ab6fB59C27E1b7e44b61";
 
+const invalidRates: Array<
+  [field: "apy" | "netApy" | "fee", description: string, value: unknown]
+> = [
+  ["netApy", "boolean false", false],
+  ["fee", "an empty string", ""],
+  ["apy", "an array", []],
+  ["apy", "an object", {}],
+  ["apy", "whitespace", " "],
+  ["apy", "a padded numeric string", " 0.04"],
+  ["apy", "infinity", Number.POSITIVE_INFINITY],
+];
+
 function validVault() {
   return {
     address: configuredVault,
@@ -63,6 +75,31 @@ describe("Morpho V1 normalization", () => {
     wrongUnderlying.asset.address =
       "0x1111111111111111111111111111111111111111";
     expect(normalizeVaultCandidate(wrongUnderlying, source)).toBeNull();
+  });
+
+  test.each(invalidRates)(
+    "rejects state.%s when it is %s",
+    (field, _description, value) => {
+      const vault = validVault();
+      (vault.state as Record<string, unknown>)[field] = value;
+
+      expect(() => normalizeVaultCandidate(vault, source)).toThrow(
+        MorphoSchemaError,
+      );
+    },
+  );
+
+  test("accepts finite numbers and explicit numeric strings, including zero", () => {
+    const vault = validVault();
+    (vault.state as Record<string, unknown>).apy = "0.04";
+    (vault.state as Record<string, unknown>).netApy = "0";
+    (vault.state as Record<string, unknown>).fee = "1e-3";
+
+    const result = normalizeVaultCandidate(vault, source);
+
+    expect(result?.grossApy).toBe(0.04);
+    expect(result?.netApy).toBe(0);
+    expect(result?.feeRate).toBe(0.001);
   });
 
   test("keeps missing values distinct from reported zero values", () => {

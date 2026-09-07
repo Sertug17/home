@@ -2,9 +2,12 @@
 
 import {
   useEffect,
+  useLayoutEffect,
+  useRef,
   useState,
   type FormEvent,
   type MouseEvent,
+  type SyntheticEvent,
 } from "react";
 import { classifyEmailCodeError } from "./auth-errors";
 import { useAccountWallet } from "./cdp-client";
@@ -47,6 +50,47 @@ export function AccountSignInSheet({
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [resendAvailableAt, setResendAvailableAt] = useState<number | null>(null);
   const [resendSeconds, setResendSeconds] = useState(0);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const isBusy = isSendingCode || isVerifyingCode;
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+
+    if (open && !dialog.open) {
+      restoreFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      dialog.showModal();
+      const initialFocus = dialog.querySelector<HTMLElement>(
+        "[data-initial-focus]:not(:disabled), button:not(:disabled)",
+      );
+      initialFocus?.focus();
+      return;
+    }
+
+    if (!open && dialog.open) {
+      dialog.close();
+      restoreFocusRef.current?.focus();
+      restoreFocusRef.current = null;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (session && status === "verified") {
@@ -69,26 +113,22 @@ export function AccountSignInSheet({
     return () => window.clearInterval(timer);
   }, [open, resendAvailableAt]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
+  function handleCancel(event: SyntheticEvent<HTMLDialogElement>) {
+    event.preventDefault();
+    if (!isBusy) {
+      onClose();
     }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isSendingCode && !isVerifyingCode) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isSendingCode, isVerifyingCode, onClose, open]);
-
-  if (!open) {
-    return null;
   }
 
-  function handleBackdropClick(event: MouseEvent<HTMLDivElement>) {
-    if (event.target === event.currentTarget && !isSendingCode && !isVerifyingCode) {
+  function handleDialogClick(event: MouseEvent<HTMLDialogElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const clickedOutside =
+      event.clientX < bounds.left ||
+      event.clientX > bounds.right ||
+      event.clientY < bounds.top ||
+      event.clientY > bounds.bottom;
+
+    if (clickedOutside && !isBusy) {
       onClose();
     }
   }
@@ -150,156 +190,153 @@ export function AccountSignInSheet({
   const isChecking = status === "restoring" || status === "validating";
 
   return (
-    <div
-      className={styles.backdrop}
-      role="presentation"
-      onMouseDown={handleBackdropClick}
+    <dialog
+      ref={dialogRef}
+      className={styles.sheet}
+      aria-labelledby="account-sign-in-title"
+      onCancel={handleCancel}
+      onClick={handleDialogClick}
     >
-      <section
-        className={styles.sheet}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="account-sign-in-title"
-      >
-        <div className={styles.sheetHeader}>
-          <div>
-            <p className={styles.kicker}>Secure account</p>
-            <h2 id="account-sign-in-title">
-              {flowId ? "Check your email" : "Sign in to Home"}
-            </h2>
-          </div>
+      <div className={styles.sheetHeader}>
+        <div>
+          <p className={styles.kicker}>Secure account</p>
+          <h2 id="account-sign-in-title">
+            {flowId ? "Check your email" : "Sign in to Home"}
+          </h2>
+        </div>
+        <button
+          className={styles.closeButton}
+          type="button"
+          onClick={onClose}
+          disabled={isBusy}
+          aria-label="Close sign in"
+        >
+          ×
+        </button>
+      </div>
+
+      {!projectConfigured ? (
+        <div className={styles.statusPanel} role="alert">
+          <strong>Sign-in is unavailable.</strong>
+          <p>Add the public CDP project ID to this deployment.</p>
+        </div>
+      ) : null}
+
+      {message && status !== "signed-out" ? (
+        <p className={styles.notice} role="status">
+          {message}
+        </p>
+      ) : null}
+      {authError ? (
+        <p className={styles.error} role="alert">
+          {authError}
+        </p>
+      ) : null}
+
+      {isChecking ? (
+        <div className={styles.pendingPanel} aria-live="polite">
+          <span className={styles.spinner} aria-hidden="true" />
+          Verifying your secure session…
+        </div>
+      ) : status === "unavailable" ? (
+        <div className={styles.statusPanel} role="alert">
+          <strong>We could not verify this session.</strong>
+          <p>Your account details remain hidden.</p>
           <button
-            className={styles.closeButton}
+            className={styles.secondaryButton}
             type="button"
-            onClick={onClose}
-            disabled={isSendingCode || isVerifyingCode}
-            aria-label="Close sign in"
+            onClick={() => void retrySessionValidation()}
           >
-            ×
+            Try again
           </button>
         </div>
-
-        {!projectConfigured ? (
-          <div className={styles.statusPanel} role="alert">
-            <strong>Sign-in is unavailable.</strong>
-            <p>Add the public CDP project ID to this deployment.</p>
-          </div>
-        ) : null}
-
-        {message && status !== "signed-out" ? (
-          <p className={styles.notice} role="status">
-            {message}
-          </p>
-        ) : null}
-        {authError ? (
-          <p className={styles.error} role="alert">
-            {authError}
-          </p>
-        ) : null}
-
-        {isChecking ? (
-          <div className={styles.pendingPanel} aria-live="polite">
-            <span className={styles.spinner} aria-hidden="true" />
-            Verifying your secure session…
-          </div>
-        ) : status === "unavailable" ? (
-          <div className={styles.statusPanel} role="alert">
-            <strong>We could not verify this session.</strong>
-            <p>Your account details remain hidden.</p>
+      ) : projectConfigured && flowId ? (
+        <form className={styles.form} onSubmit={handleOtpSubmit}>
+          <div className={styles.fieldHeader}>
+            <label htmlFor="account-otp">Verification code</label>
             <button
-              className={styles.secondaryButton}
+              className={styles.textButton}
               type="button"
-              onClick={() => void retrySessionValidation()}
+              onClick={changeEmail}
+              disabled={isVerifyingCode || isSendingCode}
             >
-              Try again
+              Change email
             </button>
           </div>
-        ) : projectConfigured && flowId ? (
-          <form className={styles.form} onSubmit={handleOtpSubmit}>
-            <div className={styles.fieldHeader}>
-              <label htmlFor="account-otp">Verification code</label>
-              <button
-                className={styles.textButton}
-                type="button"
-                onClick={changeEmail}
-                disabled={isVerifyingCode || isSendingCode}
-              >
-                Change email
-              </button>
-            </div>
-            <input
-              id="account-otp"
-              className={styles.otpInput}
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9]{6}"
-              maxLength={6}
-              value={otp}
-              onChange={(event) =>
-                setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))
-              }
-              disabled={isVerifyingCode}
-              aria-describedby="account-otp-help"
-              autoFocus
-            />
-            <p id="account-otp-help" className={styles.fieldHelp}>
-              Sent to {email}. The code expires for your protection.
-            </p>
-            <button
-              className={styles.primaryButton}
-              type="submit"
-              disabled={isVerifyingCode || otp.length !== 6}
-            >
-              {isVerifyingCode ? "Verifying…" : "Verify and continue"}
-            </button>
-            <button
-              className={styles.secondaryButton}
-              type="button"
-              onClick={() => {
-                setOtp("");
-                void sendCode(email);
-              }}
-              disabled={isSendingCode || resendSeconds > 0}
-            >
-              {isSendingCode
-                ? "Sending…"
-                : resendSeconds > 0
-                  ? `Resend code in ${resendSeconds}s`
-                  : "Resend code"}
-            </button>
-          </form>
-        ) : projectConfigured ? (
-          <form className={styles.form} onSubmit={handleEmailSubmit}>
-            <label htmlFor="account-email">Email address</label>
-            <input
-              id="account-email"
-              className={styles.input}
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              disabled={isSendingCode}
-              required
-              autoFocus
-            />
-            <button
-              className={styles.primaryButton}
-              type="submit"
-              disabled={isSendingCode}
-            >
-              {isSendingCode ? "Sending code…" : "Continue with email"}
-            </button>
-          </form>
-        ) : null}
+          <input
+            id="account-otp"
+            className={styles.otpInput}
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            value={otp}
+            onChange={(event) =>
+              setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))
+            }
+            disabled={isVerifyingCode}
+            aria-describedby="account-otp-help"
+            autoFocus
+            data-initial-focus
+          />
+          <p id="account-otp-help" className={styles.fieldHelp}>
+            Sent to {email}. The code expires for your protection.
+          </p>
+          <button
+            className={styles.primaryButton}
+            type="submit"
+            disabled={isVerifyingCode || otp.length !== 6}
+          >
+            {isVerifyingCode ? "Verifying…" : "Verify and continue"}
+          </button>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            onClick={() => {
+              setOtp("");
+              void sendCode(email);
+            }}
+            disabled={isSendingCode || resendSeconds > 0}
+          >
+            {isSendingCode
+              ? "Sending…"
+              : resendSeconds > 0
+                ? `Resend code in ${resendSeconds}s`
+                : "Resend code"}
+          </button>
+        </form>
+      ) : projectConfigured ? (
+        <form className={styles.form} onSubmit={handleEmailSubmit}>
+          <label htmlFor="account-email">Email address</label>
+          <input
+            id="account-email"
+            className={styles.input}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            disabled={isSendingCode}
+            required
+            autoFocus
+            data-initial-focus
+          />
+          <button
+            className={styles.primaryButton}
+            type="submit"
+            disabled={isSendingCode}
+          >
+            {isSendingCode ? "Sending code…" : "Continue with email"}
+          </button>
+        </form>
+      ) : null}
 
-        <p className={styles.privacyNote}>
-          Home shows account details only after the server verifies the CDP
-          access token. Your email and code are never placed in the URL.
-        </p>
-      </section>
-    </div>
+      <p className={styles.privacyNote}>
+        Home shows account details only after the server verifies the CDP
+        access token. Your email and code are never placed in the URL.
+      </p>
+    </dialog>
   );
 }

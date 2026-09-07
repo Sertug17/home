@@ -1,8 +1,6 @@
 .experience {
   width: 100%;
-  overflow: hidden;
-  border: 1px solid #dfe1e5;
-  border-radius: 14px;
+  border: 1px solid #e2e4e8;
   background: #ffffff;
   color: #0a0b0d;
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -10,288 +8,259 @@
 
 .experience a:focus-visible,
 .experience summary:focus-visible {
-  outline: 3px solid rgba(0, 0, 255, 0.28);
+  outline: 2px solid #0000ff;
   outline-offset: 3px;
 }
 
-.intro {
-  display: grid;
-  gap: 22px;
-  padding: clamp(24px, 5vw, 48px);
-  border-bottom: 1px solid #dfe1e5;
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 3px solid #0000ff;
+  border-bottom: 1px solid #e2e4e8;
+  padding: 18px 20px;
 }
 
 .eyebrow,
 .sectionIndex {
   margin: 0;
-  color: #0000ff;
-  font-size: 0.7rem;
+  color: #565c68;
+  font-size: 0.64rem;
   font-weight: 750;
-  letter-spacing: 0.11em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.intro h2 {
-  max-width: 14ch;
-  margin: 10px 0 0;
-  font-size: clamp(2rem, 7vw, 4.25rem);
-  font-weight: 570;
-  letter-spacing: -0.065em;
-  line-height: 0.98;
+.header h2 {
+  margin: 4px 0 0;
+  font-size: clamp(1.45rem, 5vw, 2rem);
+  font-weight: 680;
+  letter-spacing: -0.045em;
+  line-height: 1;
 }
 
-.introCopy {
-  max-width: 37rem;
-  margin: 0;
-  color: #565b63;
-  font-size: 0.88rem;
-  line-height: 1.65;
+.header > span {
+  color: #565c68;
+  font-size: 0.66rem;
+  text-align: right;
 }
 
 .section {
-  padding: clamp(24px, 5vw, 48px);
+  padding: 20px;
 }
 
 .section + .section {
-  border-top: 8px solid #f3f4f6;
+  border-top: 8px solid #f5f6f7;
 }
 
 .sectionHeading {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
+  gap: 18px;
 }
 
 .sectionHeading h3 {
-  margin: 7px 0 0;
-  font-size: clamp(1.55rem, 4vw, 2.35rem);
-  font-weight: 620;
-  letter-spacing: -0.045em;
+  margin: 5px 0 0;
+  font-size: 1.12rem;
+  font-weight: 680;
+  letter-spacing: -0.03em;
 }
 
 .sectionHeading > p {
   margin: 0;
-  color: #686d74;
-  font-size: 0.75rem;
+  color: #565c68;
+  font-size: 0.66rem;
   white-space: nowrap;
 }
 
 .restrictionNote {
-  display: grid;
-  gap: 5px;
-  margin-top: 24px;
+  margin: 14px 0 0;
   border-left: 3px solid #0000ff;
-  background: #f6f6ff;
-  padding: 14px 16px;
-  font-size: 0.78rem;
-  line-height: 1.5;
-}
-
-.restrictionNote strong {
-  color: #0a0b0d;
-}
-
-.restrictionNote span {
-  color: #565b63;
-}
-
-.sectionCopy {
-  max-width: 42rem;
-  margin: 20px 0 0;
-  color: #565b63;
-  font-size: 0.82rem;
-  line-height: 1.6;
+  background: #f5f6f7;
+  padding: 9px 11px;
+  color: #32353d;
+  font-size: 0.7rem;
+  line-height: 1.45;
 }
 
 .assetTable {
-  margin-top: 22px;
-  border-top: 1px solid #bfc3ca;
+  margin-top: 14px;
+  border-top: 1px solid #0a0b0d;
 }
 
 .tableHeading,
 .assetRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1.4fr) minmax(180px, 0.9fr) minmax(140px, 0.6fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 0.45fr);
   align-items: center;
+  gap: 18px;
 }
 
 .tableHeading {
-  min-height: 38px;
-  color: #62676f;
-  font-size: 0.65rem;
-  font-weight: 700;
+  min-height: 34px;
+  color: #565c68;
+  font-size: 0.6rem;
+  font-weight: 750;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.assetTable ul {
+.tableHeading span:last-child {
+  text-align: right;
+}
+
+.assetTable ul,
+.contractList {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .assetRow {
-  min-height: 92px;
-  border-top: 1px solid #e3e5e8;
-  padding: 14px 0;
+  min-height: 68px;
+  border-top: 1px solid #e2e4e8;
+  padding: 10px 0;
 }
 
 .assetRow:last-child {
-  border-bottom: 1px solid #bfc3ca;
+  border-bottom: 1px solid #0a0b0d;
 }
 
 .identity {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 13px;
+  gap: 11px;
 }
 
 .initials {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid #d6d9de;
-  border-radius: 8px;
-  background: #f4f5f7;
+  border: 1px solid #0a0b0d;
+  background: #ffffff;
   color: #0a0b0d;
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.02em;
 }
 
 .identity > span:last-child {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 3px;
 }
 
 .identity strong {
-  font-size: 0.92rem;
-  font-weight: 690;
-}
-
-.identity small {
   overflow: hidden;
-  color: #696e76;
-  font-size: 0.69rem;
-  line-height: 1.4;
+  font-size: 0.8rem;
+  font-weight: 720;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.contract,
+.identity small {
+  color: #565c68;
+  font-size: 0.64rem;
+}
+
 .price {
   display: grid;
   min-width: 0;
-  gap: 5px;
-}
-
-.contract > span,
-.price > span,
-.price > a {
-  color: #62676f;
-  font-size: 0.66rem;
-  line-height: 1.35;
-}
-
-.contract a,
-.price a,
-.sourceLink {
-  color: #22252a;
-  text-decoration-color: #adb1b8;
-  text-underline-offset: 3px;
-}
-
-.contract a {
-  display: inline-flex;
-  width: fit-content;
-  max-width: 100%;
-  align-items: center;
-  gap: 4px;
-}
-
-.contract code {
-  overflow: hidden;
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  font-size: 0.72rem;
-  text-overflow: ellipsis;
-}
-
-.price {
   justify-items: end;
+  gap: 3px;
   text-align: right;
 }
 
 .price strong {
-  font-size: 1rem;
-  font-weight: 620;
+  font-size: 0.92rem;
+  font-weight: 680;
+}
+
+.price span {
+  color: #565c68;
+  font-size: 0.62rem;
+  line-height: 1.3;
 }
 
 .price[data-tone="error"] span {
-  color: #a12b2b;
+  color: #8e2424;
 }
 
 .price[data-tone="ready"] strong {
   color: #0000ff;
 }
 
-.price a {
-  max-width: 18ch;
-}
-
 .emptyMarket {
-  margin: 12px 0 0;
-  color: #666b73;
-  font-size: 0.72rem;
-  line-height: 1.5;
+  margin: 10px 0 0;
+  color: #565c68;
+  font-size: 0.68rem;
 }
 
 .sources {
-  margin-top: 20px;
-  border-top: 1px solid #e0e2e6;
-  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid #e2e4e8;
+  padding-top: 12px;
 }
 
 .sources summary {
   width: fit-content;
-  color: #30343a;
+  color: #32353d;
   cursor: pointer;
-  font-size: 0.75rem;
-  font-weight: 690;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
-.sources > div {
+.disclosureContent {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 18px;
-  max-width: 48rem;
-  padding: 13px 0 0 2px;
+  gap: 9px 16px;
+  padding: 12px 0 0 2px;
 }
 
-.sources p {
+.disclosureContent > p {
   flex-basis: 100%;
+  max-width: 48rem;
   margin: 0;
-  color: #62676f;
-  font-size: 0.72rem;
-  line-height: 1.55;
+  color: #565c68;
+  font-size: 0.68rem;
+  line-height: 1.5;
 }
 
-.sourceLink {
+.sourceLink,
+.contractList a {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 0.72rem;
+  color: #22252a;
+  font-size: 0.68rem;
+  text-decoration-color: #b1b7c3;
+  text-underline-offset: 3px;
 }
 
-.sourceGroup {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 12px;
+.contractList {
+  flex-basis: 100%;
+  margin-top: 2px;
+  border-top: 1px solid #e2e4e8;
+}
+
+.contractList li {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #e2e4e8;
+  color: #565c68;
+  font-size: 0.64rem;
+}
+
+.contractList code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.66rem;
 }
 
 .visuallyHidden {
@@ -304,80 +273,16 @@
   white-space: nowrap;
 }
 
-@media (min-width: 760px) {
-  .intro {
-    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
-    align-items: end;
-  }
-}
-
-@media (max-width: 720px) {
-  .sectionHeading {
-    display: grid;
-    gap: 8px;
-  }
-
-  .sectionHeading > p {
-    white-space: normal;
-  }
-
-  .tableHeading {
-    display: none;
-  }
-
-  .assetTable {
-    margin-top: 20px;
-  }
-
-  .assetRow {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px 16px;
-    min-height: 0;
-    padding: 18px 0;
-  }
-
-  .identity {
-    grid-column: 1;
-  }
-
-  .identity small {
-    white-space: normal;
-  }
-
-  .contract {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    border-top: 1px solid #eceef0;
-    padding-top: 11px;
-  }
-
-  .price {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: center;
-  }
-
-  .price > span,
-  .price > a {
-    max-width: 13ch;
-  }
-}
-
-@media (max-width: 390px) {
-  .experience {
-    border-right: 0;
-    border-left: 0;
-    border-radius: 0;
-  }
-
-  .intro,
+@media (max-width: 520px) {
+  .header,
   .section {
-    padding-right: 18px;
-    padding-left: 18px;
+    padding-right: 16px;
+    padding-left: 16px;
   }
 
-  .initials {
-    width: 38px;
-    height: 38px;
+  .contractList li {
+    display: grid;
+    gap: 3px;
+    padding: 7px 0;
   }
 }

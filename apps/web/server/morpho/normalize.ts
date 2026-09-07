@@ -199,11 +199,18 @@ function readNullableUnsignedInteger(value: unknown, label: string) {
 
 function readNullableRate(value: unknown, label: string) {
   if (value === null || value === undefined) return null;
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) {
-    throw new MorphoSchemaError(`${label} must be a finite number.`);
+
+  if (typeof value === "number") {
+    if (Number.isFinite(value)) return value;
+  } else if (
+    typeof value === "string" &&
+    /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/.test(value)
+  ) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
   }
-  return parsed;
+
+  throw new MorphoSchemaError(`${label} must be a finite number.`);
 }
 
 function readUnixTimestamp(value: unknown, label: string) {

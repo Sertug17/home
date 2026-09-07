@@ -41,9 +41,9 @@ type RegionStyle = CSSProperties & {
 };
 
 const sourceLabels: Record<ResolutionSource, string> = {
-  explicit: "Your choice",
-  persisted: "Saved on this device",
-  detected: "Suggested from country",
+  explicit: "Your country choice",
+  persisted: "Saved country choice",
+  detected: "Suggested country",
   fallback: "No country selected",
 };
 
@@ -143,6 +143,24 @@ export function HomeExperience({
         >
           {brand.name}
         </button>
+
+        <div
+          className="header-country"
+          title={sourceLabels[resolutionSource]}
+        >
+          <CountrySelect
+            value={regionId}
+            onValueChange={selectRegion}
+            describedBy="preference-status"
+          />
+          <p id="preference-status" className="sr-status" aria-live="polite">
+            {preferenceMessage ||
+              (isPreferenceReady
+                ? `${sourceLabels[resolutionSource]}.`
+                : "Checking saved country preference.")}
+          </p>
+        </div>
+
         {account.session ? (
           <button
             className="header-account-link"
@@ -175,41 +193,10 @@ export function HomeExperience({
       </header>
 
       <main className="app-main">
-        <section className="welcome-section" aria-labelledby="welcome-title">
-          <div className="welcome-copy">
-            <p className="eyebrow">{region.welcome.eyebrow}</p>
-            <h1 id="welcome-title">{region.welcome.title}</h1>
-            <p className="welcome-body">{region.welcome.body}</p>
-          </div>
-
-          <div className="locale-control">
-            <div className="field-row">
-              <label htmlFor="country">Country</label>
-              <span className="region-source">
-                <span className="region-indicator" aria-hidden="true" />
-                {sourceLabels[resolutionSource]}
-              </span>
-            </div>
-            <CountrySelect
-              value={regionId}
-              onValueChange={selectRegion}
-              describedBy="country-help preference-status"
-            />
-            <div className="language-row">
-              <span>Language</span>
-              <strong>English</strong>
-            </div>
-            <p id="country-help" className="field-help">
-              Sets currency display only, not eligibility.
-            </p>
-            <p id="preference-status" className="sr-status" aria-live="polite">
-              {preferenceMessage ||
-                (isPreferenceReady
-                  ? "Country preference ready."
-                  : "Checking saved country preference.")}
-            </p>
-          </div>
-        </section>
+        <div className="main-heading">
+          <p className="eyebrow">On Base</p>
+          <h1>Money and assets</h1>
+        </div>
 
         <PrimaryNavigation
           activeNavigation={activeNavigation}
@@ -229,13 +216,14 @@ export function HomeExperience({
               accountAddress={account.session?.smartAccount?.address ?? null}
               accountStatus={account.status}
               onSignIn={() => setIsAccountOpen(true)}
+              onNavigate={navigateTo}
             />
           ) : null}
           {activeNavigation === "save"
-            ? (savingsContent ?? <SavePanel />)
+            ? (savingsContent ?? <EmptyPanel label="Savings" />)
             : null}
           {activeNavigation === "invest"
-            ? (investContent ?? <InvestPanel />)
+            ? (investContent ?? <EmptyPanel label="Investments" />)
             : null}
         </section>
       </main>
@@ -250,173 +238,144 @@ export function HomeExperience({
   );
 }
 
-
 function HomePanel({
   region,
   accountAddress,
   accountStatus,
   onSignIn,
+  onNavigate,
 }: {
   region: PresentationRegion;
   accountAddress: string | null;
   accountStatus: ReturnType<typeof useAccountWallet>["status"];
   onSignIn: () => void;
+  onNavigate: (navigation: NavigationId) => void;
 }) {
   const currencyCode = region.currency.code ?? "Local currency";
   const isChecking = accountStatus === "restoring" || accountStatus === "validating";
   const isVerified = accountStatus === "verified";
 
   return (
-    <div className="home-panel panel-grid">
-      <section className="account-card" aria-labelledby="money-heading">
-        <div className="card-heading-row">
+    <div className="home-panel">
+      <section className="balance-panel" aria-labelledby="balance-heading">
+        <div className="balance-heading-row">
           <div>
-            <p className="section-kicker">Your money</p>
-            <h2 id="money-heading">{capitalize(region.currency.name)}</h2>
+            <p className="section-kicker">Available balance</p>
+            <h2 id="balance-heading">{currencyCode}</h2>
           </div>
           <span className="connection-status">
             <span aria-hidden="true" />
             {accountAddress
-              ? "Verified on Base"
+              ? "Verified"
               : isChecking
-                ? "Checking session"
+                ? "Checking"
                 : isVerified
                   ? "Account pending"
-                  : "Not connected"}
+                  : "Signed out"}
           </span>
         </div>
 
-        <div
-          className="empty-balance"
-          role="group"
-          aria-label={`No live ${region.currency.name} balance available`}
-        >
-          <span aria-hidden="true">{region.currency.symbol ?? ""}</span>
+        <div className="balance-value" aria-label="Balance unavailable">
           <strong aria-hidden="true">—</strong>
+          <span>{accountAddress ? "Balance unavailable" : "Sign in to see balances"}</span>
         </div>
-        <p className="balance-note">
-          {accountAddress
-            ? "Balance is not available until Home connects a verified balance reader."
-            : isChecking
-              ? "Checking for a previously verified account on this device."
-              : "Sign in to view your verified account address."}
-        </p>
-        {accountAddress ? (
-          <div className="account-link" aria-label="Verified Base account address">
-            <code>{accountAddress}</code>
-          </div>
-        ) : isChecking ? null : (
-          <button className="account-link" type="button" onClick={onSignIn}>
-            Sign in to your account
-            <ArrowRightIcon />
-          </button>
-        )}
 
-        <dl className="account-details">
-          <div>
-            <dt>Display currency</dt>
-            <dd>{currencyCode}</dd>
-          </div>
-          <div>
-            <dt>Network</dt>
-            <dd>Base</dd>
-          </div>
-          <div>
-            <dt>Wallet</dt>
-            <dd>
-              {accountAddress
-                ? `${accountAddress.slice(0, 6)}…${accountAddress.slice(-4)}`
-                : isChecking
-                  ? "Checking"
-                  : isVerified
-                    ? "Preparing account"
-                    : "Not connected"}
-            </dd>
-          </div>
-        </dl>
-
-        <div
-          className="action-row"
-          aria-label="Money actions unavailable while signed out"
-        >
+        <div className="action-row" aria-label="Money actions unavailable">
           <UnavailableAction icon={<PlusIcon />} label="Add money" />
           <UnavailableAction icon={<ArrowUpIcon />} label="Send" />
           <UnavailableAction icon={<ArrowDownIcon />} label="Receive" />
         </div>
+
+        {accountAddress ? (
+          <dl className="account-details">
+            <div>
+              <dt>Base account</dt>
+              <dd>
+                <code title={accountAddress}>
+                  {accountAddress.slice(0, 6)}…{accountAddress.slice(-4)}
+                </code>
+              </dd>
+            </div>
+            <div>
+              <dt>Network</dt>
+              <dd>Base</dd>
+            </div>
+          </dl>
+        ) : isChecking ? (
+          <p className="account-message">Checking for a verified account.</p>
+        ) : (
+          <button className="account-link" type="button" onClick={onSignIn}>
+            Sign in to see your account
+            <ArrowRightIcon />
+          </button>
+        )}
       </section>
 
-      <section className="activity-card" aria-labelledby="activity-heading">
-        <div className="card-heading-row">
+      <section className="assets-panel" aria-labelledby="assets-heading">
+        <div className="section-heading-row">
+          <div>
+            <p className="section-kicker">Overview</p>
+            <h2 id="assets-heading">Assets</h2>
+          </div>
+          <span>Balances not connected</span>
+        </div>
+
+        <div className="asset-overview-list">
+          <button type="button" onClick={() => onNavigate("save")}>
+            <span className="asset-mark" aria-hidden="true">$</span>
+            <span className="asset-overview-name">
+              <strong>USDC savings</strong>
+              <small>Compare variable rates</small>
+            </span>
+            <span className="asset-overview-value">
+              <strong>—</strong>
+              <small>Position unavailable</small>
+            </span>
+            <ArrowRightIcon />
+          </button>
+          <button type="button" onClick={() => onNavigate("invest")}>
+            <span className="asset-mark asset-mark-blue" aria-hidden="true">↗</span>
+            <span className="asset-overview-name">
+              <strong>Stocks and memes</strong>
+              <small>Browse assets on Base</small>
+            </span>
+            <span className="asset-overview-value">
+              <strong>—</strong>
+              <small>Holdings unavailable</small>
+            </span>
+            <ArrowRightIcon />
+          </button>
+        </div>
+      </section>
+
+      <section className="activity-panel" aria-labelledby="activity-heading">
+        <div className="section-heading-row">
           <div>
             <p className="section-kicker">Recent</p>
             <h2 id="activity-heading">Activity</h2>
           </div>
-          <span className="activity-state">Account activity</span>
         </div>
-        <div className="empty-state">
-          <p className="empty-state-title">Nothing here yet</p>
-          <p>
-            Your account activity will appear here after you sign in.
-          </p>
-        </div>
+        <p className="empty-activity">No account activity available.</p>
       </section>
     </div>
   );
 }
 
-function SavePanel() {
+function EmptyPanel({ label }: { label: string }) {
   return (
-    <UnavailablePanel
-      kicker="Save"
-      title="A clear place to save."
-      description="Coming soon. See the live rate, provider, and withdrawal terms before moving any money."
-    />
-  );
-}
-
-function InvestPanel() {
-  return (
-    <UnavailablePanel
-      kicker="Invest"
-      title="Invest with the details up front."
-      description="Coming soon. Review eligible assets, current prices, fees, and the exact Base route before you decide."
-    />
-  );
-}
-
-function UnavailablePanel({
-  kicker,
-  title,
-  description,
-}: {
-  kicker: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <section className="unavailable-panel">
-      <div>
-        <p className="section-kicker">{kicker}</p>
-        <h2>{title}</h2>
-        <p>{description}</p>
-      </div>
-      <span className="coming-soon">Coming soon</span>
+    <section className="empty-panel" aria-label={label}>
+      <strong>{label} unavailable</strong>
     </section>
   );
 }
 
 function UnavailableAction({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <button type="button" disabled title={`${label} is unavailable while signed out`}>
+    <button type="button" disabled title={`${label} is not available yet`}>
       {icon}
       <span>{label}</span>
     </button>
   );
-}
-
-
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 const iconProps = {
