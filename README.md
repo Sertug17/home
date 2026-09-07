@@ -4,7 +4,29 @@ An open-source home for your money on Base.
 
 Home is a mobile-first financial app designed around local currencies: sign in by email, hold and move money, add funds through local payment methods, save, and invest.
 
-**Status: design only.** This repository contains the product scope, architecture and build plan. No application or live financial integrations have been implemented yet. Commands and package layouts in the design are proposed, not runnable.
+**Status: credential-free UI/client preview.** Next.js, TypeScript and Tailwind run locally in `apps/web`. The welcome now supports presentation-only country choices for the United States, Brazil, Indonesia and a neutral global fallback; anonymous explicit choices persist in the browser. Home, Save and Invest show truthful unconnected, empty and unavailable states. Authentication, server geo, account preference persistence, database access, wallet data and live financial integrations are not implemented. This is the first UI slice, not full chunk 1; the design documents describe the broader target.
+
+## Run locally
+
+Requires Node.js 22+ and Bun 1.3.12.
+
+```sh
+bun install --frozen-lockfile
+bun dev
+```
+
+Open http://localhost:3000. The dev server binds to loopback only and supports hot reload. No credentials or database are needed for the UI preview. A public CDP project ID may be stored locally for the later provider slice, but the current app does not consume it.
+
+```sh
+bun test        # Focused region, persistence and navigation tests
+bun lint        # ESLint
+bun typecheck   # Next route types and strict TypeScript
+bun build       # Production build
+bun check       # Lint, typecheck and production build
+bun start       # Serve a production build
+```
+
+Edit `apps/web/app/home-experience.tsx` for the interactive preview, `apps/web/app/globals.css` for visual tokens, `apps/web/config/regions.ts` for presentation regions, and `apps/web/config/brand.ts` for branding. Keep one root `bun.lock`; run dependency installs from the repository root. Future local secrets and local public configuration belong in `apps/web/.env.local`, never in source control. See `.env.example` for the current configuration shape.
 
 ## Start here
 
