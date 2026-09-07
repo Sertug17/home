@@ -46,6 +46,11 @@ function deferred<T>() {
 }
 
 describe("Codex market price reader", () => {
+  test("uses the live GetPriceInput schema contract", () => {
+    expect(CODEX_TOKEN_PRICES_QUERY).toContain("$inputs: [GetPriceInput!]!");
+    expect(CODEX_TOKEN_PRICES_QUERY).not.toContain("GetTokenPricesInput");
+  });
+
   test("sends one exact allowlisted Base batch and maps reversed scoped records by contract", async () => {
     const seen: { url?: string; init?: RequestInit; body?: unknown } = {};
     const records = [...investAssets]

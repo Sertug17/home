@@ -3,7 +3,7 @@ export const CODEX_PRICE_SOURCE_LABEL = "Codex";
 export const CODEX_PRICE_SOURCE_URL =
   "https://docs.codex.io/api-reference/queries/gettokenprices";
 
-export const CODEX_TOKEN_PRICES_QUERY = `query GetTokenPrices($inputs: [GetTokenPricesInput!]!) {
+export const CODEX_TOKEN_PRICES_QUERY = `query GetTokenPrices($inputs: [GetPriceInput!]!) {
   getTokenPrices(inputs: $inputs) {
     address
     networkId

@@ -1,6 +1,6 @@
 # Codex market prices
 
-Status: adapter implemented; verification of the rotated/activated key is in progress. See [build status](build-status.md) for the current gate and owner.
+Live verification date: September 7, 2026
 
 Home Invest uses a server-only Codex GraphQL adapter for read-only USD market indications. These snapshots are not executable trade quotes, guarantees, underlying off-chain stock prices, or claims that one token equals one share or one native coin.
 
@@ -34,7 +34,7 @@ Endpoint: `POST https://graph.codex.io/graphql`
 The bounded query is:
 
 ```graphql
-query GetTokenPrices($inputs: [GetTokenPricesInput!]!) {
+query GetTokenPrices($inputs: [GetPriceInput!]!) {
   getTokenPrices(inputs: $inputs) {
     address
     networkId
@@ -59,28 +59,28 @@ Official references reviewed:
 - https://docs.codex.io/get-started
 - https://docs.codex.io/concepts/rate-limits
 
-The public reference currently names the argument element type `GetPriceInput`, while Codex's authenticated example and the verified implementation contract supplied for Home use `GetTokenPricesInput`. The scoped live request was rejected before data/schema verification because the supplied account key was not activated, so this naming discrepancy remains a launch check.
+The authenticated live schema accepts `GetPriceInput`, matching the current public reference. `GetTokenPricesInput` is rejected as an unknown type, so Home now declares the batch variable as `[GetPriceInput!]!`.
 
-## Historical pre-rotation probe
+## Scoped live verification
 
-One bounded batch containing all 11 requested Base contracts was sent on September 7, 2026. The request received HTTP 403 with the provider classification “API key is not activated.” No retry or diagnostic request was made, and no credential or raw response was saved.
+A bounded three-request recovery batch was completed on September 7, 2026. The first diagnostic received HTTP 401 `UNAUTHENTICATED` because the probe's initial loader did not apply dotenv parsing; it is not evidence that the rotated key is invalid. The second request loaded only the scoped credential with Bun's dotenv handling and received HTTP 400: `GetTokenPricesInput` was unknown and the field expected `[GetPriceInput]`. The third and final request used `GetPriceInput`, received HTTP 200 with no GraphQL errors, and returned exactly 11 rows matched to the 11 requested Base contracts. No raw response, header, credential, prefix, or hash was recorded.
 
-Because authorization stopped the request before price data, exact Codex coverage remains unverified for every public asset ID:
+Codex returned a numeric `priceUsd` token and an integer Unix-seconds `timestamp` for every requested contract. At the successful probe around `2026-09-07T23:01:23Z`, 8 of 11 records were within Home's five-minute freshness budget and can flow through the current lossless adapter into the existing `MarketDataState`/`PricedInvestExperience` wrapper. Three records were present but stale and therefore remain explicitly omitted rather than being shown or replaced with an underlying equity or native-asset spot price.
 
-| Asset ID | Base representation | Historical result with previous key |
-| --- | --- | --- |
-| `nvdac` | NVDAc | Unverified — key not activated |
-| `metac` | METAc | Unverified — key not activated |
-| `aaplc` | AAPLc | Unverified — key not activated |
-| `googlc` | GOOGLc | Unverified — key not activated |
-| `degen` | DEGEN | Unverified — key not activated |
-| `toshi` | TOSHI | Unverified — key not activated |
-| `cbbtc` | cbBTC | Unverified — key not activated |
-| `cbxrp` | cbXRP | Unverified — key not activated |
-| `cbdoge` | cbDOGE | Unverified — key not activated |
-| `cbltc` | cbLTC | Unverified — key not activated |
-| `cbada` | cbADA | Unverified — key not activated |
+| Asset ID | Base representation | Source timestamp (UTC) | Current wrapper result at probe time |
+| --- | --- | --- | --- |
+| `nvdac` | NVDAc | `2026-09-07T23:01:03Z` | Fresh; displayable |
+| `metac` | METAc | `2026-09-07T22:59:45Z` | Fresh; displayable |
+| `aaplc` | AAPLc | `2026-09-07T23:01:21Z` | Fresh; displayable |
+| `googlc` | GOOGLc | `2026-09-07T23:00:53Z` | Fresh; displayable |
+| `cbbtc` | cbBTC | `2026-09-07T23:01:21Z` | Fresh; displayable |
+| `cbxrp` | cbXRP | `2026-09-07T23:00:13Z` | Fresh; displayable |
+| `cbdoge` | cbDOGE | `2026-09-07T22:58:09Z` | Fresh; displayable |
+| `cbltc` | cbLTC | `2026-09-07T22:52:23Z` | Present but stale; omitted |
+| `cbada` | cbADA | `2026-09-07T22:56:05Z` | Present but stale; omitted |
+| `degen` | DEGEN | `2026-09-07T23:00:53Z` | Fresh; displayable |
+| `toshi` | TOSHI | `2026-09-07T22:44:15Z` | Present but stale; omitted |
 
-The user has since rotated the key and confirmed activation. The Price Verification worker is now running the authorized bounded batch with that current key to confirm the GraphQL input type, nullable/decimal shape, timestamp units, and exact-contract coverage. The earlier 403 does not describe current activation. Do not substitute an underlying equity or native-network price for a missing Base token price.
+This closes the provider authentication and schema gate for the rotated key. It does not guarantee that every contract will always have a fresh trade-derived timestamp; null, missing, malformed, or stale future reads continue to stay explicit. No main composition change is needed because `app/page.tsx` already renders `PricedInvestExperience`.
 
 Before production display, also review the applicable Codex terms/API agreement for caching, attribution, redistribution, and commercial display rights. Public API access alone is not treated here as a license conclusion.
