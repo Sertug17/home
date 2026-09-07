@@ -14,7 +14,7 @@ Native-currency denomination is distinct from valuation. A balance denominated i
 
 ## Roster grounded in Base's dashboard
 
-Read the [International Stablecoins dashboard](https://dune.com/base_ds/international-stablecoins) and its [source registry query](https://dune.com/queries/4780995) directly. The source lists 34 contract rows, 33 unique token names and 21 non-USD currencies, including two TRYB contracts with different decimals. Its displayed last-run age was four days; the aggregate coverage table was older and omitted some source entries. Use the underlying registry for discovery, then verify selected issuers/contracts rather than treating supply charts as live routing evidence.
+Read the [International Stablecoins dashboard](https://dune.com/base_ds/international-stablecoins) and its [source registry query](https://dune.com/queries/4780995) directly. The source lists 34 contract rows, 33 unique token names and 21 non-USD currencies, including two TRYB contracts with different decimals; the issuer-confirmed deployment is `0xfb8718a69aed7726afb3f04d2bd4bfde1bdcb294` (6 decimals). Its displayed last-run age was four days; the aggregate coverage table was older and omitted some source entries. Use the underlying registry for discovery, then verify selected issuers/contracts rather than treating supply charts as live routing evidence.
 
 The table below is a candidate mapping, not a blanket decision that every token is suitable. Ordering within a currency is not a preference. USDC is added separately from Circle's official Base address documentation.
 
@@ -61,7 +61,7 @@ The JSON preserves dashboard addresses/decimals as candidates with `enabled: fal
 
 ## Verification belongs to the relevant build chunk
 
-Chunk 1 implements country → currency mapping and native-currency labels/formatting with fixtures. Before chunk 2 enables actual holdings, confirm each selected contract against its issuer, read bytecode/decimals/symbol on Base 8453, and record issuer/asset identity. Never infer token decimals from currency fraction digits: IDRX is listed with 2, while other assets use 6, 8 or 18. Resolve the two TRYB deployments before choosing either.
+Chunk 1 implements country → currency mapping and native-currency labels/formatting with fixtures. Before chunk 2 enables actual holdings, confirm each selected contract against its issuer, read bytecode/decimals/symbol on Base 8453, and record issuer/asset identity. Never infer token decimals from currency fraction digits: IDRX is listed with 2, while other assets use 6, 8 or 18. The issuer-confirmed Base deployment is `0xfb8718a69aed7726afb3f04d2bd4bfde1bdcb294` (6 decimals, verified onchain via bilira.co/tr/tryb-kullanimi).
 
 Before chunk 4 or local-funding expansion enables a route, match the provider's network and asset ID to that exact contract; fetch a real country/payment-method quote; verify settlement to the smart account. Record buy/sell support separately, fees/limits and the check date. A token's existence on Base does not establish a one-to-one onramp. These provider checks remain pending; no authenticated Onramper route request was made in this review.
 
