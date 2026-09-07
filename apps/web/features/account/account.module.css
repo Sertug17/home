@@ -75,6 +75,23 @@
   font-weight: 700;
 }
 
+.signInDivider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #717886;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.signInDivider::before,
+.signInDivider::after {
+  height: 1px;
+  flex: 1;
+  background: rgba(10, 11, 13, 0.14);
+  content: "";
+}
+
 .input,
 .otpInput {
   width: 100%;

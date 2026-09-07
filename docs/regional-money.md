@@ -45,6 +45,8 @@ The table below is a candidate mapping, not a blanket decision that every token 
 
 “Euro area” must map to explicitly maintained country codes that use EUR, not every EU country. The dashboard labels it “EU”; Home must not copy that as a blanket country rule. Other currency-using territories need explicit region configuration. A country absent from this roster can still get localized formatting, but Home must not invent a local stablecoin or silently call USDC its local money.
 
+Presentation implementation status (2026-09-07): EUR maps to the 21 current euro-area members — `AT`, `BE`, `BG`, `HR`, `CY`, `EE`, `FI`, `FR`, `DE`, `GR`, `IE`, `IT`, `LV`, `LT`, `LU`, `MT`, `NL`, `PT`, `SK`, `SI`, and `ES`. This includes Bulgaria, which [adopted the euro on 1 January 2026](https://economy-finance.ec.europa.eu/euro/eu-countries-and-euro/bulgaria-and-euro_en). The maintained membership source is the European Union's [Countries using the euro](https://european-union.europa.eu/institutions-law-budget/euro/countries-using-euro_en) page (last updated 12 January 2026). `EU` is not configured as a country code, and non-euro EU members are not mapped to EUR. Overseas and territory mappings remain out of this implementation scope.
+
 ## Choosing the default asset
 
 The [defaults for all 22 currencies](currency-defaults.md) are confirmed: Canada uses CADD and Argentina uses wARS. Additional verification and live-funding holds remain separate from confirmed product choices. No routes are enabled yet.

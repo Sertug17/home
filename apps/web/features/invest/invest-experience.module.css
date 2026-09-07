@@ -75,7 +75,8 @@
   white-space: nowrap;
 }
 
-.restrictionNote {
+.restrictionNote,
+.networkNote {
   margin: 14px 0 0;
   border-left: 3px solid #0000ff;
   background: #f5f6f7;
@@ -83,6 +84,10 @@
   color: #32353d;
   font-size: 0.7rem;
   line-height: 1.45;
+}
+
+.networkNote {
+  border-left-color: #0a0b0d;
 }
 
 .assetTable {
@@ -167,6 +172,14 @@
   font-size: 0.64rem;
 }
 
+.identity .tokenIdentity {
+  overflow: hidden;
+  color: #747b87;
+  font-size: 0.58rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .price {
   display: grid;
   min-width: 0;
@@ -178,6 +191,11 @@
 .price strong {
   font-size: 0.92rem;
   font-weight: 680;
+}
+
+.price small {
+  color: #747b87;
+  font-size: 0.56rem;
 }
 
 .price span {
@@ -248,14 +266,22 @@
 }
 
 .contractList li {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 38px;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 4px 16px;
   border-bottom: 1px solid #e2e4e8;
+  padding: 7px 0;
   color: #565c68;
   font-size: 0.64rem;
+}
+
+.relationship {
+  grid-column: 1 / -1;
+  color: #747b87;
+  font-size: 0.59rem;
+  line-height: 1.4;
 }
 
 .contractList code {
@@ -280,9 +306,18 @@
     padding-left: 16px;
   }
 
+  .tableHeading,
+  .assetRow {
+    grid-template-columns: minmax(0, 1fr) minmax(102px, 0.4fr);
+    gap: 10px;
+  }
+
   .contractList li {
-    display: grid;
+    grid-template-columns: 1fr;
     gap: 3px;
-    padding: 7px 0;
+  }
+
+  .relationship {
+    grid-column: 1;
   }
 }

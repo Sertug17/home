@@ -2,6 +2,10 @@ import "./dom-test-harness";
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AccountWalletSdkBoundary } from "./cdp-client";
+import {
+  BaseAccountConnectorError,
+  type BaseAccountConnector,
+} from "./base-account-connector";
 
 const { act, cleanup, fireEvent, render, waitFor, within } = await import(
   "@testing-library/react"
@@ -24,8 +28,12 @@ function deferred<T>() {
 
 function SheetHarness({
   requestEmailCode,
+  baseAccountEnabled = false,
+  baseAccountConnector,
 }: {
   requestEmailCode: AccountWalletSdkBoundary["signInWithEmail"];
+  baseAccountEnabled?: boolean;
+  baseAccountConnector?: BaseAccountConnector;
 }) {
   const [open, setOpen] = useState(false);
   const sdk = useMemo<AccountWalletSdkBoundary>(
@@ -35,6 +43,11 @@ function SheetHarness({
       ownerKey: null,
       signInWithEmail: requestEmailCode,
       verifyEmailOTP: async () => {},
+      signInWithSiwe: async () => ({
+        flowId: "unused-siwe-flow",
+        message: "unused SIWE message",
+      }),
+      verifySiweSignature: async () => {},
       getAccessToken: async () => null,
       signOut: async () => {},
     }),
@@ -42,7 +55,11 @@ function SheetHarness({
   );
 
   return (
-    <AccountWalletSessionOwner sdk={sdk}>
+    <AccountWalletSessionOwner
+      sdk={sdk}
+      baseAccountEnabled={baseAccountEnabled}
+      baseAccountConnector={baseAccountConnector}
+    >
       <button type="button" onClick={() => setOpen(true)}>
         Open account
       </button>
@@ -114,6 +131,66 @@ describe("production account sign-in sheet", () => {
     expect(cancel.defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(trigger);
     expect(document.body.style.overflow).toBe("");
+  });
+
+  test("shows email and Base Account side by side only when the deployment flag is enabled", async () => {
+    const disabledView = render(
+      <SheetHarness
+        requestEmailCode={async () => ({ flowId: "unused-flow" })}
+      />,
+    );
+    fireEvent.click(page().getByRole("button", { name: "Open account" }));
+    expect(
+      await page().findByRole("button", { name: "Continue with email" }),
+    ).toBeTruthy();
+    expect(
+      page().queryByRole("button", { name: "Continue with Base Account" }),
+    ).toBeNull();
+    disabledView.unmount();
+
+    render(
+      <SheetHarness
+        requestEmailCode={async () => ({ flowId: "unused-flow" })}
+        baseAccountEnabled
+        baseAccountConnector={async () => {
+          throw new BaseAccountConnectorError("cancelled");
+        }}
+      />,
+    );
+    fireEvent.click(page().getByRole("button", { name: "Open account" }));
+    expect(
+      await page().findByRole("button", { name: "Continue with email" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      page().getByRole("button", { name: "Continue with Base Account" }),
+    );
+    expect((await page().findByRole("alert")).textContent).toContain(
+      "Base Account sign-in was canceled",
+    );
+  });
+
+  test("keeps the native dialog modal while Base Account connection is pending", async () => {
+    const connection = deferred<never>();
+    render(
+      <SheetHarness
+        requestEmailCode={async () => ({ flowId: "unused-flow" })}
+        baseAccountEnabled
+        baseAccountConnector={() => connection.promise}
+      />,
+    );
+    fireEvent.click(page().getByRole("button", { name: "Open account" }));
+    const dialog = page().getByRole("dialog", { name: "Sign in to Home" });
+    fireEvent.click(
+      await page().findByRole("button", { name: "Continue with Base Account" }),
+    );
+    expect(
+      await page().findByText("Connecting to your existing Base Account…"),
+    ).toBeTruthy();
+
+    const busyCancel = new Event("cancel", { cancelable: true });
+    fireEvent(dialog, busyCancel);
+    expect(busyCancel.defaultPrevented).toBe(true);
+    expect((dialog as HTMLDialogElement).open).toBe(true);
   });
 
   test("closes on a click outside the dialog surface but not on an inside click", async () => {

@@ -1,19 +1,18 @@
-export const BASE_CHAIN_ID = 8453;
+import {
+  ACCOUNT_PROVIDER_HEADER,
+  BASE_CHAIN_ID,
+  type AccountProvider,
+  type VerifiedAccountSession,
+} from "./session-types";
 
-export type VerifiedAccountSession = {
-  user: {
-    subject: string;
-  };
-  smartAccount: {
-    address: `0x${string}`;
-    chainId: typeof BASE_CHAIN_ID;
-  } | null;
-};
+export { BASE_CHAIN_ID } from "./session-types";
+export type { VerifiedAccountSession } from "./session-types";
 
 export type SessionValidationFailure =
   | "unauthenticated"
   | "unavailable"
-  | "invalid-response";
+  | "invalid-response"
+  | "address-mismatch";
 
 export class SessionValidationError extends Error {
   readonly reason: SessionValidationFailure;
@@ -34,6 +33,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function normalizeAddress(value: string): `0x${string}` {
+  return value.toLowerCase() as `0x${string}`;
+}
+
 function parseSession(value: unknown): VerifiedAccountSession | null {
   if (!isRecord(value) || !isRecord(value.user)) {
     return null;
@@ -44,10 +47,22 @@ function parseSession(value: unknown): VerifiedAccountSession | null {
     return null;
   }
 
+  const accountProvider = value.accountProvider;
+  if (
+    accountProvider !== "cdp-embedded" &&
+    accountProvider !== "base-account"
+  ) {
+    return null;
+  }
+
   if (value.smartAccount === null) {
+    if (accountProvider === "base-account") {
+      return null;
+    }
     return {
       user: { subject },
       smartAccount: null,
+      accountProvider,
     };
   }
 
@@ -67,9 +82,10 @@ function parseSession(value: unknown): VerifiedAccountSession | null {
   return {
     user: { subject },
     smartAccount: {
-      address: address as `0x${string}`,
+      address: normalizeAddress(address),
       chainId: BASE_CHAIN_ID,
     },
+    accountProvider,
   };
 }
 
@@ -95,15 +111,22 @@ export type SessionFetch = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+export type SessionValidationOptions = {
+  accountProvider?: AccountProvider;
+  expectedAddress?: `0x${string}`;
+};
+
 export async function validateAccountSession(
   accessToken: string,
   signal?: AbortSignal,
   fetchImplementation: SessionFetch = fetch,
+  options: SessionValidationOptions = {},
 ): Promise<VerifiedAccountSession> {
   if (!accessToken.trim()) {
     throw new SessionValidationError("unauthenticated");
   }
 
+  const accountProvider = options.accountProvider ?? "cdp-embedded";
   let response: Response;
   try {
     response = await fetchImplementation("/api/session", {
@@ -111,6 +134,7 @@ export async function validateAccountSession(
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${accessToken}`,
+        [ACCOUNT_PROVIDER_HEADER]: accountProvider,
       },
       cache: "no-store",
       credentials: "same-origin",
@@ -139,8 +163,15 @@ export async function validateAccountSession(
   }
 
   const session = parseSession(payload);
-  if (!session) {
+  if (!session || session.accountProvider !== accountProvider) {
     throw new SessionValidationError("invalid-response");
+  }
+
+  if (
+    options.expectedAddress &&
+    session.smartAccount?.address !== normalizeAddress(options.expectedAddress)
+  ) {
+    throw new SessionValidationError("address-mismatch");
   }
 
   return session;

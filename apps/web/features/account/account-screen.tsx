@@ -10,7 +10,11 @@ import {
   type SyntheticEvent,
 } from "react";
 import { classifyEmailCodeError } from "./auth-errors";
-import { useAccountWallet } from "./cdp-client";
+import {
+  BaseAccountLoginError,
+  useAccountWallet,
+  type BaseAccountLoginPhase,
+} from "./cdp-client";
 import styles from "./account.module.css";
 
 const RESEND_COOLDOWN_SECONDS = 30;
@@ -26,6 +30,38 @@ function messageForCodeError(error: unknown): string {
   }
 }
 
+function messageForBaseAccountError(error: unknown): string {
+  if (!(error instanceof BaseAccountLoginError)) {
+    return "Base Account sign-in is unavailable. Your account remains signed out.";
+  }
+
+  switch (error.reason) {
+    case "cancelled":
+      return "Base Account sign-in was canceled. No session was created.";
+    case "account-changed":
+      return "The Base Account changed during sign-in. Reconnect and try again.";
+    case "chain-changed":
+      return "The network changed during sign-in. Switch to Base and try again.";
+    case "verification-unsupported":
+      return "CDP could not verify this Base Account signature. Your account remains signed out; this smart-account signature is not supported by the configured verifier.";
+    case "disabled":
+      return "Base Account sign-in is not enabled for this deployment.";
+    default:
+      return "We could not connect to Base Account. Your account remains signed out.";
+  }
+}
+
+function baseAccountPhaseMessage(phase: BaseAccountLoginPhase): string {
+  switch (phase) {
+    case "connecting":
+      return "Connecting to your existing Base Account…";
+    case "signing":
+      return "Confirm the exact CDP sign-in message in Base Account…";
+    case "verifying":
+      return "Verifying the Base Account signature with CDP…";
+  }
+}
+
 export function AccountSignInSheet({
   open,
   onClose,
@@ -35,11 +71,13 @@ export function AccountSignInSheet({
 }) {
   const {
     projectConfigured,
+    baseAccountEnabled,
     status,
     session,
     message,
     requestEmailCode,
     verifyEmailCode,
+    signInWithBaseAccount,
     retrySessionValidation,
   } = useAccountWallet();
   const [email, setEmail] = useState("");
@@ -48,11 +86,19 @@ export function AccountSignInSheet({
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [baseAccountPhase, setBaseAccountPhase] =
+    useState<BaseAccountLoginPhase | null>(null);
   const [resendAvailableAt, setResendAvailableAt] = useState<number | null>(null);
   const [resendSeconds, setResendSeconds] = useState(0);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
-  const isBusy = isSendingCode || isVerifyingCode;
+  const baseAccountFailed =
+    status === "unavailable" ||
+    status === "signout-error" ||
+    (status === "signed-out" && message !== null);
+  const activeBaseAccountPhase = baseAccountFailed ? null : baseAccountPhase;
+  const isBusy =
+    isSendingCode || isVerifyingCode || activeBaseAccountPhase !== null;
 
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
@@ -187,6 +233,16 @@ export function AccountSignInSheet({
     setResendSeconds(0);
   }
 
+  async function handleBaseAccountSignIn() {
+    setAuthError(null);
+    try {
+      await signInWithBaseAccount(setBaseAccountPhase);
+    } catch (error) {
+      setBaseAccountPhase(null);
+      setAuthError(messageForBaseAccountError(error));
+    }
+  }
+
   const isChecking = status === "restoring" || status === "validating";
 
   return (
@@ -222,7 +278,7 @@ export function AccountSignInSheet({
         </div>
       ) : null}
 
-      {message && status !== "signed-out" ? (
+      {message ? (
         <p className={styles.notice} role="status">
           {message}
         </p>
@@ -233,7 +289,12 @@ export function AccountSignInSheet({
         </p>
       ) : null}
 
-      {isChecking ? (
+      {activeBaseAccountPhase ? (
+        <div className={styles.pendingPanel} aria-live="polite">
+          <span className={styles.spinner} aria-hidden="true" />
+          {baseAccountPhaseMessage(activeBaseAccountPhase)}
+        </div>
+      ) : isChecking ? (
         <div className={styles.pendingPanel} aria-live="polite">
           <span className={styles.spinner} aria-hidden="true" />
           Verifying your secure session…
@@ -330,6 +391,24 @@ export function AccountSignInSheet({
           >
             {isSendingCode ? "Sending code…" : "Continue with email"}
           </button>
+          {baseAccountEnabled ? (
+            <>
+              <div className={styles.signInDivider} role="separator">
+                <span>or</span>
+              </div>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                onClick={() => void handleBaseAccountSignIn()}
+              >
+                Continue with Base Account
+              </button>
+              <p className={styles.fieldHelp}>
+                Uses the existing Base Account you select. Home accepts only
+                the SIWE address returned by server-side CDP verification.
+              </p>
+            </>
+          ) : null}
         </form>
       ) : null}
 

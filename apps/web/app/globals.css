@@ -99,11 +99,15 @@ a:focus-visible,
 
 
 .header-country button[role="combobox"] {
-  min-height: 46px;
-  padding-right: 10px;
-  padding-left: 10px;
+  min-height: 44px;
+  overflow: hidden;
+  padding-right: 12px;
+  padding-left: 12px;
   border-color: var(--line);
+  border-radius: 999px;
   font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-account-link {
@@ -112,7 +116,7 @@ a:focus-visible,
   align-items: center;
   justify-content: center;
   border: 1px solid var(--base-blue);
-  border-radius: 2px;
+  border-radius: 999px;
   background: var(--base-blue);
   color: #ffffff;
   font-size: 0.76rem;
@@ -129,6 +133,152 @@ a:focus-visible,
 
 .app-main {
   padding-top: 22px;
+}
+
+.landing-main,
+.account-state-main {
+  display: grid;
+  min-height: clamp(390px, calc(100svh - 164px), 680px);
+  align-items: center;
+  padding: 64px 2px;
+}
+
+.landing-main-with-visual {
+  gap: 34px;
+}
+
+.landing-hero {
+  width: min(100%, 760px);
+}
+
+.landing-visual {
+  min-width: 0;
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 32px;
+  background: linear-gradient(145deg, #f7f9ff, #eef3ff);
+}
+
+.landing-visual > * {
+  width: 100%;
+  height: 100%;
+}
+
+.landing-hero h1,
+.account-state-card h1 {
+  max-width: 680px;
+  margin: 12px 0 0;
+  font-size: clamp(2.65rem, 11vw, 5.8rem);
+  font-weight: 650;
+  letter-spacing: -0.07em;
+  line-height: 0.94;
+}
+
+.landing-copy,
+.account-state-card > p:not(.eyebrow) {
+  max-width: 560px;
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: clamp(0.92rem, 2.3vw, 1.08rem);
+  line-height: 1.55;
+}
+
+.landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.landing-primary,
+.landing-secondary {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 750;
+  padding: 0 20px;
+}
+
+.landing-primary {
+  border: 1px solid var(--base-blue);
+  background: var(--base-blue);
+  color: #ffffff;
+}
+
+.landing-secondary {
+  border: 1px solid var(--foreground);
+  background: #ffffff;
+  color: var(--foreground);
+}
+
+.landing-status {
+  max-width: 560px;
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  padding: 13px 15px;
+}
+
+.landing-status p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.landing-status button {
+  margin-top: 9px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 750;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.account-state-card {
+  width: min(100%, 620px);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--surface);
+  padding: 28px;
+}
+
+.account-state-card h1 {
+  font-size: clamp(1.9rem, 7vw, 3.4rem);
+}
+
+.account-state-card .landing-primary {
+  margin-top: 22px;
+}
+
+.loading-lines {
+  display: grid;
+  gap: 10px;
+  margin-top: 30px;
+}
+
+.loading-lines span {
+  width: 100%;
+  height: 10px;
+  background: var(--home-gray-100);
+}
+
+.loading-lines span:nth-child(2) {
+  width: 72%;
+}
+
+.loading-lines span:nth-child(3) {
+  width: 43%;
 }
 
 .main-heading {
@@ -180,6 +330,7 @@ a:focus-visible,
 .activity-panel,
 .empty-panel {
   border: 1px solid var(--line);
+  border-radius: 24px;
   background: #ffffff;
 }
 
@@ -190,7 +341,7 @@ a:focus-visible,
 }
 
 .balance-panel {
-  border-top: 3px solid var(--base-blue);
+  background: linear-gradient(155deg, #ffffff 20%, #f6f8ff 100%);
 }
 
 .balance-heading-row,
@@ -220,24 +371,27 @@ a:focus-visible,
 }
 
 .connection-status > span {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
   background: var(--region-accent);
 }
 
 .balance-value {
   display: grid;
-  gap: 6px;
-  min-height: 112px;
+  gap: 10px;
+  min-height: 148px;
   align-content: center;
-  border-bottom: 1px solid var(--line);
+  padding-block: 18px;
 }
 
 .balance-value strong {
-  font-size: clamp(4rem, 22vw, 6.5rem);
-  font-weight: 460;
-  letter-spacing: -0.08em;
-  line-height: 0.72;
+  font-size: clamp(3.4rem, 18vw, 5.8rem);
+  font-weight: 520;
+  letter-spacing: -0.06em;
+  line-height: 0.9;
+  overflow-wrap: anywhere;
+  word-spacing: 0.12em;
 }
 
 .balance-value span {
@@ -249,31 +403,29 @@ a:focus-visible,
 .action-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  border-bottom: 1px solid var(--line);
+  gap: 9px;
 }
 
 .action-row button {
   display: flex;
-  min-height: 58px;
+  min-height: 72px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 5px;
   border: 0;
-  border-right: 1px solid var(--line);
-  background: #ffffff;
-  color: var(--muted);
+  border-radius: 18px;
+  background: #eaf0ff;
+  color: #42516f;
   cursor: not-allowed;
   font-size: 0.68rem;
   font-weight: 700;
-  padding: 0 5px;
-}
-
-.action-row button:last-child {
-  border-right: 0;
+  padding: 10px 5px;
 }
 
 .action-row svg {
-  width: 16px;
+  width: 18px;
+  color: var(--base-blue);
 }
 
 .account-link {
@@ -344,9 +496,33 @@ a:focus-visible,
   text-align: right;
 }
 
-.asset-overview-list {
+.asset-overview-list,
+.supplied-asset-list {
   margin-top: 14px;
-  border-top: 1px solid var(--foreground);
+  border-top: 1px solid var(--line);
+}
+
+.supplied-asset-list {
+  list-style: none;
+  padding: 0;
+}
+
+.supplied-asset-list li {
+  display: grid;
+  min-height: 78px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  border-bottom: 1px solid var(--line);
+  padding: 9px 2px;
+}
+
+.supplied-asset-balance {
+  max-width: min(44vw, 24rem);
+  font-size: 0.88rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .asset-overview-list > button {
@@ -371,10 +547,11 @@ a:focus-visible,
 
 .asset-mark {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   place-items: center;
   border: 1px solid var(--foreground);
+  border-radius: 50%;
   background: var(--foreground);
   color: #ffffff;
   font-size: 0.9rem;
@@ -471,17 +648,38 @@ a:focus-visible,
 
 @media (max-width: 430px) {
   .app-header {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .wordmark {
+    font-size: 1.2rem;
   }
 
   .header-country {
     width: 100%;
-    max-width: 150px;
+    max-width: 118px;
+  }
+
+  .header-account-link {
+    padding-inline: 11px;
   }
 
   .main-heading {
     display: grid;
     gap: 5px;
+  }
+
+  .supplied-asset-list li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .supplied-asset-balance {
+    grid-column: 2;
+    max-width: 100%;
+    justify-self: end;
+    overflow-wrap: anywhere;
+    text-align: right;
   }
 
   .asset-overview-list > button {
@@ -513,6 +711,23 @@ a:focus-visible,
     padding-top: 14px;
   }
 
+  .landing-main,
+  .account-state-main {
+    min-height: calc(100svh - 136px);
+    padding-block: 24px;
+  }
+
+  .landing-hero h1 {
+    font-size: clamp(2.35rem, 8vw, 3.4rem);
+  }
+
+  .landing-copy {
+    margin-top: 14px;
+  }
+
+  .landing-actions {
+    margin-top: 18px;
+  }
 
   .panel-stage {
     margin-top: 10px;
@@ -542,6 +757,15 @@ a:focus-visible,
 
   .app-main {
     padding-top: 28px;
+  }
+
+  .landing-main,
+  .account-state-main {
+    padding-inline: 18px;
+  }
+
+  .landing-main-with-visual {
+    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
   }
 
   .main-heading {

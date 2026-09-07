@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { getAssetPresentation } from "./asset-presentation";
 import {
   BASE_CHAIN_ID,
+  cryptoAssets,
   investAssets,
+  investSources,
   memeAssets,
   shortenContractAddress,
   stockAssets,
@@ -10,8 +13,20 @@ import {
 const evmAddressPattern = /^0x[0-9a-fA-F]{40}$/;
 
 describe("invest asset registry", () => {
-  test("keeps the approved stock roster and Base identities", () => {
-    expect(stockAssets.map((asset) => asset.symbol)).toEqual([
+  test("keeps the approved stock roster, stable IDs, and Base identities", () => {
+    expect(stockAssets.map((asset) => asset.id)).toEqual([
+      "nvdac",
+      "metac",
+      "aaplc",
+      "googlc",
+    ]);
+    expect(stockAssets.map((asset) => asset.displaySymbol)).toEqual([
+      "NVDA",
+      "META",
+      "AAPL",
+      "GOOGL",
+    ]);
+    expect(stockAssets.map((asset) => asset.representation.tokenSymbol)).toEqual([
       "NVDAc",
       "METAc",
       "AAPLc",
@@ -23,11 +38,92 @@ describe("invest asset registry", () => {
       expect(asset.contractAddress).toMatch(evmAddressPattern);
       expect(asset.availability).toBe("restricted");
       expect(asset.descriptor).toContain("Regulation S");
+      expect(asset.displaySymbol).not.toBe(asset.representation.tokenSymbol);
     }
   });
 
+  test("keeps original stock market-source links unchanged", () => {
+    expect(investSources.stockRoster.url).toBe("https://www.base.org/stocks");
+    expect(investSources.stockAnnouncement.url).toBe(
+      "https://blog.base.org/tokenized-stocks",
+    );
+  });
+
+  test("registers only sourced Coinbase-wrapped crypto majors on Base", () => {
+    expect(
+      cryptoAssets.map((asset) => ({
+        id: asset.id,
+        display: asset.displaySymbol,
+        token: asset.representation.tokenSymbol,
+        decimals: asset.representation.decimals,
+        address: asset.contractAddress,
+      })),
+    ).toEqual([
+      {
+        id: "cbbtc",
+        display: "BTC",
+        token: "cbBTC",
+        decimals: 8,
+        address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
+      },
+      {
+        id: "cbxrp",
+        display: "XRP",
+        token: "cbXRP",
+        decimals: 6,
+        address: "0xcb585250f852C6c6bf90434AB21A00f02833a4af",
+      },
+      {
+        id: "cbdoge",
+        display: "DOGE",
+        token: "cbDOGE",
+        decimals: 8,
+        address: "0xcbD06E5A2B0C65597161de254AA074E489dEb510",
+      },
+      {
+        id: "cbltc",
+        display: "LTC",
+        token: "cbLTC",
+        decimals: 8,
+        address: "0xcb17C9Db87B595717C857a08468793f5bAb6445F",
+      },
+      {
+        id: "cbada",
+        display: "ADA",
+        token: "cbADA",
+        decimals: 6,
+        address: "0xcbADA732173e39521CDBE8bf59a6Dc85A9fc7b8c",
+      },
+    ]);
+
+    for (const asset of cryptoAssets) {
+      expect(asset.chainId).toBe(BASE_CHAIN_ID);
+      expect(asset.representation.issuer).toBe("Coinbase");
+      expect(asset.representation.relationship).toContain("Home does not provide redemption");
+      expect(asset.displaySymbol).not.toBe(asset.representation.tokenSymbol);
+    }
+  });
+
+  test("does not treat staking wrappers as par native assets", () => {
+    const tokenSymbols: string[] = cryptoAssets.map(
+      (asset) => asset.representation.tokenSymbol,
+    );
+    const displaySymbols: string[] = cryptoAssets.map(
+      (asset) => asset.displaySymbol,
+    );
+    const assetIds: string[] = investAssets.map((asset) => asset.id);
+
+    expect(tokenSymbols).not.toContain("cbETH");
+    expect(displaySymbols).not.toContain("ETH");
+    expect(assetIds).not.toContain("cbsol");
+  });
+
   test("keeps memes informational and linked to primary project sources", () => {
-    expect(memeAssets.map((asset) => asset.symbol)).toEqual(["DEGEN", "TOSHI"]);
+    expect(memeAssets.map((asset) => asset.displaySymbol)).toEqual(["DEGEN", "TOSHI"]);
+    expect(memeAssets.map((asset) => asset.representation.tokenSymbol)).toEqual([
+      "DEGEN",
+      "TOSHI",
+    ]);
 
     for (const asset of memeAssets) {
       expect(asset.chainId).toBe(BASE_CHAIN_ID);
@@ -38,12 +134,36 @@ describe("invest asset registry", () => {
     }
   });
 
-  test("does not duplicate contract identities", () => {
+  test("uses chain and address, never display ticker, as contract identity", () => {
     const identities = investAssets.map(
       (asset) => `${asset.chainId}:${asset.contractAddress.toLowerCase()}`,
     );
 
     expect(new Set(identities).size).toBe(identities.length);
+    expect(investAssets.map((asset) => asset.id)).toEqual([
+      "nvdac",
+      "metac",
+      "aaplc",
+      "googlc",
+      "cbbtc",
+      "cbxrp",
+      "cbdoge",
+      "cbltc",
+      "cbada",
+      "degen",
+      "toshi",
+    ]);
+  });
+
+  test("presents familiar identity separately from the exact Base token", () => {
+    expect(getAssetPresentation(cryptoAssets[0])).toEqual({
+      primaryName: "Bitcoin",
+      primarySymbol: "BTC",
+      tokenLabel: "cbBTC token representation",
+      networkLabel: "Base 8453",
+      priceUnitLabel: "Per cbBTC token",
+    });
+    expect(getAssetPresentation(memeAssets[0]).tokenLabel).toBe("DEGEN token");
   });
 
   test("truncates only presentation text without changing the registry value", () => {

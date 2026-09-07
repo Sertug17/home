@@ -6,6 +6,10 @@ import {
   type SessionFetch,
   type VerifiedSessionOwner,
 } from "./session-client";
+import {
+  ACCOUNT_PROVIDER_HEADER,
+  isBaseAccountEnabled,
+} from "./session-types";
 
 const TEST_ADDRESS = "0x1111111111111111111111111111111111111111";
 
@@ -22,6 +26,13 @@ describe("account project configuration", () => {
     expect(normalizeProjectId("   ")).toBeNull();
     expect(normalizeProjectId(" test-project ")).toBe("test-project");
   });
+
+  test("enables Base Account only for the explicit operator value", () => {
+    expect(isBaseAccountEnabled(undefined)).toBe(false);
+    expect(isBaseAccountEnabled("")).toBe(false);
+    expect(isBaseAccountEnabled("true")).toBe(false);
+    expect(isBaseAccountEnabled("1")).toBe(true);
+  });
 });
 
 describe("session validation boundary", () => {
@@ -37,6 +48,7 @@ describe("session validation boundary", () => {
       return jsonResponse({
         user: { subject: "cdp:test-subject" },
         smartAccount: { address: TEST_ADDRESS, chainId: 8453 },
+        accountProvider: "cdp-embedded",
       });
     };
 
@@ -54,6 +66,36 @@ describe("session validation boundary", () => {
       new Headers(capturedInit?.headers).get("Authorization"),
     ).toBe("Bearer test-access-token");
     expect(session.smartAccount?.address).toBe(TEST_ADDRESS);
+    expect(session.accountProvider).toBe("cdp-embedded");
+  });
+
+  test("requests Base mode without sending an expected browser address and rejects a server address mismatch", async () => {
+    let capturedHeaders = new Headers();
+    const fetchFixture: SessionFetch = async (_input, init) => {
+      capturedHeaders = new Headers(init?.headers);
+      return jsonResponse({
+        user: { subject: "cdp:siwe-subject" },
+        smartAccount: {
+          address: "0x2222222222222222222222222222222222222222",
+          chainId: 8453,
+        },
+        accountProvider: "base-account",
+      });
+    };
+
+    await expect(
+      validateAccountSession(
+        "test-access-token",
+        undefined,
+        fetchFixture,
+        {
+          accountProvider: "base-account",
+          expectedAddress: TEST_ADDRESS,
+        },
+      ),
+    ).rejects.toMatchObject({ reason: "address-mismatch" });
+    expect(capturedHeaders.get(ACCOUNT_PROVIDER_HEADER)).toBe("base-account");
+    expect([...capturedHeaders.keys()]).not.toContain("x-home-account-address");
   });
 
   test("accepts a verified session whose smart account is not ready", async () => {
@@ -61,6 +103,7 @@ describe("session validation boundary", () => {
       jsonResponse({
         user: { subject: "cdp:test-subject" },
         smartAccount: null,
+        accountProvider: "cdp-embedded",
       });
 
     const session = await validateAccountSession(
@@ -87,6 +130,7 @@ describe("session validation boundary", () => {
       jsonResponse({
         user: { subject: "cdp:test-subject" },
         smartAccount: { address: TEST_ADDRESS, chainId: 1 },
+        accountProvider: "cdp-embedded",
       });
 
     expect(
@@ -108,6 +152,7 @@ describe("private account cleanup", () => {
     session: {
       user: { subject: "cdp:test-subject" },
       smartAccount: { address: TEST_ADDRESS, chainId: 8453 },
+      accountProvider: "cdp-embedded",
     },
   };
 

@@ -1,4 +1,6 @@
+import { getAssetPresentation } from "@/config/asset-presentation";
 import {
+  cryptoAssets,
   investSources,
   memeAssets,
   shortenContractAddress,
@@ -15,11 +17,13 @@ import styles from "./invest-experience.module.css";
 export type InvestExperienceProps = {
   stockMarket?: MarketDataState;
   memeMarket?: MarketDataState;
+  cryptoMarket?: MarketDataState;
 };
 
 export function InvestExperience({
   stockMarket = unavailableMarketData,
   memeMarket = unavailableMarketData,
+  cryptoMarket = unavailableMarketData,
 }: InvestExperienceProps = {}) {
   return (
     <section className={styles.experience} aria-labelledby="invest-title">
@@ -52,8 +56,9 @@ export function InvestExperience({
         >
           <p>
             Coinbase-issued Regulation S instruments are limited to eligible
-            jurisdictions outside the US. Home does not provide eligibility
-            checks or trading.
+            jurisdictions outside the US. Native company tickers are display
+            labels; each Base token and its contract remain distinct. Home does
+            not provide eligibility checks or trading.
           </p>
           <SourceLink
             href={investSources.stockRoster.url}
@@ -90,10 +95,43 @@ export function InvestExperience({
               <SourceLink
                 key={asset.id}
                 href={asset.projectUrl}
-                label={`${asset.name} project`}
+                label={`${asset.displayName} project`}
               />
             ) : null,
           )}
+        </AssetDisclosure>
+      </section>
+
+      <section className={styles.section} aria-labelledby="invest-crypto-title">
+        <div className={styles.sectionHeading}>
+          <div>
+            <p className={styles.sectionIndex}>Crypto</p>
+            <h3 id="invest-crypto-title">Crypto majors on Base</h3>
+          </div>
+          <p>{cryptoAssets.length} assets</p>
+        </div>
+
+        <p className={styles.networkNote} role="note">
+          Coinbase-wrapped ERC-20 tokens on Base, not native-network deposits.
+          Use only the exact Base token and contract shown below.
+        </p>
+
+        <AssetList assets={cryptoAssets} market={cryptoMarket} />
+
+        <AssetDisclosure
+          label="Wrapped token contracts, backing, and source"
+          assets={cryptoAssets}
+        >
+          <p>
+            Coinbase describes these tokens as 1:1 representations of assets it
+            holds. That backing statement does not create an exchange or
+            redemption route in Home, and every displayed price is per wrapped
+            token on Base.
+          </p>
+          <SourceLink
+            href={investSources.coinbaseWrappedAssets.url}
+            label={investSources.coinbaseWrappedAssets.label}
+          />
         </AssetDisclosure>
       </section>
     </section>
@@ -135,6 +173,7 @@ function AssetRow({
   market: MarketDataState;
 }) {
   const price = getMarketDisplay(asset.id, market);
+  const presentation = getAssetPresentation(asset);
 
   return (
     <li className={styles.assetRow}>
@@ -143,17 +182,23 @@ function AssetRow({
           {asset.initials}
         </span>
         <span>
-          <strong>{asset.name}</strong>
-          <small>{asset.symbol}</small>
+          <strong>{presentation.primaryName}</strong>
+          <small>{presentation.primarySymbol}</small>
+          <small className={styles.tokenIdentity}>
+            {presentation.tokenLabel} · {presentation.networkLabel}
+          </small>
         </span>
       </div>
 
       <div className={styles.price} data-tone={price.tone}>
         <strong>{price.value}</strong>
+        <small>{presentation.priceUnitLabel}</small>
         <span>
-          {price.sourceUrl
-            ? <SourceLink href={price.sourceUrl} label={price.detail} />
-            : price.detail}
+          {price.sourceUrl ? (
+            <SourceLink href={price.sourceUrl} label={price.detail} />
+          ) : (
+            price.detail
+          )}
         </span>
       </div>
     </li>
@@ -175,18 +220,29 @@ function AssetDisclosure({
       <div className={styles.disclosureContent}>
         {children}
         <ul className={styles.contractList}>
-          {assets.map((asset) => (
-            <li key={asset.id}>
-              <span>{asset.symbol} · Base {asset.chainId}</span>
-              <a href={asset.contractUrl} target="_blank" rel="noreferrer">
-                <code>{shortenContractAddress(asset.contractAddress)}</code>
-                <ExternalIcon />
-                <span className={styles.visuallyHidden}>
-                  View {asset.symbol} contract in a new tab
+          {assets.map((asset) => {
+            const presentation = getAssetPresentation(asset);
+            const decimals = asset.representation.decimals;
+
+            return (
+              <li key={asset.id}>
+                <span>
+                  {presentation.primarySymbol} display · {asset.representation.tokenSymbol} · {presentation.networkLabel}
+                  {decimals === undefined ? "" : ` · ${decimals} decimals`}
                 </span>
-              </a>
-            </li>
-          ))}
+                <a href={asset.contractUrl} target="_blank" rel="noreferrer">
+                  <code>{shortenContractAddress(asset.contractAddress)}</code>
+                  <ExternalIcon />
+                  <span className={styles.visuallyHidden}>
+                    View {asset.representation.tokenSymbol} contract in a new tab
+                  </span>
+                </a>
+                <small className={styles.relationship}>
+                  {asset.representation.relationship}
+                </small>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </details>

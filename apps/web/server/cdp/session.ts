@@ -1,18 +1,17 @@
-export const BASE_CHAIN_ID = 8453 as const;
+import {
+  ACCOUNT_PROVIDER_HEADER,
+  BASE_CHAIN_ID,
+  type AccountProvider,
+  type VerifiedAccountSession,
+} from "@/features/account/session-types";
 
-export type SessionPayload = {
-  user: {
-    subject: string;
-  };
-  smartAccount: {
-    address: string;
-    chainId: typeof BASE_CHAIN_ID;
-  } | null;
-};
+export { BASE_CHAIN_ID } from "@/features/account/session-types";
+export type SessionPayload = VerifiedAccountSession;
 
 export type VerifiedEndUser = {
   userId: unknown;
-  evmSmartAccountObjects: unknown;
+  authenticationMethods?: unknown;
+  evmSmartAccountObjects?: unknown;
 };
 
 export interface AccessTokenValidator {
@@ -44,56 +43,96 @@ const compactJwtPattern = /^[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+$/;
 const evmAddressPattern = /^0x[0-9a-fA-F]{40}$/;
 const subjectPattern = /^[a-zA-Z0-9-]{1,100}$/;
 
-function normalizeVerifiedEndUser(value: unknown): SessionPayload {
+function normalizeAddress(value: unknown): `0x${string}` {
+  if (typeof value !== "string" || !evmAddressPattern.test(value)) {
+    throw new InvalidVerifiedIdentityError();
+  }
+  return value.toLowerCase() as `0x${string}`;
+}
+
+function normalizeEmbeddedAddress(value: VerifiedEndUser): `0x${string}` | null {
+  if (!Array.isArray(value.evmSmartAccountObjects)) {
+    throw new InvalidVerifiedIdentityError();
+  }
+
+  const smartAccounts = value.evmSmartAccountObjects.map((account) => {
+    if (!account || typeof account !== "object" || !("address" in account)) {
+      throw new InvalidVerifiedIdentityError();
+    }
+    return normalizeAddress(account.address);
+  });
+
+  return smartAccounts[0] ?? null;
+}
+
+function normalizeSiweAddress(value: VerifiedEndUser): `0x${string}` {
+  if (!Array.isArray(value.authenticationMethods)) {
+    throw new InvalidVerifiedIdentityError();
+  }
+
+  const siweAddresses = new Set<`0x${string}`>();
+  for (const method of value.authenticationMethods) {
+    if (
+      method &&
+      typeof method === "object" &&
+      "type" in method &&
+      method.type === "siwe"
+    ) {
+      if (!("address" in method)) {
+        throw new InvalidVerifiedIdentityError();
+      }
+      siweAddresses.add(normalizeAddress(method.address));
+    }
+  }
+
+  if (siweAddresses.size !== 1) {
+    throw new InvalidVerifiedIdentityError();
+  }
+
+  return [...siweAddresses][0];
+}
+
+function normalizeVerifiedEndUser(
+  value: unknown,
+  accountProvider: AccountProvider,
+): SessionPayload {
   if (!value || typeof value !== "object") {
     throw new InvalidVerifiedIdentityError();
   }
 
   const endUser = value as VerifiedEndUser;
-
   if (typeof endUser.userId !== "string" || !subjectPattern.test(endUser.userId)) {
     throw new InvalidVerifiedIdentityError();
   }
 
-  if (!Array.isArray(endUser.evmSmartAccountObjects)) {
-    throw new InvalidVerifiedIdentityError();
-  }
-
-  const smartAccounts = endUser.evmSmartAccountObjects.map((account) => {
-    if (!account || typeof account !== "object" || !("address" in account)) {
-      throw new InvalidVerifiedIdentityError();
-    }
-
-    const address = account.address;
-
-    if (typeof address !== "string" || !evmAddressPattern.test(address)) {
-      throw new InvalidVerifiedIdentityError();
-    }
-
-    return address.toLowerCase();
-  });
+  const address =
+    accountProvider === "base-account"
+      ? normalizeSiweAddress(endUser)
+      : normalizeEmbeddedAddress(endUser);
 
   return {
     user: {
       subject: endUser.userId,
     },
-    smartAccount: smartAccounts[0]
+    smartAccount: address
       ? {
-          address: smartAccounts[0],
+          address,
           chainId: BASE_CHAIN_ID,
         }
       : null,
+    accountProvider,
   };
 }
 
 export type SessionHandlerDependencies = {
   getValidator: () => Promise<AccessTokenValidator>;
+  baseAccountEnabled?: boolean;
 };
 
 const privateResponseHeaders = {
   "Cache-Control": "private, no-store, max-age=0",
   Pragma: "no-cache",
-  Vary: "Authorization",
+  Vary: `Authorization, ${ACCOUNT_PROVIDER_HEADER}`,
 } as const;
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -127,8 +166,32 @@ function authUnavailableResponse(): Response {
   );
 }
 
+function baseAccountDisabledResponse(): Response {
+  return jsonResponse(
+    {
+      error: {
+        code: "BASE_ACCOUNT_DISABLED",
+        message: "Base Account sign-in is not enabled.",
+      },
+    },
+    403,
+  );
+}
+
+function invalidProviderResponse(): Response {
+  return jsonResponse(
+    {
+      error: {
+        code: "INVALID_ACCOUNT_PROVIDER",
+        message: "The requested account provider is not supported.",
+      },
+    },
+    400,
+  );
+}
+
 function readBearerToken(request: Request): string | null {
-  const authorization = request.headers.get("authorization");
+  const authorization = request.headers.get("Authorization");
 
   if (!authorization) {
     return null;
@@ -144,18 +207,39 @@ function readBearerToken(request: Request): string | null {
   return token;
 }
 
-export function createSessionHandler({ getValidator }: SessionHandlerDependencies) {
+function readAccountProvider(request: Request): AccountProvider | null {
+  const requested = request.headers.get(ACCOUNT_PROVIDER_HEADER);
+  if (requested === null || requested === "cdp-embedded") {
+    return "cdp-embedded";
+  }
+  if (requested === "base-account") {
+    return "base-account";
+  }
+  return null;
+}
+
+export function createSessionHandler({
+  getValidator,
+  baseAccountEnabled = false,
+}: SessionHandlerDependencies) {
   return async function GET(request: Request): Promise<Response> {
     const accessToken = readBearerToken(request);
-
     if (!accessToken) {
       return unauthenticatedResponse();
+    }
+
+    const accountProvider = readAccountProvider(request);
+    if (!accountProvider) {
+      return invalidProviderResponse();
+    }
+    if (accountProvider === "base-account" && !baseAccountEnabled) {
+      return baseAccountDisabledResponse();
     }
 
     try {
       const validator = await getValidator();
       const verifiedEndUser = await validator.validateAccessToken(accessToken);
-      const session = normalizeVerifiedEndUser(verifiedEndUser);
+      const session = normalizeVerifiedEndUser(verifiedEndUser, accountProvider);
 
       return jsonResponse(session, 200);
     } catch (error) {

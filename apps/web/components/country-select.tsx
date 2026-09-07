@@ -42,9 +42,28 @@ export function CountrySelect({
         <Select.Content
           position="popper"
           sideOffset={6}
-          className="z-50 max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[4px] border border-[#b1b7c3] bg-white p-1 text-[#0a0b0d]"
+          onKeyDownCapture={(event) => {
+            if (event.key !== "Home" && event.key !== "End") return;
+
+            const options = Array.from(
+              event.currentTarget.querySelectorAll<HTMLElement>(
+                '[role="option"]:not([data-disabled])',
+              ),
+            );
+            const target = event.key === "Home" ? options[0] : options.at(-1);
+            if (!target) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            target.focus();
+          }}
+          className="z-50 max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[4px] border border-[#b1b7c3] bg-white p-1 text-[#0a0b0d] shadow-[0_12px_32px_rgba(10,11,13,0.16)]"
         >
-          <Select.Viewport>
+          <Select.ScrollUpButton className="flex h-8 cursor-default items-center justify-center bg-white text-[#32353d]">
+            <ScrollChevronIcon direction="up" />
+            <span className="sr-only">Scroll to earlier countries</span>
+          </Select.ScrollUpButton>
+          <Select.Viewport className="max-h-[min(20rem,var(--radix-select-content-available-height))] overscroll-contain">
             {regionIds.map((id) => (
               <Select.Item
                 key={id}
@@ -61,6 +80,10 @@ export function CountrySelect({
               </Select.Item>
             ))}
           </Select.Viewport>
+          <Select.ScrollDownButton className="flex h-8 cursor-default items-center justify-center bg-white text-[#32353d]">
+            <ScrollChevronIcon direction="down" />
+            <span className="sr-only">Scroll to later countries</span>
+          </Select.ScrollDownButton>
         </Select.Content>
       </Select.Portal>
     </Select.Root>
@@ -80,6 +103,24 @@ function ChevronIcon() {
       strokeLinejoin="round"
     >
       <path d="m8 10 4 4 4-4" />
+    </svg>
+  );
+}
+
+function ScrollChevronIcon({ direction }: { direction: "up" | "down" }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={direction === "up" ? "m8 14 4-4 4 4" : "m8 10 4 4 4-4"} />
     </svg>
   );
 }

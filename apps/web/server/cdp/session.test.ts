@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { ACCOUNT_PROVIDER_HEADER } from "@/features/account/session-types";
 import {
   AuthUnavailableError,
   InvalidAccessTokenError,
@@ -8,25 +9,45 @@ import {
 
 const requestUrl = "http://127.0.0.1:3103/api/session";
 const smartAccountAddress = "0xAbCdEf0123456789aBCdef0123456789abCDef01";
+const siweAddress = "0x1234567890abcdef1234567890ABCDEF12345678";
 
-function makeRequest(authorization?: string): Request {
-  return new Request(requestUrl, {
-    headers: authorization ? { Authorization: authorization } : undefined,
-  });
+function makeRequest(
+  authorization?: string,
+  accountProvider?: string,
+): Request {
+  const headers = new Headers();
+  if (authorization) {
+    headers.set("Authorization", authorization);
+  }
+  if (accountProvider) {
+    headers.set(ACCOUNT_PROVIDER_HEADER, accountProvider);
+  }
+  return new Request(requestUrl, { headers });
 }
 
 function makeHandler(
   validateAccessToken: AccessTokenValidator["validateAccessToken"],
-  getValidator: () => Promise<AccessTokenValidator> = async () => ({ validateAccessToken }),
+  getValidator: () => Promise<AccessTokenValidator> = async () => ({
+    validateAccessToken,
+  }),
+  baseAccountEnabled = false,
 ) {
-  return createSessionHandler({ getValidator });
+  return createSessionHandler({ getValidator, baseAccountEnabled });
 }
 
-async function expectPrivateJson(response: Response, status: number, body: unknown) {
+async function expectPrivateJson(
+  response: Response,
+  status: number,
+  body: unknown,
+) {
   expect(response.status).toBe(status);
-  expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+  expect(response.headers.get("cache-control")).toBe(
+    "private, no-store, max-age=0",
+  );
   expect(response.headers.get("pragma")).toBe("no-cache");
-  expect(response.headers.get("vary")).toBe("Authorization");
+  expect(response.headers.get("vary")).toBe(
+    `Authorization, ${ACCOUNT_PROVIDER_HEADER}`,
+  );
   expect(await response.json()).toEqual(body);
 }
 
@@ -56,9 +77,9 @@ describe("GET /api/session handler", () => {
       makeRequest(),
       makeRequest("Basic abc"),
       makeRequest("Bearer"),
-      makeRequest("Bearer token,other"),
-      makeRequest("Bearer token with-space"),
-      makeRequest("Bearer not-a-compact-jwt"),
+      makeRequest("Bearer not-a-jwt"),
+      makeRequest("Bearer token.with space.value"),
+      makeRequest("Bearer token.value.extra,other"),
     ]) {
       await expectPrivateJson(await handler(request), 401, unauthenticatedBody);
     }
@@ -83,7 +104,10 @@ describe("GET /api/session handler", () => {
   });
 
   test("maps invalid and expired provider tokens to 401", async () => {
-    for (const error of [new InvalidAccessTokenError(), new InvalidAccessTokenError()]) {
+    for (const error of [
+      new InvalidAccessTokenError(),
+      new InvalidAccessTokenError(),
+    ]) {
       const handler = makeHandler(async () => {
         throw error;
       });
@@ -96,58 +120,159 @@ describe("GET /api/session handler", () => {
     }
   });
 
-  test("returns only verified identity and the first verified smart account", async () => {
+  test("returns only verified identity and the first verified embedded smart account by default", async () => {
     const handler = makeHandler(async () => ({
       userId: "cdp-user-123",
-      authenticationMethods: [{ type: "email", email: "private@example.com" }],
-      evmAccounts: ["0x1111111111111111111111111111111111111111"],
-      evmAccountObjects: [
-        {
-          address: "0x1111111111111111111111111111111111111111",
-          createdAt: "2026-09-07T00:00:00Z",
-        },
+      authenticationMethods: [
+        { type: "email", email: "private@example.com" },
+        { type: "siwe", address: siweAddress },
       ],
+      evmAccounts: ["0x1111111111111111111111111111111111111111"],
       evmSmartAccountObjects: [
         {
           address: smartAccountAddress,
           ownerAddresses: ["0x1111111111111111111111111111111111111111"],
-          createdAt: "2026-09-07T00:00:00Z",
         },
         {
           address: "0x2222222222222222222222222222222222222222",
           ownerAddresses: ["0x3333333333333333333333333333333333333333"],
-          createdAt: "2026-09-07T00:00:01Z",
         },
       ],
       providerInternalField: "must-not-leak",
     }));
 
-    await expectPrivateJson(await handler(makeRequest("Bearer valid.token.value")), 200, {
-      user: { subject: "cdp-user-123" },
-      smartAccount: {
-        address: smartAccountAddress.toLowerCase(),
-        chainId: 8453,
+    await expectPrivateJson(
+      await handler(makeRequest("Bearer verified.token.value")),
+      200,
+      {
+        user: { subject: "cdp-user-123" },
+        smartAccount: {
+          address: smartAccountAddress.toLowerCase(),
+          chainId: 8453,
+        },
+        accountProvider: "cdp-embedded",
       },
-    });
+    );
   });
 
-  test("returns null when the verified identity has no smart account and never uses the EOA", async () => {
+  test("selects only the server-verified SIWE address for explicit Base Account mode", async () => {
+    const handler = makeHandler(
+      async () => ({
+        userId: "cdp-siwe-user",
+        authenticationMethods: [
+          { type: "siwe", address: siweAddress },
+        ],
+        evmSmartAccountObjects: [{ address: smartAccountAddress }],
+      }),
+      undefined,
+      true,
+    );
+
+    await expectPrivateJson(
+      await handler(
+        makeRequest("Bearer verified.token.value", "base-account"),
+      ),
+      200,
+      {
+        user: { subject: "cdp-siwe-user" },
+        smartAccount: {
+          address: siweAddress.toLowerCase(),
+          chainId: 8453,
+        },
+        accountProvider: "base-account",
+      },
+    );
+  });
+
+  test("rejects Base Account mode while the deployment flag is off before provider access", async () => {
+    let calls = 0;
+    const handler = makeHandler(async () => {
+      calls += 1;
+      return {};
+    });
+
+    await expectPrivateJson(
+      await handler(makeRequest("Bearer verified.token.value", "base-account")),
+      403,
+      {
+        error: {
+          code: "BASE_ACCOUNT_DISABLED",
+          message: "Base Account sign-in is not enabled.",
+        },
+      },
+    );
+    expect(calls).toBe(0);
+  });
+
+  test("rejects unknown account-provider selectors before provider access", async () => {
+    let calls = 0;
+    const handler = makeHandler(async () => {
+      calls += 1;
+      return {};
+    });
+
+    await expectPrivateJson(
+      await handler(makeRequest("Bearer verified.token.value", "browser-wallet")),
+      400,
+      {
+        error: {
+          code: "INVALID_ACCOUNT_PROVIDER",
+          message: "The requested account provider is not supported.",
+        },
+      },
+    );
+    expect(calls).toBe(0);
+  });
+
+  test("fails closed when Base mode has no single valid verified SIWE address", async () => {
+    for (const authenticationMethods of [
+      [],
+      [{ type: "email", email: "private@example.com" }],
+      [{ type: "siwe" }],
+      [{ type: "siwe", address: "not-an-address" }],
+      [
+        { type: "siwe", address: siweAddress },
+        {
+          type: "siwe",
+          address: "0x9999999999999999999999999999999999999999",
+        },
+      ],
+    ]) {
+      const handler = makeHandler(
+        async () => ({
+          userId: "cdp-siwe-user",
+          authenticationMethods,
+          evmSmartAccountObjects: [{ address: smartAccountAddress }],
+        }),
+        undefined,
+        true,
+      );
+      await expectPrivateJson(
+        await handler(
+          makeRequest("Bearer verified.token.value", "base-account"),
+        ),
+        503,
+        unavailableBody,
+      );
+    }
+  });
+
+  test("returns null when the verified identity has no embedded smart account and never uses the EOA", async () => {
     const handler = makeHandler(async () => ({
       userId: "cdp-user-without-smart-account",
       evmAccounts: ["0x1111111111111111111111111111111111111111"],
-      evmAccountObjects: [
-        {
-          address: "0x1111111111111111111111111111111111111111",
-          createdAt: "2026-09-07T00:00:00Z",
-        },
-      ],
       evmSmartAccountObjects: [],
     }));
 
-    await expectPrivateJson(await handler(makeRequest("Bearer valid.token.value")), 200, {
-      user: { subject: "cdp-user-without-smart-account" },
-      smartAccount: null,
-    });
+    await expectPrivateJson(
+      await handler(makeRequest("Bearer verified.token.value")),
+      200,
+      {
+        user: { subject: "cdp-user-without-smart-account" },
+        smartAccount: null,
+        accountProvider: "cdp-embedded",
+      },
+    );
   });
 
   test("fails closed when provider configuration or transport is unavailable", async () => {
@@ -158,31 +283,36 @@ describe("GET /api/session handler", () => {
       },
     );
     const providerFailureHandler = makeHandler(async () => {
-      throw new AuthUnavailableError(new Error("provider payload with sensitive details"));
+      throw new AuthUnavailableError(
+        new Error("provider payload with sensitive details"),
+      );
     });
 
     await expectPrivateJson(
-      await missingConfigHandler(makeRequest("Bearer valid.token.value")),
+      await missingConfigHandler(makeRequest("Bearer verified.token.value")),
       503,
       unavailableBody,
     );
     await expectPrivateJson(
-      await providerFailureHandler(makeRequest("Bearer valid.token.value")),
+      await providerFailureHandler(makeRequest("Bearer verified.token.value")),
       503,
       unavailableBody,
     );
   });
 
-  test("fails closed on malformed verified provider identity data", async () => {
+  test("fails closed on malformed verified embedded identity data", async () => {
     for (const providerValue of [
       null,
       { userId: "bad subject!", evmSmartAccountObjects: [] },
-      { userId: "cdp-user", evmSmartAccountObjects: [{ address: "not-an-address" }] },
+      {
+        userId: "cdp-user",
+        evmSmartAccountObjects: [{ address: "not-an-address" }],
+      },
       { userId: "cdp-user", evmSmartAccountObjects: undefined },
     ]) {
       const handler = makeHandler(async () => providerValue);
       await expectPrivateJson(
-        await handler(makeRequest("Bearer valid.token.value")),
+        await handler(makeRequest("Bearer verified.token.value")),
         503,
         unavailableBody,
       );

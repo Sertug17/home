@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { getMarketDisplay, type MarketDataState } from "./invest-market";
 
 describe("invest market display", () => {
-  test("never coerces unavailable, loading, or failed prices to zero", () => {
+  test("never coerces unavailable, loading, failed, or missing crypto prices to zero", () => {
     const states: MarketDataState[] = [
       { status: "unavailable" },
       { status: "loading" },
@@ -12,6 +12,8 @@ describe("invest market display", () => {
 
     for (const state of states) {
       expect(getMarketDisplay("nvdac", state).value).toBe("—");
+      expect(getMarketDisplay("cbbtc", state).value).toBe("—");
+      expect(getMarketDisplay("cbbtc", state).value).not.toBe("0");
     }
   });
 

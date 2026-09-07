@@ -6,26 +6,40 @@ import {
 } from "./country-preference";
 
 describe("anonymous country preference", () => {
-  test("reads a supported persisted override", () => {
-    const storage = { getItem: () => "br" };
-
-    expect(readAnonymousCountryPreference(() => storage)).toBe("BR");
+  test("reads original and expanded supported persisted overrides", () => {
+    for (const [stored, expected] of [
+      ["global", "GLOBAL"],
+      ["us", "US"],
+      ["br", "BR"],
+      ["id", "ID"],
+      ["fr", "FR"],
+      ["ca", "CA"],
+      ["tr", "TR"],
+    ] as const) {
+      const storage = { getItem: () => stored };
+      expect(readAnonymousCountryPreference(() => storage)).toBe(expected);
+    }
   });
 
-  test("rejects an unknown persisted value", () => {
-    const storage = { getItem: () => "FR" };
-
-    expect(readAnonymousCountryPreference(() => storage)).toBeNull();
+  test("rejects unknown and held persisted values", () => {
+    for (const stored of ["ZZ", "TZ", "UG", "TH"]) {
+      const storage = { getItem: () => stored };
+      expect(readAnonymousCountryPreference(() => storage)).toBeNull();
+    }
   });
 
-  test("writes the explicit selection using the versioned key", () => {
+  test("writes explicit selections using the versioned key", () => {
     const writes: Array<[string, string]> = [];
     const storage = {
       setItem: (key: string, value: string) => writes.push([key, value]),
     };
 
     expect(writeAnonymousCountryPreference(() => storage, "ID")).toBe(true);
-    expect(writes).toEqual([[anonymousCountryPreferenceKey, "ID"]]);
+    expect(writeAnonymousCountryPreference(() => storage, "FR")).toBe(true);
+    expect(writes).toEqual([
+      [anonymousCountryPreferenceKey, "ID"],
+      [anonymousCountryPreferenceKey, "FR"],
+    ]);
   });
 
   test("fails closed when storage methods are unavailable", () => {

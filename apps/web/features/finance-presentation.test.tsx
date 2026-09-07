@@ -57,6 +57,8 @@ describe("finance-first presentation", () => {
     expect(markup).toContain('id="invest-stocks-title"');
     expect(markup).toContain("NVIDIA");
     expect(markup).toContain("Degen");
+    expect(markup).toContain("Bitcoin");
+    expect(markup).toContain("cbBTC token representation · Base 8453");
     expect(markup).toContain("Price unavailable");
     expect(markup).not.toContain(">0.00<");
     expect(markup.indexOf("NVIDIA")).toBeLessThan(
@@ -65,6 +67,39 @@ describe("finance-first presentation", () => {
     expect(markup.indexOf("Degen")).toBeLessThan(
       markup.indexOf("Meme contracts, risks, and sources"),
     );
+    expect(markup.indexOf("Bitcoin")).toBeLessThan(
+      markup.indexOf("Wrapped token contracts, backing, and source"),
+    );
+    expect(markup).not.toContain("<form");
+    expect(markup).not.toContain("<button");
+    expect(markup).not.toContain("Approve");
+    expect(markup).not.toContain("Sign transaction");
+  });
+
+  test("labels a crypto snapshot per wrapped token without implying native-asset parity", () => {
+    const markup = renderToStaticMarkup(
+      <InvestExperience
+        cryptoMarket={{
+          status: "ready",
+          snapshots: [
+            {
+              assetId: "cbbtc",
+              displayPrice: "$100,000 supplied",
+              asOf: "2026-09-07T20:00:00.000Z",
+              sourceLabel: "Crypto fixture",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(markup).toContain("Bitcoin");
+    expect(markup).toContain("BTC");
+    expect(markup).toContain("cbBTC token representation");
+    expect(markup).toContain("Per cbBTC token");
+    expect(markup).toContain("$100,000 supplied");
+    expect(markup).not.toContain("1 cbBTC = 1 BTC");
+    expect(markup).not.toContain("cbETH");
   });
 
   test("keeps the supplied price provenance link on an asset row", () => {
