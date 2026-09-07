@@ -14,13 +14,13 @@ import {
 import { navigationItems, type NavigationId } from "@/config/navigation";
 import {
   presentationRegions,
-  regionIds,
   resolvePresentation,
   type PresentationRegion,
   type RegionId,
   type ResolutionSource,
 } from "@/config/regions";
 import { brand } from "@/config/brand";
+import { CountrySelect } from "@/components/country-select";
 
 type HomeExperienceProps = {
   detectedCountry?: string | null;
@@ -147,23 +147,11 @@ export function HomeExperience({
                 {sourceLabels[resolutionSource]}
               </span>
             </div>
-            <div className="select-wrap">
-              <select
-                id="country"
-                value={regionId}
-                onChange={(event) =>
-                  selectRegion(event.target.value as RegionId)
-                }
-                aria-describedby="country-help preference-status"
-              >
-                {regionIds.map((id) => (
-                  <option key={id} value={id}>
-                    {presentationRegions[id].selectorLabel}
-                  </option>
-                ))}
-              </select>
-              <ChevronIcon />
-            </div>
+            <CountrySelect
+              value={regionId}
+              onValueChange={selectRegion}
+              describedBy="country-help preference-status"
+            />
             <div className="language-row">
               <span>Language</span>
               <strong>English</strong>
@@ -389,13 +377,6 @@ const iconProps = {
   "aria-hidden": true,
 };
 
-function ChevronIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="m8 10 4 4 4-4" />
-    </svg>
-  );
-}
 function HomeIcon() {
   return (
     <svg {...iconProps}>
