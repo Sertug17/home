@@ -16,7 +16,7 @@ type CdpSdkModule = {
   CdpClient: new (options: { apiKeyId: string; apiKeySecret: string }) => CdpClientLike;
 };
 
-type CdpEnvironment = Readonly<Record<string, string | undefined>>;
+type CdpEnvironment = Record<string, string | undefined>;
 
 type CreateValidatorOptions = {
   env?: CdpEnvironment;
@@ -57,6 +57,15 @@ async function loadCdpSdk(): Promise<CdpSdkModule> {
   return import("@coinbase/cdp-sdk");
 }
 
+function applyCdpTelemetryDefaults(env: CdpEnvironment): void {
+  if (env.DISABLE_CDP_USAGE_TRACKING !== "false") {
+    env.DISABLE_CDP_USAGE_TRACKING = "true";
+  }
+  if (env.DISABLE_CDP_ERROR_REPORTING !== "false") {
+    env.DISABLE_CDP_ERROR_REPORTING = "true";
+  }
+}
+
 export async function createCdpAccessTokenValidator({
   env = process.env,
   loadSdk = loadCdpSdk,
@@ -69,6 +78,7 @@ export async function createCdpAccessTokenValidator({
   }
 
   try {
+    applyCdpTelemetryDefaults(env);
     const { CdpClient } = await loadSdk();
     const client = new CdpClient({
       apiKeyId,

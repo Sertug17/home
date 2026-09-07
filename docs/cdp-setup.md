@@ -2,55 +2,24 @@
 
 Status: local implementation completed September 7, 2026; real browser login and deployed-origin verification remain pending.
 
-Home validates CDP end-user access tokens at `GET /api/session`. The browser sends its CDP access token in `Authorization: Bearer <access-token>`. The server validates that token with the CDP project API and returns only the verified CDP subject and the first verified EVM smart-account address.
+Home validates CDP end-user access tokens at `GET /api/session`. The browser sends its CDP access token in the `Authorization` header, and the server returns only the verified CDP subject and Base smart-account address. This endpoint validates identity only; it does not assert that the account is deployed, funded, eligible, or able to transact.
 
-## CDP project setup
+Missing, malformed, invalid, expired, or cross-project tokens return `401 UNAUTHENTICATED`. Missing server credentials and provider initialization, transport, rate-limit, or service failures return `503 AUTH_UNAVAILABLE`. Every response is private and `no-store`; provider payloads and errors are not returned. A provider `401` can also indicate mismatched or invalid developer credentials, so the required private live smoke must verify both browser sign-in and server validation with credentials from the same CDP project.
 
-1. Create or select the CDP project that owns the client-side end-user authentication configuration.
-2. Add the app origin to that project's allowed origins. For local development on this lane, use `http://127.0.0.1:3103`. Add the exact production origin separately before deployment.
-3. Create a **Secret API Key** in the same project. The API key's project scope is what constrains `validateAccessToken`: a token must validate against the project identified by the server key. Tokens rejected by that validation, including tokens from another project, are not accepted.
-4. Set these server-only environment variables in the web runtime:
+## Local setup
 
-   ```sh
-   CDP_API_KEY_ID=your-secret-api-key-id
-   CDP_API_KEY_SECRET=your-secret-api-key-secret
-   ```
+1. Create or select a CDP project and configure `http://localhost:3000` as an allowed local origin in its public project settings.
+2. For a fresh clone, copy the root `.env.example` to `apps/web/.env.local` and set `NEXT_PUBLIC_CDP_PROJECT_ID` to the project's public ID. If that file already exists, add only missing variables; do not overwrite existing credentials.
+3. Set the server-only `CDP_API_KEY_ID` and `CDP_API_KEY_SECRET` values from that same project. Never give either variable a `NEXT_PUBLIC_` prefix.
+4. Run `bun dev`, then open `http://localhost:3000/account`.
+5. Complete email sign-in in the browser. Keep the real one-time code and access token in the browser flow; do not paste either into a shell command or shell history.
 
-Do not prefix these variables with `NEXT_PUBLIC_`. Do not configure `CDP_WALLET_SECRET` for session validation. This endpoint does not create server wallets, sign transactions, use private keys, or return provider authentication methods.
+The server SDK's usage tracking and error reporting are disabled by Home before the SDK loads when `DISABLE_CDP_USAGE_TRACKING` and `DISABLE_CDP_ERROR_REPORTING` are unset. Operators may explicitly set either variable to `false` to opt that channel back in after reviewing CDP's data policy. This default applies in production even when `.env.example` was not copied.
 
-## Local verification
+## Required live smoke
 
-Install the pinned dependencies and start the web app on the lane's local port:
-
-```sh
-bun install --frozen-lockfile
-bun run --cwd apps/web dev --port 3103
-```
-
-After completing a real CDP client login in the browser, call the same-origin route with the client access token:
-
-```sh
-curl -i \
-  -H "Authorization: Bearer <access-token>" \
-  http://127.0.0.1:3103/api/session
-```
-
-Expected successful shape:
-
-```json
-{
-  "user": { "subject": "verified-cdp-user-id" },
-  "smartAccount": {
-    "address": "0x...",
-    "chainId": 8453
-  }
-}
-```
-
-`smartAccount` is `null` when the verified CDP account list has no EVM smart account. Home never substitutes an owner EOA. `chainId: 8453` identifies the Base response presentation network; it does not assert that the account is deployed, funded, eligible, or able to transact.
-
-Missing, malformed, invalid, expired, or cross-project tokens return `401 UNAUTHENTICATED`. Missing server credentials and provider initialization, transport, rate-limit, or service failures return `503 AUTH_UNAVAILABLE`. Every response is private and `no-store`; provider payloads and errors are not returned.
+With private credentials configured, verify that browser email sign-in succeeds, `GET /api/session` returns the expected project identity, private account details remain hidden on validation failure, and sign-out completes. Repeat against each deployed origin after adding that origin to the public CDP project configuration. Do not record real OTPs, access tokens, or server credentials in commands, screenshots, logs, or documentation.
 
 ## Milestone boundary
 
-This milestone establishes server-side token validation only. The returned `subject` is the verified CDP identity, not a persisted Home user ID. There is no database persistence or wallet-link record in this implementation. A successful local or deployed login has not yet been verified with real project credentials; perform that credentialed smoke test privately after the client login integration and origin configuration are available.
+This milestone establishes server-side token validation only. The returned `subject` is the verified CDP identity, not a persisted Home user ID. There is no database persistence or wallet-link record in this implementation. Deterministic selection among multiple accounts and broader rate-limiting policy remain deferred before production; do not infer either from a successful validation response.

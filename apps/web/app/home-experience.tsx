@@ -11,7 +11,8 @@ import {
   readAnonymousCountryPreference,
   writeAnonymousCountryPreference,
 } from "@/config/country-preference";
-import { navigationItems, type NavigationId } from "@/config/navigation";
+import type { NavigationId } from "@/config/navigation";
+import { PrimaryNavigation } from "@/components/primary-navigation";
 import {
   presentationRegions,
   resolvePresentation,
@@ -198,35 +199,6 @@ export function HomeExperience({
   );
 }
 
-function PrimaryNavigation({
-  activeNavigation,
-  onNavigate,
-}: {
-  activeNavigation: NavigationId;
-  onNavigate: (id: NavigationId) => void;
-}) {
-  return (
-    <nav className="primary-nav" aria-label="Main navigation">
-      {navigationItems.map((item) => {
-        const isActive = activeNavigation === item.id;
-        return (
-          <button
-            key={item.id}
-            id={`${item.id}-nav`}
-            type="button"
-            className={isActive ? "nav-item nav-item-active" : "nav-item"}
-            onClick={() => onNavigate(item.id)}
-            aria-current={isActive ? "page" : undefined}
-            aria-controls="navigation-panel"
-          >
-            <NavigationIcon id={item.id} />
-            <span>{item.label}</span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
 
 function HomePanel({ region }: { region: PresentationRegion }) {
   const currencyCode = region.currency.code ?? "Local currency";
@@ -355,11 +327,6 @@ function UnavailableAction({ icon, label }: { icon: ReactNode; label: string }) 
   );
 }
 
-function NavigationIcon({ id }: { id: NavigationId }) {
-  if (id === "save") return <SaveIcon />;
-  if (id === "invest") return <InvestIcon />;
-  return <HomeIcon />;
-}
 
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -377,32 +344,6 @@ const iconProps = {
   "aria-hidden": true,
 };
 
-function HomeIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="m3 11 9-8 9 8" />
-      <path d="M5 10v10h14V10" />
-    </svg>
-  );
-}
-function SaveIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="M5 8h14l-1 12H6L5 8Z" />
-      <path d="M8 8a4 4 0 0 1 8 0" />
-    </svg>
-  );
-}
-function InvestIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="M4 19V9" />
-      <path d="M10 19V5" />
-      <path d="M16 19v-7" />
-      <path d="M22 19V3" />
-    </svg>
-  );
-}
 function PlusIcon() {
   return (
     <svg {...iconProps}>

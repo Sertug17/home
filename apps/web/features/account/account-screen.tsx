@@ -17,6 +17,10 @@ import {
   validateAccountSession,
   type VerifiedSessionOwner,
 } from "./session-client";
+import {
+  isSessionSuppressedForOwner,
+  signOutWithSessionSuppressed,
+} from "./session-sign-out";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
@@ -100,13 +104,19 @@ function AccountExperience() {
     useState<ValidationStatus>("idle");
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [isSessionSuppressed, setIsSessionSuppressed] = useState(false);
+  const [suppressedOwnerKey, setSuppressedOwnerKey] = useState<string | null>(
+    null,
+  );
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
   const validationRequest = useRef<AbortController | null>(null);
   const validationSequence = useRef(0);
 
+  const isSessionSuppressed = isSessionSuppressedForOwner(
+    suppressedOwnerKey,
+    ownerKey,
+  );
   const visibleSession = getVisibleVerifiedSession(
     verifiedOwner,
     ownerKey,
@@ -152,6 +162,7 @@ function AccountExperience() {
       return;
     }
 
+    setSuppressedOwnerKey(null);
     validationRequest.current?.abort();
     const controller = new AbortController();
     validationRequest.current = controller;
@@ -187,16 +198,17 @@ function AccountExperience() {
       ) {
         setAuthNotice("Your session could not be verified. Please sign in again.");
         setValidationStatus("idle");
-        setIsSessionSuppressed(true);
-        try {
-          await signOut();
-        } catch {
-          setIsSessionSuppressed(false);
-          setValidationStatus("unavailable");
-          setValidationMessage(
-            "We could not clear the wallet session. Try signing out again.",
-          );
-        }
+        await signOutWithSessionSuppressed({
+          ownerKey,
+          signOut,
+          suppress: setSuppressedOwnerKey,
+          onFailure: () => {
+            setValidationStatus("unavailable");
+            setValidationMessage(
+              "We could not clear the wallet session. Try signing out again.",
+            );
+          },
+        });
         return;
       }
 
@@ -246,7 +258,7 @@ function AccountExperience() {
     setAuthError(null);
     setAuthNotice(null);
     setHasVerifiedCode(false);
-    setIsSessionSuppressed(false);
+    setSuppressedOwnerKey(null);
     try {
       const result = await requestEmailCode(nextEmail);
       setFlowId(result.flowId);
@@ -313,7 +325,10 @@ function AccountExperience() {
   }
 
   async function handleSignOut() {
-    setIsSessionSuppressed(true);
+    if (!ownerKey) {
+      return;
+    }
+
     setIsSigningOut(true);
     setAuthError(null);
     setAuthNotice(null);
@@ -323,15 +338,23 @@ function AccountExperience() {
     setHasVerifiedCode(false);
     clearPrivateState();
 
-    try {
-      await signOut();
+    const signedOut = await signOutWithSessionSuppressed({
+      ownerKey,
+      signOut,
+      suppress: setSuppressedOwnerKey,
+      onFailure: () => {
+        setValidationStatus("unavailable");
+        setValidationMessage(
+          "We could not clear the wallet session. Try signing out again.",
+        );
+        setAuthNotice("Sign-out did not finish. Please try again.");
+      },
+    });
+
+    if (signedOut) {
       setAuthNotice("You are signed out.");
-    } catch {
-      setIsSessionSuppressed(false);
-      setAuthNotice("Sign-out did not finish. Please try again.");
-    } finally {
-      setIsSigningOut(false);
     }
+    setIsSigningOut(false);
   }
 
   async function handleCopyAddress() {
@@ -512,9 +535,11 @@ function AccountExperience() {
             <button
               className={styles.secondaryButton}
               type="button"
-              onClick={() => void validateSession()}
+              onClick={() =>
+                void (isSessionSuppressed ? handleSignOut() : validateSession())
+              }
             >
-              Try again
+              {isSessionSuppressed ? "Try signing out again" : "Try again"}
             </button>
           </div>
         ) : null}

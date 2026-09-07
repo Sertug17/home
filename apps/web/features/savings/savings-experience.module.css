@@ -1,0 +1,368 @@
+.experience {
+  --ink: #0a0b0d;
+  --muted: #5e626b;
+  --line: #dedfe3;
+  --blue: #0000ff;
+  width: 100%;
+  color: var(--ink);
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: clamp(20px, 4vw, 40px);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.eyebrow,
+.detailsKicker {
+  margin: 0;
+  color: var(--blue);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.header h2 {
+  max-width: 16ch;
+  margin: 8px 0 0;
+  font-size: clamp(2rem, 5vw, 3.8rem);
+  font-weight: 590;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+
+.network {
+  flex: 0 0 auto;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.intro {
+  max-width: 46rem;
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.6;
+}
+
+.notice {
+  display: grid;
+  gap: 5px;
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 22px 0;
+}
+
+.notice strong {
+  font-size: 0.95rem;
+}
+
+.notice span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.sourceRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.sourceRow span {
+  color: var(--ink);
+  font-weight: 680;
+}
+
+.candidateLayout {
+  display: grid;
+  gap: 24px;
+  margin-top: 18px;
+}
+
+.candidateList {
+  border-top: 1px solid var(--line);
+}
+
+.candidate {
+  position: relative;
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 18px;
+  align-items: center;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--ink);
+  padding: 18px 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.candidate::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -12px;
+  width: 3px;
+  background: transparent;
+  content: "";
+}
+
+.candidate:hover::before,
+.candidateSelected::before {
+  background: var(--blue);
+}
+
+.candidate:focus-visible {
+  outline: 3px solid #b8b8ff;
+  outline-offset: 4px;
+}
+
+.candidateIdentity,
+.rate {
+  display: grid;
+  gap: 3px;
+}
+
+.candidateIdentity strong {
+  overflow: hidden;
+  font-size: 0.96rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidateIdentity small,
+.rate small,
+.inspect {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.rate {
+  justify-items: end;
+}
+
+.rate strong {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.inspect {
+  grid-column: 1 / -1;
+  color: var(--blue);
+  font-weight: 680;
+}
+
+.details {
+  align-self: start;
+  border: 1px solid var(--ink);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.details h3,
+.position h3 {
+  margin: 7px 0 0;
+  font-size: 1.25rem;
+  font-weight: 620;
+  letter-spacing: -0.025em;
+}
+
+.details > p:last-child {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.detailsHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.detailsHeading > span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 0.66rem;
+  font-weight: 680;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 22px 0 0;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.metrics > div {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 13px;
+}
+
+.metrics dt,
+.provenance span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.metrics dd {
+  overflow-wrap: anywhere;
+  margin: 6px 0 0;
+}
+
+.metrics dd > span {
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.metrics small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.provenance {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.provenance > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.provenance code,
+.provenance time {
+  color: var(--ink);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.position {
+  display: grid;
+  gap: 14px;
+  margin-top: 30px;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  padding: 20px 0;
+}
+
+.position p:last-child {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.actionBar {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.actionBar > div {
+  display: grid;
+  gap: 4px;
+}
+
+.actionBar strong {
+  font-size: 0.88rem;
+}
+
+.actionBar span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.actionBar button {
+  min-height: 44px;
+  border: 1px solid #c9cad0;
+  border-radius: 8px;
+  background: #f4f4f5;
+  color: #777a82;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: not-allowed;
+}
+
+@media (min-width: 760px) {
+  .candidateLayout {
+    grid-template-columns: minmax(240px, 0.8fr) minmax(360px, 1.2fr);
+    align-items: start;
+  }
+
+  .position {
+    grid-template-columns: minmax(180px, 0.55fr) minmax(0, 1.45fr);
+    align-items: center;
+  }
+
+  .actionBar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+  }
+
+  .actionBar button {
+    padding: 0 16px;
+  }
+}
+
+@media (max-width: 520px) {
+  .header {
+    display: grid;
+  }
+
+  .network {
+    width: fit-content;
+  }
+
+  .sourceRow,
+  .detailsHeading,
+  .provenance > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sourceRow {
+    display: grid;
+  }
+
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .provenance code,
+  .provenance time {
+    text-align: left;
+  }
+}

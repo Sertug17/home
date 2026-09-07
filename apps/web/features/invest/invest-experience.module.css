@@ -1,0 +1,383 @@
+.experience {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid #dfe1e5;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #0a0b0d;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.experience a:focus-visible,
+.experience summary:focus-visible {
+  outline: 3px solid rgba(0, 0, 255, 0.28);
+  outline-offset: 3px;
+}
+
+.intro {
+  display: grid;
+  gap: 22px;
+  padding: clamp(24px, 5vw, 48px);
+  border-bottom: 1px solid #dfe1e5;
+}
+
+.eyebrow,
+.sectionIndex {
+  margin: 0;
+  color: #0000ff;
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.intro h2 {
+  max-width: 14ch;
+  margin: 10px 0 0;
+  font-size: clamp(2rem, 7vw, 4.25rem);
+  font-weight: 570;
+  letter-spacing: -0.065em;
+  line-height: 0.98;
+}
+
+.introCopy {
+  max-width: 37rem;
+  margin: 0;
+  color: #565b63;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.section {
+  padding: clamp(24px, 5vw, 48px);
+}
+
+.section + .section {
+  border-top: 8px solid #f3f4f6;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.sectionHeading h3 {
+  margin: 7px 0 0;
+  font-size: clamp(1.55rem, 4vw, 2.35rem);
+  font-weight: 620;
+  letter-spacing: -0.045em;
+}
+
+.sectionHeading > p {
+  margin: 0;
+  color: #686d74;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.restrictionNote {
+  display: grid;
+  gap: 5px;
+  margin-top: 24px;
+  border-left: 3px solid #0000ff;
+  background: #f6f6ff;
+  padding: 14px 16px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.restrictionNote strong {
+  color: #0a0b0d;
+}
+
+.restrictionNote span {
+  color: #565b63;
+}
+
+.sectionCopy {
+  max-width: 42rem;
+  margin: 20px 0 0;
+  color: #565b63;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.assetTable {
+  margin-top: 22px;
+  border-top: 1px solid #bfc3ca;
+}
+
+.tableHeading,
+.assetRow {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(180px, 0.9fr) minmax(140px, 0.6fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.tableHeading {
+  min-height: 38px;
+  color: #62676f;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assetTable ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assetRow {
+  min-height: 92px;
+  border-top: 1px solid #e3e5e8;
+  padding: 14px 0;
+}
+
+.assetRow:last-child {
+  border-bottom: 1px solid #bfc3ca;
+}
+
+.identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 13px;
+}
+
+.initials {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #d6d9de;
+  border-radius: 8px;
+  background: #f4f5f7;
+  color: #0a0b0d;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.identity > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.identity strong {
+  font-size: 0.92rem;
+  font-weight: 690;
+}
+
+.identity small {
+  overflow: hidden;
+  color: #696e76;
+  font-size: 0.69rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contract,
+.price {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.contract > span,
+.price > span,
+.price > a {
+  color: #62676f;
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.contract a,
+.price a,
+.sourceLink {
+  color: #22252a;
+  text-decoration-color: #adb1b8;
+  text-underline-offset: 3px;
+}
+
+.contract a {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+}
+
+.contract code {
+  overflow: hidden;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+}
+
+.price {
+  justify-items: end;
+  text-align: right;
+}
+
+.price strong {
+  font-size: 1rem;
+  font-weight: 620;
+}
+
+.price[data-tone="error"] span {
+  color: #a12b2b;
+}
+
+.price[data-tone="ready"] strong {
+  color: #0000ff;
+}
+
+.price a {
+  max-width: 18ch;
+}
+
+.emptyMarket {
+  margin: 12px 0 0;
+  color: #666b73;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.sources {
+  margin-top: 20px;
+  border-top: 1px solid #e0e2e6;
+  padding-top: 14px;
+}
+
+.sources summary {
+  width: fit-content;
+  color: #30343a;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 690;
+}
+
+.sources > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  max-width: 48rem;
+  padding: 13px 0 0 2px;
+}
+
+.sources p {
+  flex-basis: 100%;
+  margin: 0;
+  color: #62676f;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.sourceLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+}
+
+.sourceGroup {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (min-width: 760px) {
+  .intro {
+    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+    align-items: end;
+  }
+}
+
+@media (max-width: 720px) {
+  .sectionHeading {
+    display: grid;
+    gap: 8px;
+  }
+
+  .sectionHeading > p {
+    white-space: normal;
+  }
+
+  .tableHeading {
+    display: none;
+  }
+
+  .assetTable {
+    margin-top: 20px;
+  }
+
+  .assetRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px 16px;
+    min-height: 0;
+    padding: 18px 0;
+  }
+
+  .identity {
+    grid-column: 1;
+  }
+
+  .identity small {
+    white-space: normal;
+  }
+
+  .contract {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    border-top: 1px solid #eceef0;
+    padding-top: 11px;
+  }
+
+  .price {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .price > span,
+  .price > a {
+    max-width: 13ch;
+  }
+}
+
+@media (max-width: 390px) {
+  .experience {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .intro,
+  .section {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .initials {
+    width: 38px;
+    height: 38px;
+  }
+}

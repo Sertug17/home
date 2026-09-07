@@ -28,6 +28,55 @@ describe("CDP access-token provider", () => {
     }
   });
 
+  test("disables SDK telemetry before loading while preserving explicit operator overrides", async () => {
+    const secretEnvironmentName = ["CDP", "API", "KEY", "SECRET"].join("_");
+    const sdkFixture = {
+      CdpClient: class {
+        endUser = {
+          validateAccessToken: async () => ({}),
+        };
+      },
+    };
+
+    for (const fixture of [
+      {
+        env: {
+          CDP_API_KEY_ID: "server-key-id",
+          [secretEnvironmentName]: "server-key-secret",
+        },
+        expectedUsage: "true",
+        expectedErrors: "true",
+      },
+      {
+        env: {
+          CDP_API_KEY_ID: "server-key-id",
+          [secretEnvironmentName]: "server-key-secret",
+          DISABLE_CDP_USAGE_TRACKING: "false",
+          DISABLE_CDP_ERROR_REPORTING: "false",
+        },
+        expectedUsage: "false",
+        expectedErrors: "false",
+      },
+    ]) {
+      let observedEnvironment: Record<string, string | undefined> | undefined;
+
+      await createCdpAccessTokenValidator({
+        env: fixture.env,
+        loadSdk: async () => {
+          observedEnvironment = { ...fixture.env };
+          return sdkFixture;
+        },
+      });
+
+      expect(observedEnvironment?.DISABLE_CDP_USAGE_TRACKING).toBe(
+        fixture.expectedUsage,
+      );
+      expect(observedEnvironment?.DISABLE_CDP_ERROR_REPORTING).toBe(
+        fixture.expectedErrors,
+      );
+    }
+  });
+
   test("constructs the SDK without a wallet secret and validates through endUser", async () => {
     const constructorOptions: Array<Record<string, string>> = [];
     const validatedTokens: string[] = [];
