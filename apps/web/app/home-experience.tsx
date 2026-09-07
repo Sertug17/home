@@ -281,7 +281,6 @@ export function HomeExperience({
       {isVerified ? (
         <main className="app-main app-main-authenticated">
           <div className="main-heading">
-            <p className="eyebrow">On Base</p>
             <h1>Money and assets</h1>
           </div>
 
@@ -397,8 +396,12 @@ function SignedOutLanding({
 }) {
   return (
     <main className={`landing-main${landingVisual ? " landing-main-with-visual" : ""}`}>
+      {landingVisual ? (
+        <div className="landing-visual">
+          {landingVisual}
+        </div>
+      ) : null}
       <section className="landing-hero" aria-labelledby="landing-title">
-        <p className="eyebrow">Home on Base</p>
         <h1 id="landing-title">The home for your money.</h1>
         <p className="landing-copy">
           Earn more, buy assets, and grow your wealth.
@@ -420,11 +423,6 @@ function SignedOutLanding({
           </div>
         ) : null}
       </section>
-      {landingVisual ? (
-        <div className="landing-visual" aria-label="Home availability around the world">
-          {landingVisual}
-        </div>
-      ) : null}
     </main>
   );
 }
@@ -433,7 +431,6 @@ function AccountLoadingShell() {
   return (
     <main className="account-state-main" aria-busy="true" aria-live="polite">
       <section className="account-state-card">
-        <p className="eyebrow">Home on Base</p>
         <h1>Checking your account…</h1>
         <div className="loading-lines" aria-hidden="true">
           <span />

@@ -43,7 +43,7 @@ export function geographicVector(longitude: number, latitude: number) {
   return [Math.cos(lat) * Math.sin(lon), Math.sin(lat), Math.cos(lat) * Math.cos(lon)] as const;
 }
 
-/** Orthographic projection shared by the GPU, hit testing, and static markers. */
+/** Orthographic projection shared by the GPU and static markers. */
 export function projectCountry(longitude: number, latitude: number, viewLongitude = INITIAL_LONGITUDE) {
   const [x, y, z] = geographicVector(longitude - viewLongitude, latitude);
   const tilt = VIEW_LATITUDE * RAD;
@@ -58,31 +58,6 @@ export function projectCountry(longitude: number, latitude: number, viewLongitud
   };
 }
 
-export function countryLabel(country: GlobeCountry) {
-  return `${country.countryName} · ${country.currency.code ?? country.currency.name}`;
-}
-
 export function shouldAnimateGlobe(reducedMotion: boolean, userPlaying: boolean | null) {
   return userPlaying ?? !reducedMotion;
-}
-
-export function nearestCountry(
-  points: readonly GlobePoint[],
-  x: number,
-  y: number,
-  longitude: number,
-  radius: number,
-): GlobePoint | undefined {
-  let nearest: GlobePoint | undefined;
-  let distance = radius * radius;
-  for (const point of points) {
-    const projected = projectCountry(point.longitude, point.latitude, longitude);
-    if (!projected.visible) continue;
-    const nextDistance = (x - projected.x) ** 2 + (y - projected.y) ** 2;
-    if (nextDistance < distance) {
-      nearest = point;
-      distance = nextDistance;
-    }
-  }
-  return nearest;
 }

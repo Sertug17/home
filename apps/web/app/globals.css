@@ -144,7 +144,25 @@ a:focus-visible,
 }
 
 .landing-main-with-visual {
-  gap: 34px;
+  justify-items: center;
+  align-content: center;
+  gap: 12px;
+  padding-block: 16px 40px;
+  text-align: center;
+}
+
+.landing-main-with-visual .landing-hero h1 {
+  max-width: none;
+  margin-top: 0;
+  font-size: clamp(2.65rem, 7vw, 4.5rem);
+}
+
+.landing-main-with-visual .landing-copy {
+  margin-inline: auto;
+}
+
+.landing-main-with-visual .landing-actions {
+  justify-content: center;
 }
 
 .landing-hero {
@@ -152,12 +170,8 @@ a:focus-visible,
 }
 
 .landing-visual {
+  width: min(100%, clamp(220px, 42svh, 400px));
   min-width: 0;
-  min-height: 260px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 32px;
-  background: linear-gradient(145deg, #f7f9ff, #eef3ff);
 }
 
 .landing-visual > * {
@@ -762,10 +776,6 @@ a:focus-visible,
   .landing-main,
   .account-state-main {
     padding-inline: 18px;
-  }
-
-  .landing-main-with-visual {
-    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
   }
 
   .main-heading {

@@ -3,7 +3,7 @@ import { presentationRegions, regionIds } from "@/config/regions";
 import coordinates from "./globe-country-coordinates.json";
 import land from "./globe-land-points.json";
 import {
-  configuredGlobeCountries, geographicVector, locateCountries, nearestCountry,
+  configuredGlobeCountries, geographicVector, locateCountries,
   projectCountry, shouldAnimateGlobe, type GlobeCountry,
 } from "./globe-geometry";
 
@@ -64,15 +64,6 @@ describe("sourced globe geography", () => {
       expect(projectCountry(point.longitude, point.latitude, point.longitude).visible).toBe(true);
       expect(projectCountry(point.longitude, point.latitude, point.longitude + 180).visible).toBe(false);
     }
-  });
-
-  test("hit testing never reaches the back hemisphere; European neighbors keep their sourced position", () => {
-    const points = locateCountries([profile("BE"), profile("NL"), profile("DE"), profile("AU")]);
-    const belgium = projectCountry(coordinates.BE[0], coordinates.BE[1], 4);
-    expect(nearestCountry(points, belgium.x, belgium.y, 4, 10)?.countryCode).toBe("BE");
-    const australia = projectCountry(coordinates.AU[0], coordinates.AU[1], -55);
-    expect(australia.visible).toBe(false);
-    expect(nearestCountry(points.slice(-1), australia.x, australia.y, -55, 10)).toBeUndefined();
   });
 });
 

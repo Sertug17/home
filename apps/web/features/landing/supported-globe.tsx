@@ -3,10 +3,8 @@
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   configuredGlobeCountries,
-  countryLabel,
   INITIAL_LONGITUDE,
   locateCountries,
-  nearestCountry,
   projectCountry,
   shouldAnimateGlobe,
   type GlobeCountry,
@@ -35,7 +33,7 @@ function serverMotionSnapshot() { return true; }
 /** A centerpiece only: composition, headline and sign-in remain with the landing. */
 export function SupportedGlobe({ className, countries = defaultCountries }: SupportedGlobeProps) {
   const descriptionId = useId();
-  const selectId = useId();
+  const motionId = useId();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const markerRefs = useRef(new Map<string, SVGCircleElement>());
@@ -47,11 +45,7 @@ export function SupportedGlobe({ className, countries = defaultCountries }: Supp
   const reducedMotion = useSyncExternalStore(subscribeMotion, motionSnapshot, serverMotionSnapshot);
   const [userPlaying, setUserPlaying] = useState<boolean | null>(null);
   const [status, setStatus] = useState<"static" | "ready" | "unavailable">("static");
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [selected, setSelected] = useState("");
-  const [controlsFocused, setControlsFocused] = useState(false);
   const playing = shouldAnimateGlobe(reducedMotion, userPlaying);
-  const activeCountry = countries.find((country) => country.countryCode === (hovered ?? selected));
 
   useEffect(() => {
     pointsRef.current = points;
@@ -90,14 +84,13 @@ export function SupportedGlobe({ className, countries = defaultCountries }: Supp
       setStatus("unavailable");
     }
 
-    // The static, server-rendered globe is already useful. Load GPU code only
-    // when it is actually on screen, not as a prerequisite to reading/sign-in.
+    // Static server HTML stays useful; GPU code isn't a prerequisite to sign-in.
     const observer = new IntersectionObserver(([entry]) => {
       if (!entry.isIntersecting) return;
       observer.disconnect();
       import("./globe-renderer").then(({ createGlobeRenderer }) => {
         if (cancelled) return;
-        renderer = createGlobeRenderer(canvas!, project, unavailable);
+        renderer = createGlobeRenderer(canvas!, stage!, project, unavailable);
         rendererRef.current = renderer;
         renderer.setMotion(motionRef.current);
         setStatus("ready");
@@ -113,43 +106,32 @@ export function SupportedGlobe({ className, countries = defaultCountries }: Supp
   }, []);
 
   useEffect(() => {
-    motionRef.current = playing && !hovered && !controlsFocused;
-    rendererRef.current?.setMotion(status === "ready" && motionRef.current);
-  }, [status, playing, hovered, controlsFocused]);
-
-  function chooseCountry(code: string) {
-    setSelected(code);
-    setHovered(null);
-    setUserPlaying(false);
-    const point = points.find((country) => country.countryCode === code);
-    if (point) rendererRef.current?.setLongitude(point.longitude);
-  }
-
-  function hitCountry(event: React.PointerEvent<HTMLDivElement>) {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    return nearestCountry(points,
-      (event.clientX - bounds.left) / bounds.width * 100,
-      (event.clientY - bounds.top) / bounds.height * 100,
-      longitudeRef.current,
-      18 / bounds.width * 100,
-    );
-  }
+    motionRef.current = playing;
+    rendererRef.current?.setMotion(status === "ready" && playing);
+  }, [status, playing]);
 
   return (
-    <figure className={[styles.globe, className].filter(Boolean).join(" ")}
-      aria-label="A world of country profiles" aria-describedby={descriptionId} data-renderer={status}>
-      <div ref={stageRef} className={styles.stage} aria-hidden="true"
-        onPointerMove={(event) => {
-          if (event.pointerType === "mouse") setHovered(hitCountry(event)?.countryCode ?? null);
-        }}
-        onPointerLeave={() => setHovered(null)}
-        onPointerUp={(event) => {
-          const point = hitCountry(event);
-          if (point) chooseCountry(point.countryCode);
+    <figure className={[styles.globe, className].filter(Boolean).join(" ")} data-renderer={status}>
+      <div ref={stageRef} className={styles.stage}
+        role={status === "ready" ? "group" : "img"}
+        aria-label="A world of country profiles"
+        aria-describedby={`${descriptionId} ${motionId}`}
+        tabIndex={status === "ready" ? 0 : undefined}
+        aria-keyshortcuts={status === "ready" ? "Space ArrowLeft ArrowRight" : undefined}
+        onKeyDown={(event) => {
+          if (status !== "ready" || event.altKey || event.ctrlKey || event.metaKey) return;
+          if (event.key === " ") {
+            event.preventDefault();
+            if (!event.repeat) setUserPlaying(!playing);
+          } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            rendererRef.current?.rotate(event.key === "ArrowLeft" ? 12 : -12);
+          }
         }}>
-        <div className={styles.staticGlobe} hidden={status === "ready"} />
-        <canvas ref={canvasRef} className={styles.canvas} style={{ visibility: status === "ready" ? "visible" : "hidden" }} />
-        <svg className={styles.markers} viewBox="0 0 100 100">
+        <div className={styles.staticGlobe} hidden={status === "ready"} aria-hidden="true" />
+        <canvas ref={canvasRef} className={styles.canvas} aria-hidden="true"
+          style={{ visibility: status === "ready" ? "visible" : "hidden" }} />
+        <svg className={styles.markers} viewBox="0 0 100 100" aria-hidden="true">
           {points.map((point) => {
             const position = projectCountry(point.longitude, point.latitude);
             return <circle key={point.countryCode} data-country={point.countryCode}
@@ -157,42 +139,20 @@ export function SupportedGlobe({ className, countries = defaultCountries }: Supp
                 if (node) markerRefs.current.set(point.countryCode, node);
                 else markerRefs.current.delete(point.countryCode);
               }}
-              cx={position.x} cy={position.y} r={point.countryCode === (hovered ?? selected) ? .7 : .48}
+              cx={position.x.toFixed(3)} cy={position.y.toFixed(3)} r=".48"
               visibility={position.visible ? "visible" : "hidden"}
               fill="#0000FF" stroke="white" strokeWidth=".22" />;
           })}
         </svg>
-        {activeCountry && <div className={styles.readout}>
-          <span className={styles.readoutDot} />
-          <span>{activeCountry.countryName}<small>{activeCountry.currency.name} · {activeCountry.currency.code}</small></span>
-        </div>}
       </div>
-      <figcaption className={styles.caption}>
-        <div className={styles.controls}>
-          <div className={styles.countryPicker}>
-            <span className={styles.legendDot} aria-hidden="true" />
-            <label htmlFor={selectId} className={styles.srOnly}>Explore country and currency profiles</label>
-            <select id={selectId} value={selected} onChange={(event) => chooseCountry(event.target.value)}
-              onFocus={() => setControlsFocused(true)} onBlur={() => setControlsFocused(false)}>
-              <option value="">{countries.length} country profiles</option>
-              {countries.map((country) => <option key={country.countryCode} value={country.countryCode}>
-                {countryLabel(country)}
-              </option>)}
-            </select>
-          </div>
-          <button type="button" className={styles.motion}
-            disabled={status !== "ready"}
-            aria-label={status === "unavailable" ? "Static globe view" : playing && status === "ready" ? "Pause globe rotation" : "Play globe rotation"}
-            onClick={() => setUserPlaying(!playing)}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-              {playing && status === "ready" ? <path d="M2.5 1.5h2v9h-2zm5 0h2v9h-2z" /> : <path d="M3 1.2v9.6L10 6z" />}
-            </svg>
-            {status === "unavailable" ? "Static view" : playing && status === "ready" ? "Pause" : "Play"}
-          </button>
-        </div>
-        <p id={descriptionId} className={styles.note}>
-          Country &amp; currency profiles. Product availability varies.
-          <span className={styles.srOnly}> Points do not guarantee banking, funding, or product eligibility. Explore the country list to read every profile, including those on the far side of the globe.</span>
+      <figcaption className={styles.srOnly}>
+        <p id={descriptionId}>
+          {countries.length} country &amp; currency profiles. Product availability varies.
+          {" "}Points do not guarantee banking, funding, or product eligibility.
+          {status === "ready" && " Drag horizontally to spin. Space pauses or resumes rotation; Left and Right arrows rotate the globe."}
+        </p>
+        <p id={motionId} role="status">
+          {status === "ready" ? playing ? "Globe rotation on." : "Globe rotation paused." : "Static globe view."}
         </p>
       </figcaption>
     </figure>
