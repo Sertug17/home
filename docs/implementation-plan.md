@@ -1,6 +1,6 @@
 # Home — implementation chunks
 
-Status: proposed build plan; no application implementation started.
+Status: implementation underway. This document describes the intended build sequence; see [build status](build-status.md) for current delivered features, validation evidence, active repairs, and remaining gates.
 Updated: 2026-09-07
 References: [technical design](technical-design.md), [product scope](product-scope.md).
 

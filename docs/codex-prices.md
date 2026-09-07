@@ -1,6 +1,6 @@
 # Codex market prices
 
-Verified: September 7, 2026
+Status: adapter implemented; verification of the rotated/activated key is in progress. See [build status](build-status.md) for the current gate and owner.
 
 Home Invest uses a server-only Codex GraphQL adapter for read-only USD market indications. These snapshots are not executable trade quotes, guarantees, underlying off-chain stock prices, or claims that one token equals one share or one native coin.
 
@@ -61,13 +61,13 @@ Official references reviewed:
 
 The public reference currently names the argument element type `GetPriceInput`, while Codex's authenticated example and the verified implementation contract supplied for Home use `GetTokenPricesInput`. The scoped live request was rejected before data/schema verification because the supplied account key was not activated, so this naming discrepancy remains a launch check.
 
-## Scoped live verification
+## Historical pre-rotation probe
 
 One bounded batch containing all 11 requested Base contracts was sent on September 7, 2026. The request received HTTP 403 with the provider classification “API key is not activated.” No retry or diagnostic request was made, and no credential or raw response was saved.
 
 Because authorization stopped the request before price data, exact Codex coverage remains unverified for every public asset ID:
 
-| Asset ID | Base representation | Live Codex result |
+| Asset ID | Base representation | Historical result with previous key |
 | --- | --- | --- |
 | `nvdac` | NVDAc | Unverified — key not activated |
 | `metac` | METAc | Unverified — key not activated |
@@ -81,6 +81,6 @@ Because authorization stopped the request before price data, exact Codex coverag
 | `cbltc` | cbLTC | Unverified — key not activated |
 | `cbada` | cbADA | Unverified — key not activated |
 
-After account activation, the parent should run exactly one fresh 11-contract batch and confirm: the accepted GraphQL input type name, response order/nullable behavior, raw `priceUsd` numeric shape, timestamp units, and coverage for each exact contract. Do not substitute an underlying equity, BTC/XRP/DOGE/LTC/ADA index, or native-network price for a missing Base token-contract price.
+The user has since rotated the key and confirmed activation. The Price Verification worker is now running the authorized bounded batch with that current key to confirm the GraphQL input type, nullable/decimal shape, timestamp units, and exact-contract coverage. The earlier 403 does not describe current activation. Do not substitute an underlying equity or native-network price for a missing Base token price.
 
 Before production display, also review the applicable Codex terms/API agreement for caching, attribution, redistribution, and commercial display rights. Public API access alone is not treated here as a license conclusion.

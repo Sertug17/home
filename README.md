@@ -4,7 +4,7 @@ An open-source home for your money on Base.
 
 Home is a mobile-first financial app designed around local currencies: sign in by email, hold and move money, add funds through local payment methods, save, and invest.
 
-**Status: local, read-only build.** Home has persistent browser country preferences, shared CDP email-session validation, an account address view, informational Stocks/Memes browsing, public Morpho USDC vault reads, and a server-only CDP SQL transfer-history adapter. SQL authentication and two-page transfer queries have been verified with a public fixture. Home holdings/prices, Base Account sign-in, database persistence, server geo, and financial execution remain unimplemented. No send, trade, deposit, or withdrawal is enabled; the design documents describe the broader target.
+**Status: local, read-only build.** Country coverage, the globe landing, email/operator-gated Base Account code, USDC/ETH balance reads, Invest browsing, public Morpho data, and the Codex/SQL adapters are implemented and composed. Some live sign-in and read-consumer paths remain under repair or verification. See the [build status](docs/build-status.md) for the authoritative built/integrated/reviewed/visible milestones and exact remaining gates. No send, trade, deposit, or withdrawal is enabled; database persistence and financial execution remain future work.
 
 ## Run locally
 
