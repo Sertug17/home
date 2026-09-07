@@ -19,6 +19,7 @@ const now = new Date();
 const from = new Date(now.getTime() - 60 * 60 * 1000);
 
 try {
+  const auth = createCdpSqlAuthFromEnv();
   const history = createBaseErc20TransferHistory({
     assets: [
       {
@@ -28,7 +29,7 @@ try {
       },
     ],
     transport: createCdpSqlHttpTransport({
-      auth: createCdpSqlAuthFromEnv(),
+      auth,
       timeoutMs: 10_000,
     }),
   });
@@ -44,7 +45,7 @@ try {
   console.log(
     JSON.stringify({
       ok: true,
-      authMode: "client-api-key",
+      authMode: auth.mode,
       cached: page.source.cached,
       stale: page.source.stale,
       executionTimestamp: page.source.executionTimestamp,

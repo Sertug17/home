@@ -74,7 +74,7 @@ export type CdpSqlMetadata = {
 
 export type CdpSqlResponse = {
   result: unknown[];
-  schema: { columns: CdpSqlColumn[] };
+  schema?: { columns: CdpSqlColumn[] };
   metadata: CdpSqlMetadata;
 };
 

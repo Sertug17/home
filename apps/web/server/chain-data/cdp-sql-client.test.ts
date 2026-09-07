@@ -23,6 +23,54 @@ function successResponse() {
 }
 
 describe("CDP SQL HTTP transport", () => {
+  test("accepts the live response shape without schema and validates known fields", async () => {
+    const syntheticLiveRow = {
+      action: "[SYNTHETIC_UNVERIFIED_ACTION]",
+      address: "0x0000000000000000000000000000000000000001",
+      block_hash: `0x${"1".repeat(64)}`,
+      block_number: "12345678",
+      block_timestamp: "2026-09-07 11:59:00.000",
+      event_name: "SyntheticEvent",
+      event_signature: "SyntheticEvent()",
+      log_id: "synthetic-log-id",
+      log_index: 9,
+      parameter_types: {},
+      parameters: {},
+      topics: [],
+      transaction_from: "0x0000000000000000000000000000000000000002",
+      transaction_hash: `0x${"2".repeat(64)}`,
+      transaction_to: "0x0000000000000000000000000000000000000003",
+    };
+    const transport = createCdpSqlHttpTransport({
+      auth: { mode: "client-api-key", clientApiKey: "client-key-value" },
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            metadata: {
+              cached: false,
+              executionTimeMs: 17,
+              executionTimestamp: "2026-09-07T12:00:00.000Z",
+              rowCount: 1,
+            },
+            result: [syntheticLiveRow],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    await expect(
+      transport.run({ sql: "SELECT * FROM base.events LIMIT 1" }),
+    ).resolves.toEqual({
+      metadata: {
+        cached: false,
+        executionTimeMs: 17,
+        executionTimestamp: "2026-09-07T12:00:00.000Z",
+        rowCount: 1,
+      },
+      result: [syntheticLiveRow],
+    });
+  });
+
   test("uses only the fixed endpoint, bounded request body, and client bearer key", async () => {
     const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
     const mockFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -144,14 +192,56 @@ describe("CDP SQL HTTP transport", () => {
   });
 
   test("rejects malformed envelopes and oversized SQL", async () => {
-    const malformed = createCdpSqlHttpTransport({
-      auth: { mode: "client-api-key", clientApiKey: "key" },
-      fetch: async () =>
-        new Response(JSON.stringify({ result: [] }), { status: 200 }),
-    });
-    await expect(malformed.run({ sql: "SELECT 1" })).rejects.toMatchObject({
-      code: "invalid-response",
-    });
+    const malformedPayloads = [
+      { result: [] },
+      {
+        result: [],
+        metadata: {
+          cached: "false",
+          executionTimestamp: "2026-09-07T12:00:00.000Z",
+          executionTimeMs: 1,
+          rowCount: 0,
+        },
+      },
+      {
+        result: [],
+        schema: { columns: [{ name: "amount", type: 123 }] },
+        metadata: {
+          cached: false,
+          executionTimestamp: "2026-09-07T12:00:00.000Z",
+          executionTimeMs: 1,
+          rowCount: 0,
+        },
+      },
+      {
+        result: [],
+        metadata: {
+          cached: false,
+          executionTimestamp: "not-a-date",
+          executionTimeMs: 1,
+          rowCount: 0,
+        },
+      },
+      {
+        result: [],
+        metadata: {
+          cached: false,
+          executionTimestamp: "2026-09-07T12:00:00.000Z",
+          executionTimeMs: 1,
+          rowCount: 1,
+        },
+      },
+    ];
+    for (const payload of malformedPayloads) {
+      const malformed = createCdpSqlHttpTransport({
+        auth: { mode: "client-api-key", clientApiKey: "key" },
+        fetch: async () =>
+          new Response(JSON.stringify(payload), { status: 200 }),
+      });
+      await expect(malformed.run({ sql: "SELECT 1" })).rejects.toMatchObject({
+        code: "invalid-response",
+      });
+    }
 
     const unusedFetch = createCdpSqlHttpTransport({
       auth: { mode: "client-api-key", clientApiKey: "key" },
@@ -167,7 +257,7 @@ describe("CDP SQL HTTP transport", () => {
 });
 
 describe("CDP SQL environment auth", () => {
-  test("accepts only the dedicated server-side SQL client key", () => {
+  test("defaults to only the dedicated server-side SQL client key", () => {
     const sqlKeyName = ["CDP_SQL_CLIENT", "_API_KEY"].join("");
     const generalKeyName = ["CDP_API_KEY", "_SECRET"].join("");
     expect(createCdpSqlAuthFromEnv({ [sqlKeyName]: "sql-client-value" })).toEqual({
@@ -176,9 +266,35 @@ describe("CDP SQL environment auth", () => {
     });
     expect(() =>
       createCdpSqlAuthFromEnv({
-        CDP_API_KEY_ID: "wallet-project-key",
-        [generalKeyName]: "wallet-project-value",
+        CDP_API_KEY_ID: "project-key-id",
+        [generalKeyName]: "project-key-value",
       }),
     ).toThrow("CDP_SQL_CLIENT_API_KEY");
+  });
+
+  test("enables project-key signed JWT auth only when explicitly selected", () => {
+    const generalKeyName = ["CDP_API_KEY", "_SECRET"].join("");
+    const auth = createCdpSqlAuthFromEnv({
+      CDP_SQL_AUTH_MODE: "signed-jwt",
+      CDP_API_KEY_ID: "synthetic-project-key-id",
+      [generalKeyName]: "synthetic-project-key-value",
+    });
+
+    expect(auth.mode).toBe("signed-jwt");
+    if (auth.mode === "signed-jwt") {
+      expect(typeof auth.generateBearerToken).toBe("function");
+    }
+    expect(() =>
+      createCdpSqlAuthFromEnv({
+        CDP_SQL_AUTH_MODE: "signed-jwt",
+        CDP_API_KEY_ID: "synthetic-project-key-id",
+      }),
+    ).toThrow("CDP_API_KEY_ID and CDP_API_KEY_SECRET");
+    expect(() =>
+      createCdpSqlAuthFromEnv({
+        CDP_SQL_AUTH_MODE: "automatic",
+        CDP_SQL_CLIENT_API_KEY: "sql-client-value",
+      }),
+    ).toThrow("CDP_SQL_AUTH_MODE");
   });
 });

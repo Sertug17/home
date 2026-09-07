@@ -3,6 +3,7 @@ import {
   buildBaseErc20TransferQuery,
   createBaseErc20TransferHistory,
   decodeTransferCursor,
+  encodeTransferCursor,
 } from "./base-erc20-transfers";
 import { ChainDataError } from "./errors";
 import type { BaseErc20Asset, CdpSqlTransport } from "./types";
@@ -49,7 +50,6 @@ function transportFor(result: unknown[]): CdpSqlTransport {
     async run() {
       return {
         result,
-        schema: { columns: [] },
         metadata: {
           cached: true,
           executionTimestamp: "2026-09-07T11:58:00.000Z",
@@ -72,6 +72,15 @@ describe("Base ERC20 transfer query", () => {
     expect(sql).toContain(`lower(toString(parameters['to'])) = '${WALLET}'`);
     expect(sql).toContain(`lower(toString(address)) IN ('${TOKEN}')`);
     expect(sql).toContain("any(toString(parameters['value'])) AS amount_base_units");
+    expect(sql).toContain("any(block_number) AS block_number_numeric");
+    expect(sql).toContain("any(log_index) AS log_index_numeric");
+    expect(sql).toContain("any(block_timestamp) AS event_timestamp");
+    expect(sql).toContain("formatDateTime(event_timestamp,");
+    expect(sql).not.toContain("any(block_timestamp) AS block_timestamp");
+    expect(sql).toContain(
+      "ORDER BY block_number_numeric DESC, transaction_hash DESC, log_index_numeric DESC, log_id DESC",
+    );
+    expect(sql).not.toContain("ORDER BY block_number DESC");
     expect(sql).toContain("LIMIT 51");
     expect(sql).not.toContain("SELECT *");
   });
@@ -163,8 +172,123 @@ describe("Base ERC20 transfer adapter", () => {
       assets,
       NOW,
     );
-    expect(sql).toContain("block_number < toUInt64('18446744073709551615')");
+    expect(sql).toContain(
+      "block_number_numeric < toUInt64('18446744073709551615')",
+    );
+    expect(sql).toContain("log_index_numeric < toUInt32('2')");
     expect(sql).toContain(`transaction_hash < '${TX_B}'`);
+  });
+
+  test("paginates numeric log indexes 100, 10, and 9 without lexical gaps", async () => {
+    const sourceRows = [
+      row({ log_id: "synthetic:9", log_index: "9" }),
+      row({ log_id: "synthetic:100", log_index: "100" }),
+      row({ log_id: "synthetic:10", log_index: "10" }),
+    ];
+    const transport: CdpSqlTransport = {
+      async run(request) {
+        expect(request.sql).toContain(
+          "ORDER BY block_number_numeric DESC, transaction_hash DESC, log_index_numeric DESC, log_id DESC",
+        );
+        const cursorIndex = request.sql.match(
+          /log_index_numeric < toUInt32\('(\d+)'\)/,
+        )?.[1];
+        const providerLimit = Number(request.sql.match(/LIMIT (\d+)$/)?.[1]);
+        const result = sourceRows
+          .filter(
+            (candidate) =>
+              cursorIndex === undefined ||
+              BigInt(String(candidate.log_index)) < BigInt(cursorIndex),
+          )
+          .sort((left, right) =>
+            BigInt(String(left.log_index)) > BigInt(String(right.log_index))
+              ? -1
+              : BigInt(String(left.log_index)) < BigInt(String(right.log_index))
+                ? 1
+                : 0,
+          )
+          .slice(0, providerLimit);
+        return {
+          result,
+          metadata: {
+            cached: false,
+            executionTimestamp: "2026-09-07T11:58:00.000Z",
+            executionTimeMs: 1,
+            rowCount: result.length,
+          },
+        };
+      },
+    };
+    const history = createBaseErc20TransferHistory({
+      assets,
+      transport,
+      now: () => NOW,
+    });
+
+    const first = await history.listTransfers(input({ limit: 1 }));
+    const second = await history.listTransfers(
+      input({ limit: 1, cursor: first.nextCursor }),
+    );
+    const third = await history.listTransfers(
+      input({ limit: 1, cursor: second.nextCursor }),
+    );
+
+    expect(first.transfers.map((transfer) => transfer.logIndex)).toEqual(["100"]);
+    expect(second.transfers.map((transfer) => transfer.logIndex)).toEqual(["10"]);
+    expect(third.transfers.map((transfer) => transfer.logIndex)).toEqual(["9"]);
+    expect(first.nextCursor).not.toBeNull();
+    expect(second.nextCursor).not.toBeNull();
+    expect(third.nextCursor).toBeNull();
+  });
+
+  test("accepts documented string log IDs consistently in rows and cursors", async () => {
+    const logId = "synthetic/log id'with+chars";
+    const history = createBaseErc20TransferHistory({
+      assets,
+      transport: transportFor([
+        row({ log_id: logId, log_index: "10" }),
+        row({ log_id: "extra-row", log_index: "9" }),
+      ]),
+      now: () => NOW,
+    });
+
+    const page = await history.listTransfers(input({ limit: 1 }));
+    expect(decodeTransferCursor(page.nextCursor!).logId).toBe(logId);
+    const { sql } = buildBaseErc20TransferQuery(
+      input({ cursor: page.nextCursor }),
+      assets,
+      NOW,
+    );
+    expect(sql).toContain("log_id < 'synthetic/log id''with+chars'");
+  });
+
+  test.each(["界".repeat(256), "\u0000".repeat(256), "😀".repeat(128)])(
+    "round-trips expanded log IDs from rows into the next query",
+    async (logId) => {
+      const history = createBaseErc20TransferHistory({
+        assets,
+        transport: transportFor([
+          row({ log_id: logId, log_index: "10" }),
+          row({ log_id: "extra-row", log_index: "9" }),
+        ]),
+        now: () => NOW,
+      });
+      const page = await history.listTransfers(input({ limit: 1 }));
+      expect(page.nextCursor).not.toBeNull();
+      expect(decodeTransferCursor(page.nextCursor!).logId).toBe(logId);
+      const next = buildBaseErc20TransferQuery(
+        input({ cursor: page.nextCursor }), assets, NOW,
+      );
+      expect(next.sql).toContain(`log_id < '${logId}'`);
+    },
+  );
+
+  test("rejects oversized serialized cursors at both boundaries", () => {
+    expect(() => decodeTransferCursor("a".repeat(4097))).toThrow(ChainDataError);
+    expect(() => encodeTransferCursor({
+      blockNumber: "1".repeat(4096), transactionHash: TX_A,
+      logIndex: "1", logId: "synthetic",
+    })).toThrow(ChainDataError);
   });
 
   test("rejects numeric uint256 values before they can lose precision", async () => {

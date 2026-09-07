@@ -4,7 +4,7 @@ An open-source home for your money on Base.
 
 Home is a mobile-first financial app designed around local currencies: sign in by email, hold and move money, add funds through local payment methods, save, and invest.
 
-**Status: credential-free UI/client preview.** Next.js, TypeScript and Tailwind run locally in `apps/web`. The welcome now supports presentation-only country choices for the United States, Brazil, Indonesia and a neutral global fallback; anonymous explicit choices persist in the browser. Home, Save and Invest show truthful unconnected, empty and unavailable states. Authentication, server geo, account preference persistence, database access, wallet data and live financial integrations are not implemented. This is the first UI slice, not full chunk 1; the design documents describe the broader target.
+**Status: local, read-only build.** Home has persistent browser country preferences, shared CDP email-session validation, an account address view, informational Stocks/Memes browsing, public Morpho USDC vault reads, and a server-only CDP SQL transfer-history adapter. SQL authentication and two-page transfer queries have been verified with a public fixture. Home holdings/prices, Base Account sign-in, database persistence, server geo, and financial execution remain unimplemented. No send, trade, deposit, or withdrawal is enabled; the design documents describe the broader target.
 
 ## Run locally
 
@@ -15,21 +15,25 @@ bun install --frozen-lockfile
 bun dev
 ```
 
-Open http://localhost:3000. The dev server binds to loopback only and supports hot reload. No credentials or database are needed for the UI preview. A public CDP project ID may be stored locally for the later provider slice, but the current app does not consume it.
+Open http://localhost:3000. The dev server binds to loopback only and supports hot reload. Browsing works without credentials; email sign-in consumes the public CDP project ID and requires matching server credentials for verification. Store configuration in `apps/web/.env.local` using the root `.env.example` as a template; do not overwrite an existing local environment file. No database is required for this read-only milestone.
 
 ```sh
-bun test        # Focused region, persistence and navigation tests
+bun test        # Deterministic unit and contract tests; live probes stay opt-in
 bun lint        # ESLint
 bun typecheck   # Next route types and strict TypeScript
 bun build       # Production build
-bun check       # Lint, typecheck and production build
+bun check       # Tests, lint, typecheck and production build
 bun start       # Serve a production build
 ```
 
-Edit `apps/web/app/home-experience.tsx` for the interactive preview, `apps/web/app/globals.css` for visual tokens, `apps/web/config/regions.ts` for presentation regions, and `apps/web/config/brand.ts` for branding. Keep one root `bun.lock`; run dependency installs from the repository root. Future local secrets and local public configuration belong in `apps/web/.env.local`, never in source control. See `.env.example` for the current configuration shape.
+Edit `apps/web/app/home-experience.tsx` for the Home shell, `apps/web/features/` for account/Invest/Savings UI, `apps/web/app/globals.css` for visual tokens, and `apps/web/config/` for presentation settings and sourced asset identities. Keep one root `bun.lock`. Real configuration belongs only in the gitignored `apps/web/.env.local`; never commit secrets.
 
 ## Start here
 
+- [CDP setup](docs/cdp-setup.md) — project/origins, email login, server validation and privacy defaults.
+- [SQL setup](docs/cdp-sql.md) — explicit authentication mode, bounded smoke tests and history limitations.
+- [Morpho setup](docs/morpho-setup.md) — USDC vault candidates and read-only verification.
+- [Invest data](docs/invest-data.md) — stock/meme identities and price/eligibility boundaries.
 - [Technical design](docs/technical-design.md) — architecture, provider boundaries, persistence, signing and status recovery.
 - [Implementation plan](docs/implementation-plan.md) — buildable chunks, dependencies and acceptance checks.
 - [Product scope](docs/product-scope.md) — user experience and roadmap.

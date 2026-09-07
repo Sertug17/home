@@ -1,5 +1,7 @@
+import { generateJwt } from "@coinbase/cdp-sdk/auth";
 import { ChainDataError } from "./errors";
 import type {
+  CdpSqlMetadata,
   CdpSqlResponse,
   CdpSqlRunRequest,
   CdpSqlTransport,
@@ -41,6 +43,33 @@ export type CdpSqlHttpTransportOptions = {
 export function createCdpSqlAuthFromEnv(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): CdpSqlAuth {
+  const mode = env.CDP_SQL_AUTH_MODE?.trim() || "client-api-key";
+  if (mode === "signed-jwt") {
+    const apiKeyId = env.CDP_API_KEY_ID?.trim();
+    const apiKeySecret = env.CDP_API_KEY_SECRET?.trim();
+    if (!apiKeyId || !apiKeySecret) {
+      throw new ChainDataError(
+        "not-configured",
+        "CDP_API_KEY_ID and CDP_API_KEY_SECRET are required when CDP_SQL_AUTH_MODE=signed-jwt.",
+      );
+    }
+    return {
+      mode: "signed-jwt",
+      generateBearerToken: (request) =>
+        generateJwt({
+          apiKeyId,
+          apiKeySecret,
+          ...request,
+        }),
+    };
+  }
+  if (mode !== "client-api-key") {
+    throw new ChainDataError(
+      "not-configured",
+      "CDP_SQL_AUTH_MODE must be client-api-key or signed-jwt.",
+    );
+  }
+
   const clientApiKey = env.CDP_SQL_CLIENT_API_KEY?.trim();
   if (!clientApiKey) {
     throw new ChainDataError(
@@ -218,12 +247,37 @@ function parseRetryAfter(value: string | null): number | null {
 }
 
 function isCdpSqlResponseEnvelope(value: unknown): value is CdpSqlResponse {
-  if (!isRecord(value)) return false;
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.result) ||
+    !isCdpSqlMetadata(value.metadata) ||
+    value.metadata.rowCount !== value.result.length
+  ) {
+    return false;
+  }
+  if (value.schema === undefined) return true;
   return (
-    Array.isArray(value.result) &&
     isRecord(value.schema) &&
     Array.isArray(value.schema.columns) &&
-    isRecord(value.metadata)
+    value.schema.columns.every(
+      (column) =>
+        isRecord(column) &&
+        typeof column.name === "string" &&
+        typeof column.type === "string",
+    )
+  );
+}
+
+function isCdpSqlMetadata(value: unknown): value is CdpSqlMetadata {
+  return (
+    isRecord(value) &&
+    typeof value.cached === "boolean" &&
+    typeof value.executionTimestamp === "string" &&
+    Number.isFinite(new Date(value.executionTimestamp).getTime()) &&
+    Number.isSafeInteger(value.executionTimeMs) &&
+    (value.executionTimeMs as number) >= 0 &&
+    Number.isSafeInteger(value.rowCount) &&
+    (value.rowCount as number) >= 0
   );
 }
 

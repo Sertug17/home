@@ -23,6 +23,9 @@ const MAX_TIME_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
 const MAX_CACHE_AGE_MS = 15 * 60 * 1000;
 const DEFAULT_STALE_AFTER_MS = 60 * 1000;
 const TRANSFER_SIGNATURE = "Transfer(address,address,uint256)";
+const MAX_LOG_ID_LENGTH = 256;
+// Includes UTF-8, JSON escaping, and base64 expansion of bounded log IDs.
+const MAX_ENCODED_CURSOR_LENGTH = 4096;
 
 export type BaseErc20TransferHistoryOptions = {
   assets: readonly BaseErc20Asset[];
@@ -81,11 +84,11 @@ export function buildBaseErc20TransferQuery(
   // leave removed logs in history.
   const sql = `SELECT
   log_id,
-  toString(block_number) AS block_number,
+  toString(block_number_numeric) AS block_number,
   block_hash,
-  formatDateTime(block_timestamp, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS source_timestamp,
+  formatDateTime(event_timestamp, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS source_timestamp,
   transaction_hash,
-  toString(log_index) AS log_index,
+  toString(log_index_numeric) AS log_index,
   lower(token_address) AS token_address,
   lower(from_address) AS from_address,
   lower(to_address) AS to_address,
@@ -93,11 +96,11 @@ export function buildBaseErc20TransferQuery(
 FROM (
   SELECT
     log_id,
-    any(block_number) AS block_number,
+    any(block_number) AS block_number_numeric,
     any(block_hash) AS block_hash,
-    any(block_timestamp) AS block_timestamp,
+    any(block_timestamp) AS event_timestamp,
     any(transaction_hash) AS transaction_hash,
-    any(log_index) AS log_index,
+    any(log_index) AS log_index_numeric,
     any(toString(address)) AS token_address,
     any(toString(parameters['from'])) AS from_address,
     any(toString(parameters['to'])) AS to_address,
@@ -115,7 +118,7 @@ FROM (
   HAVING sum(toInt8(action)) > 0
 )
 WHERE 1 = 1${cursorClause}
-ORDER BY block_number DESC, transaction_hash DESC, log_index DESC, log_id DESC
+ORDER BY block_number_numeric DESC, transaction_hash DESC, log_index_numeric DESC, log_id DESC
 LIMIT ${request.limit + 1}`;
 
   return { sql, request };
@@ -188,11 +191,15 @@ export function createBaseErc20TransferHistory({
 
 export function encodeTransferCursor(cursor: TransferHistoryCursor): string {
   validateCursor(cursor);
-  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+  const encoded = Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+  if (encoded.length > MAX_ENCODED_CURSOR_LENGTH) {
+    throw new ChainDataError("invalid-input", "Invalid transfer cursor.");
+  }
+  return encoded;
 }
 
 export function decodeTransferCursor(value: string): TransferHistoryCursor {
-  if (value.length === 0 || value.length > 1024) {
+  if (value.length === 0 || value.length > MAX_ENCODED_CURSOR_LENGTH) {
     throw new ChainDataError("invalid-input", "Invalid transfer cursor.");
   }
 
@@ -326,7 +333,7 @@ function parseTransferRow(value: unknown): TransferRow {
     to_address: requiredString(value, "to_address"),
     amount_base_units: requiredString(value, "amount_base_units"),
   };
-  if (row.log_id.length === 0 || row.log_id.length > 256) {
+  if (row.log_id.length === 0 || row.log_id.length > MAX_LOG_ID_LENGTH) {
     throw invalidResponse("CDP SQL returned an invalid log ID.");
   }
   for (const [name, decimal] of [
@@ -413,10 +420,10 @@ function buildCursorPredicate(cursor: TransferHistoryCursor): string {
   const transactionHash = sqlString(cursor.transactionHash);
   const logIndex = `toUInt32(${sqlString(cursor.logIndex)})`;
   const logId = sqlString(cursor.logId);
-  return `(block_number < ${block}
-    OR (block_number = ${block} AND transaction_hash < ${transactionHash})
-    OR (block_number = ${block} AND transaction_hash = ${transactionHash} AND log_index < ${logIndex})
-    OR (block_number = ${block} AND transaction_hash = ${transactionHash} AND log_index = ${logIndex} AND log_id < ${logId}))`;
+  return `(block_number_numeric < ${block}
+    OR (block_number_numeric = ${block} AND transaction_hash < ${transactionHash})
+    OR (block_number_numeric = ${block} AND transaction_hash = ${transactionHash} AND log_index_numeric < ${logIndex})
+    OR (block_number_numeric = ${block} AND transaction_hash = ${transactionHash} AND log_index_numeric = ${logIndex} AND log_id < ${logId}))`;
 }
 
 function validateCursor(value: unknown): asserts value is TransferHistoryCursor {
@@ -432,8 +439,7 @@ function validateCursor(value: unknown): asserts value is TransferHistoryCursor 
     !HASH_PATTERN.test(value.transactionHash) ||
     typeof value.logId !== "string" ||
     value.logId.length === 0 ||
-    value.logId.length > 256 ||
-    /[^a-zA-Z0-9:_\-.]/.test(value.logId)
+    value.logId.length > MAX_LOG_ID_LENGTH
   ) {
     throw new ChainDataError("invalid-input", "Invalid transfer cursor.");
   }
