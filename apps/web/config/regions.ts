@@ -42,14 +42,14 @@ export const presentationRegions = {
     },
     candidateAsset: null,
     theme: {
-      accent: "#1d4ed8",
-      accentSoft: "#dfe8ff",
-      surface: "#eee9df",
+      accent: "#0000FF",
+      accentSoft: "#EEF0F3",
+      surface: "#FFFFFF",
     },
     welcome: {
-      eyebrow: "A home for your money",
-      title: "Start local. Stay open to more.",
-      body: "Choose a country to preview familiar currency details. This setting changes presentation only.",
+      eyebrow: "Money on Base",
+      title: "Your money, in one place.",
+      body: "Choose how money looks, then sign in to see your account.",
     },
   },
   US: {
@@ -64,17 +64,17 @@ export const presentationRegions = {
     },
     candidateAsset: {
       symbol: "USDC",
-      note: "Base asset candidate · no live route",
+      note: "Candidate asset · route unavailable",
     },
     theme: {
-      accent: "#1746d1",
-      accentSoft: "#dce6ff",
-      surface: "#e8ecf5",
+      accent: "#0000FF",
+      accentSoft: "#EEF0F3",
+      surface: "#FFFFFF",
     },
     welcome: {
-      eyebrow: "Your US dollar home",
-      title: "Everyday dollars, with room to grow.",
-      body: "A calm place for dollar balances, saving, and investing — once your account is connected.",
+      eyebrow: "United States · USD",
+      title: "Your dollars, at home.",
+      body: "See your actual balance and activity after you sign in.",
     },
   },
   BR: {
@@ -89,17 +89,17 @@ export const presentationRegions = {
     },
     candidateAsset: {
       symbol: "BRZ",
-      note: "Base asset candidate · no live route",
+      note: "Candidate asset · route unavailable",
     },
     theme: {
-      accent: "#176b4d",
-      accentSoft: "#d8efe1",
-      surface: "#e7eddf",
+      accent: "#009C3B",
+      accentSoft: "#EEF0F3",
+      surface: "#FFFFFF",
     },
     welcome: {
-      eyebrow: "Your Brazilian real home",
-      title: "Reais up front. Global options nearby.",
-      body: "See familiar real-denominated presentation without confusing it with an actual connected balance.",
+      eyebrow: "Brazil · BRL",
+      title: "Your reais, at home.",
+      body: "See your actual balance and activity after you sign in.",
     },
   },
   ID: {
@@ -114,17 +114,17 @@ export const presentationRegions = {
     },
     candidateAsset: {
       symbol: "IDRX",
-      note: "Base asset candidate · no live route",
+      note: "Candidate asset · route unavailable",
     },
     theme: {
-      accent: "#a43a2f",
-      accentSoft: "#f4ddd6",
-      surface: "#eee5dc",
+      accent: "#E70011",
+      accentSoft: "#EEF0F3",
+      surface: "#FFFFFF",
     },
     welcome: {
-      eyebrow: "Your Indonesian rupiah home",
-      title: "Rupiah first. More possibilities next.",
-      body: "Preview a rupiah-led home while wallet, eligibility, and funding connections remain off.",
+      eyebrow: "Indonesia · IDR",
+      title: "Your rupiah, at home.",
+      body: "See your actual balance and activity after you sign in.",
     },
   },
 } as const satisfies Record<RegionId, PresentationRegion>;
