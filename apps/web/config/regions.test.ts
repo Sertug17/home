@@ -69,7 +69,7 @@ const expectedDefaultAssets = {
   NZD: ["NZDD", "NZDD", "Verification pending"],
   PEN: ["wPEN", "Ripio", "Additional verification"],
   SGD: ["XSGD", "StraitsX", "Verification pending"],
-  TRY: ["TRYB", "BiLira", "Additional verification"],
+  TRY: ["TRYB", "BiLira", "Verification pending"],
   USD: ["USDC", "Circle", "Verification pending"],
   ZAR: ["ZARP", "ZARP", "Verification pending"],
 } as const;
@@ -174,11 +174,11 @@ describe("presentation regions", () => {
     expect(presentationRegions.TR.candidateAsset).toMatchObject({
       symbol: "TRYB",
       issuer: "BiLira",
-      verificationStatus: "Additional verification",
+      verificationStatus: "Verification pending",
       fundingStatus: "disabled",
     });
     expect(presentationRegions.TR.candidateAsset?.contractSelection).toContain(
-      "no contract selected",
+      "0xfb8718a69aed7726afb3f04d2bd4bfde1bdcb294",
     );
     expect(presentationRegions.TR.candidateAsset).not.toHaveProperty("address");
   });
