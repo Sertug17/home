@@ -90,7 +90,7 @@ function deferred<T>() {
 afterEach(() => cleanup());
 
 describe("ActivityPanel", () => {
-  test("renders direction, bounded shared amount formatting, freshness, explorer link, and explicit coverage", async () => {
+  test("renders direction, bounded shared amount formatting, freshness, and explorer link", async () => {
     const view = render(
       <ActivityPanel
         session={session("subject-a", WALLET_A)}
@@ -107,8 +107,7 @@ describe("ActivityPanel", () => {
     expect(explorer.getAttribute("href")).toBe(
       `https://basescan.org/tx/0x${"a".repeat(64)}`,
     );
-    expect(view.getByText(/Native ETH transfers/)).toBeTruthy();
-    expect(view.getByText(/not transaction receipt confirmation/)).toBeTruthy();
+    expect(view.queryByText("Activity coverage")).toBeNull();
   });
 
   test("keeps the pagination window and first-page freshness stable while deduplicating overlap", async () => {
@@ -230,16 +229,12 @@ describe("ActivityPanel", () => {
     );
     fireEvent.click(view.getByText("Try again"));
     await waitFor(() =>
-      expect(view.getByText("No supported token transfers in this window.")).toBeTruthy(),
+      expect(view.getByText("No activity yet")).toBeTruthy(),
     );
 
     view.rerender(
       <ActivityPanel session={null} fetchActivity={fetchActivity} />,
     );
-    expect(
-      view.getByText(
-        "Recent activity appears when a verified Base smart account is ready.",
-      ),
-    ).toBeTruthy();
+    expect(view.getByText("No activity yet")).toBeTruthy();
   });
 });

@@ -24,10 +24,10 @@
 }
 
 .header h2 {
-  margin: 6px 0 0;
-  font-size: 1.65rem;
-  font-weight: 650;
-  letter-spacing: -0.035em;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 
 .refreshButton,
@@ -81,12 +81,9 @@
 }
 
 .empty {
-  margin: 20px 0 0;
-  border: 1px dashed rgba(10, 11, 13, 0.18);
-  color: #606773;
+  margin: 18px 0 0;
+  color: #717886;
   font-size: 0.84rem;
-  padding: 20px;
-  text-align: center;
 }
 
 .error {
@@ -122,26 +119,6 @@
   margin: 14px 0 0;
   color: #84251f;
   font-size: 0.75rem;
-}
-
-.coverage {
-  margin: 14px 0 0;
-  border-top: 1px solid rgba(10, 11, 13, 0.1);
-  padding-top: 10px;
-  color: #747b87;
-  font-size: 0.68rem;
-}
-
-.coverage summary {
-  width: fit-content;
-  cursor: pointer;
-  color: #565c68;
-  font-weight: 700;
-}
-
-.coverage p {
-  margin: 9px 0 0;
-  line-height: 1.5;
 }
 
 @keyframes spin {
