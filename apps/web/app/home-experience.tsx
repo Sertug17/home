@@ -383,6 +383,7 @@ export function HomeExperience({
             account.status === "signout-error" ? account.message : null
           }
           landingVisual={landingVisual}
+          showCreateAccount={account.signInAvailability === "ready"}
           onDashboard={() => router.replace("/dashboard")}
           onSignIn={openAccount}
           onRetrySignOut={() => void account.signOut().catch(() => {})}
@@ -454,6 +455,7 @@ function SignedOutLanding({
   isVerified,
   signOutError,
   landingVisual,
+  showCreateAccount,
   onDashboard,
   onSignIn,
   onRetrySignOut,
@@ -461,6 +463,7 @@ function SignedOutLanding({
   isVerified: boolean;
   signOutError: string | null;
   landingVisual?: ReactNode;
+  showCreateAccount: boolean;
   onDashboard: () => void;
   onSignIn: () => void;
   onRetrySignOut: () => void;
@@ -487,9 +490,11 @@ function SignedOutLanding({
               <button className="landing-primary" type="button" onClick={onSignIn}>
                 Sign in
               </button>
-              <button className="landing-secondary" type="button" onClick={onSignIn}>
-                Create account
-              </button>
+              {showCreateAccount ? (
+                <button className="landing-secondary" type="button" onClick={onSignIn}>
+                  Create account
+                </button>
+              ) : null}
             </>
           )}
         </div>
