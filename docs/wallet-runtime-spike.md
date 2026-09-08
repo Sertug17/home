@@ -2,13 +2,15 @@
 
 Status: local implementation spike, September 8, 2026.
 
+Team/onboarding context: [architecture review](architecture-review-2026-09.md). This file remains the money-action contract.
+
 Home money actions now use a server-issued prepare → review → atomic claim → user-wallet submission → receipt reconciliation lifecycle. The shared contract is `apps/web/features/money-actions/types.ts`; reviewed feature adapters issue plans through `issueMoneyAction`. Browsers submit only a prepared action id and immutable review hash. The server returns the canonical calls bound to the verified CDP subject, Base address, chain 8453, and selected account provider.
 
 ## Local-only persistence
 
 The current durable store is a small Node-only `node:sqlite` adapter at `apps/web/server/money-actions/sqlite-store.node.ts`. It writes ignored runtime data to `apps/web/.local/home-money-actions.sqlite` when Next runs from the web workspace (or `.local/home-money-actions.sqlite` relative to the active process working directory), with directory mode `0700` and database mode `0600`. It stores action plans, immutable review hashes, owner tuples, statuses, attempts, and public chain/provider operation references. It stores no access tokens, signatures, emails, OTPs, private keys, or provider credentials.
 
-**This SQLite adapter is local-spike persistence. It is not production persistence for Vercel.** A production release still needs the reviewed deployment database described in `docs/technical-design.md`; the `MoneyActionStore` boundary is injectable so that replacement does not change feature plan contracts or browser execution semantics.
+**This SQLite adapter is local-spike persistence. It is not production persistence for Vercel.** A production release still needs the reviewed deployment database described in [target architecture](target-architecture.md) (not the current tree); the `MoneyActionStore` boundary is injectable so that replacement does not change feature plan contracts or browser execution semantics.
 
 ## Endpoints
 
