@@ -51,7 +51,7 @@ Later features include Morpho borrowing, a Venice agent interface with x402/DIEM
 
 ## Forking and contributing
 
-Fork this repository to follow along or build your own version. Brand, regions, asset selection and providers are designed to be replaceable. Each operator will configure their own provider projects, credentials and deployment. See the implementation plan for the next build slice; design feedback and focused pull requests are welcome.
+Fork this repository to follow along or build your own version. Brand, regions, asset selection and providers are designed to be replaceable. Each operator will configure their own provider projects, credentials and deployment. See the implementation plan for the next build slice; design feedback and focused pull requests are welcome. Pull requests and pushes to `main` run GitHub Actions CI: `bun install --frozen-lockfile` then `bun check`. Live probes stay opt-in and are not enabled in CI.
 
 Never commit credentials or funded-wallet secrets. Documented token/provider support is separate from a tested integration.
 
