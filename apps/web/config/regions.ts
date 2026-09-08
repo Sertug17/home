@@ -245,8 +245,8 @@ const currencyPresentations = {
     candidateAsset: candidateAsset(
       "TRYB",
       "BiLira",
-      "Additional verification",
-      "Product family only; no contract selected between the 6-decimal and 8-decimal Base deployments.",
+      "Verification pending",
+      "Confirmed Base contract: 0xfb8718a69aed7726afb3f04d2bd4bfde1bdcb294, decimals 6.",
     ),
   },
   USD: {
