@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: bun check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Non-secret defaults from .env.example. Browsing and the production
+      # build work without CDP keys; live probes stay opt-in and are not set.
+      DISABLE_CDP_USAGE_TRACKING: "true"
+      DISABLE_CDP_ERROR_REPORTING: "true"
+      CDP_SQL_AUTH_MODE: client-api-key
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Check
+        run: bun check
