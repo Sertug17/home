@@ -153,12 +153,12 @@
       "symbol": "TRYB",
       "currency": "TRY",
       "decimals": 8,
-      "region": "T\u00fcrkiye",
+      "region": "Türkiye",
       "countryCode": "TR",
       "source": "https://dune.com/queries/4780995",
       "verification": "dashboard-listed",
       "enabled": false,
-      "selectedProduct": true
+      "selectedProduct": false
     },
     {
       "chainId": 8453,
@@ -166,7 +166,7 @@
       "symbol": "TRYB",
       "currency": "TRY",
       "decimals": 6,
-      "region": "T\u00fcrkiye",
+      "region": "Türkiye",
       "countryCode": "TR",
       "source": "https://dune.com/queries/4780995",
       "verification": "dashboard-listed",
