@@ -12,7 +12,7 @@ const { act, cleanup, fireEvent, render, waitFor, within } = await import(
 );
 const { useMemo, useState } = await import("react");
 const { AccountSignInSheet } = await import("./account-screen");
-const { AccountWalletSessionOwner } = await import("./cdp-client");
+const { AccountWalletSessionOwner, useAccountWallet } = await import("./cdp-client");
 
 function page() {
   return within(document.body);
@@ -26,21 +26,38 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function SessionStatusProbe() {
+  return <output data-testid="session-status">{useAccountWallet().status}</output>;
+}
+
 function SheetHarness({
   requestEmailCode,
   baseAccountEnabled = false,
   baseAccountConnector,
+  initiallySignedIn = false,
 }: {
   requestEmailCode: AccountWalletSdkBoundary["signInWithEmail"];
   baseAccountEnabled?: boolean;
   baseAccountConnector?: BaseAccountConnector;
+  initiallySignedIn?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const sessionFetch = useMemo(
+    () => async () => Response.json({
+      user: { subject: "existing-subject" },
+      smartAccount: {
+        address: "0x1111111111111111111111111111111111111111",
+        chainId: 8453,
+      },
+      accountProvider: "cdp-embedded",
+    }),
+    [],
+  );
   const sdk = useMemo<AccountWalletSdkBoundary>(
     () => ({
       isInitialized: true,
-      isSignedIn: false,
-      ownerKey: null,
+      isSignedIn: initiallySignedIn,
+      ownerKey: initiallySignedIn ? "existing-owner" : null,
       signInWithEmail: requestEmailCode,
       verifyEmailOTP: async () => {},
       signInWithSiwe: async () => ({
@@ -48,10 +65,10 @@ function SheetHarness({
         message: "unused SIWE message",
       }),
       verifySiweSignature: async () => {},
-      getAccessToken: async () => null,
+      getAccessToken: async () => initiallySignedIn ? "fixture-token" : null,
       signOut: async () => {},
     }),
-    [requestEmailCode],
+    [initiallySignedIn, requestEmailCode],
   );
 
   return (
@@ -59,7 +76,9 @@ function SheetHarness({
       sdk={sdk}
       baseAccountEnabled={baseAccountEnabled}
       baseAccountConnector={baseAccountConnector}
+      sessionFetch={sessionFetch}
     >
+      <SessionStatusProbe />
       <button type="button" onClick={() => setOpen(true)}>
         Open account
       </button>
@@ -99,7 +118,11 @@ describe("production account sign-in sheet", () => {
     await waitFor(() =>
       expect((emailInput as HTMLInputElement).value).toBe("person@example.com"),
     );
-    fireEvent.submit(emailInput.closest("form")!);
+    fireEvent.click(page().getByRole("button", { name: "Continue with email" }), {
+      detail: 0,
+      clientX: 0,
+      clientY: 0,
+    });
     await waitFor(() =>
       expect(
         (page().getByRole("button", {
@@ -107,11 +130,6 @@ describe("production account sign-in sheet", () => {
         }) as HTMLButtonElement).disabled,
       ).toBe(true),
     );
-
-    const busyCancel = new Event("cancel", { cancelable: true });
-    fireEvent(dialog, busyCancel);
-    expect(busyCancel.defaultPrevented).toBe(true);
-    expect((dialog as HTMLDialogElement).open).toBe(true);
 
     await act(async () => {
       codeRequest.resolve({ flowId: "flow-1" });
@@ -131,6 +149,49 @@ describe("production account sign-in sheet", () => {
     expect(cancel.defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(trigger);
     expect(document.body.style.overflow).toBe("");
+  });
+
+  test("lets the close control cancel an in-flight email request and ignores its late result", async () => {
+    const codeRequest = deferred<{ flowId: string }>();
+    render(<SheetHarness requestEmailCode={() => codeRequest.promise} />);
+    fireEvent.click(page().getByRole("button", { name: "Open account" }));
+    const email = await page().findByRole("textbox", { name: "Email address" });
+    fireEvent.input(email, { target: { value: "fixture@example.test" } });
+    fireEvent.click(page().getByRole("button", { name: "Continue with email" }));
+    fireEvent.click(page().getByRole("button", { name: "Close sign in" }));
+    expect((document.querySelector("dialog") as HTMLDialogElement).open).toBe(false);
+
+    await act(async () => {
+      codeRequest.resolve({ flowId: "late-flow" });
+      await codeRequest.promise;
+    });
+    fireEvent.click(page().getByRole("button", { name: "Open account" }));
+    await waitFor(() =>
+      expect((document.querySelector("dialog") as HTMLDialogElement).open).toBe(true),
+    );
+    expect(await page().findByRole("textbox", { name: "Email address" })).toBeTruthy();
+    expect(page().queryByRole("textbox", { name: "Verification code" })).toBeNull();
+  });
+
+  test("does not let an existing verified session auto-close a new email attempt", async () => {
+    render(
+      <SheetHarness
+        requestEmailCode={async () => ({ flowId: "new-email-flow" })}
+        initiallySignedIn
+      />,
+    );
+    await waitFor(() =>
+      expect(page().getByTestId("session-status").textContent).toBe("verified"),
+    );
+    fireEvent.click(page().getByRole("button", { name: "Open account" }));
+    const dialog = await page().findByRole("dialog", { name: "Sign in to Home" });
+    expect((dialog as HTMLDialogElement).open).toBe(true);
+
+    const email = page().getByRole("textbox", { name: "Email address" });
+    fireEvent.input(email, { target: { value: "new@example.test" } });
+    fireEvent.click(page().getByRole("button", { name: "Continue with email" }));
+    expect(await page().findByRole("textbox", { name: "Verification code" })).toBeTruthy();
+    expect((dialog as HTMLDialogElement).open).toBe(true);
   });
 
   test("shows email and Base Account side by side only when the deployment flag is enabled", async () => {
@@ -169,28 +230,29 @@ describe("production account sign-in sheet", () => {
     );
   });
 
-  test("keeps the native dialog modal while Base Account connection is pending", async () => {
+  test("hands off native modal ownership while Base Account connection is pending and permits cancellation", async () => {
     const connection = deferred<never>();
-    render(
+    const trigger = render(
       <SheetHarness
         requestEmailCode={async () => ({ flowId: "unused-flow" })}
         baseAccountEnabled
         baseAccountConnector={() => connection.promise}
       />,
-    );
-    fireEvent.click(page().getByRole("button", { name: "Open account" }));
+    ).getByRole("button", { name: "Open account" });
+    trigger.focus();
+    fireEvent.click(trigger);
     const dialog = page().getByRole("dialog", { name: "Sign in to Home" });
     fireEvent.click(
       await page().findByRole("button", { name: "Continue with Base Account" }),
     );
     expect(
-      await page().findByText("Connecting to your existing Base Account…"),
+      await page().findByRole("button", { name: "Cancel sign in" }),
     ).toBeTruthy();
+    expect((dialog as HTMLDialogElement).open).toBe(false);
 
-    const busyCancel = new Event("cancel", { cancelable: true });
-    fireEvent(dialog, busyCancel);
-    expect(busyCancel.defaultPrevented).toBe(true);
-    expect((dialog as HTMLDialogElement).open).toBe(true);
+    fireEvent.click(page().getByRole("button", { name: "Cancel sign in" }));
+    await waitFor(() => expect(page().queryByRole("button", { name: "Cancel sign in" })).toBeNull());
+    expect(document.activeElement).toBe(trigger);
   });
 
   test("closes on a click outside the dialog surface but not on an inside click", async () => {

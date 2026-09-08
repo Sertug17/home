@@ -329,6 +329,31 @@ a:focus-visible,
   white-space: nowrap;
 }
 
+.dashboard-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.72rem;
+  padding: 12px 14px;
+}
+
+.dashboard-notice button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .panel-stage {
   margin-top: 14px;
   scroll-margin-top: 16px;
@@ -624,6 +649,48 @@ a:focus-visible,
   padding-top: 13px;
   color: var(--muted);
   font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.activity-list {
+  display: grid;
+  margin: 18px 0 0;
+  border-top: 1px solid var(--line);
+  padding: 0;
+  list-style: none;
+}
+
+.activity-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.activity-list li > span {
+  display: grid;
+  gap: 3px;
+}
+
+.activity-list li > span:last-child {
+  justify-items: end;
+  text-align: right;
+}
+
+.activity-list strong {
+  font-size: 0.76rem;
+}
+
+.activity-list small,
+.activity-source {
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.activity-source {
+  margin: 10px 0 0;
 }
 
 .empty-panel {

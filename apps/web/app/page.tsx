@@ -1,6 +1,4 @@
-import { PricedInvestExperience } from "@/features/invest/priced-invest-experience";
 import { SupportedGlobe } from "@/features/landing/supported-globe";
-import { SavingsExperience } from "@/features/savings/savings-experience";
 import { PortfolioHomeExperience } from "./home-experience";
 
 type HomePageProps = {
@@ -14,10 +12,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   return (
     <PortfolioHomeExperience
       detectedCountry={null}
-      investContent={<PricedInvestExperience />}
-      savingsContent={<SavingsExperience />}
       initialAccountOpen={query.account === "signin"}
       landingVisual={<SupportedGlobe />}
+      routeMode="landing"
     />
   );
 }

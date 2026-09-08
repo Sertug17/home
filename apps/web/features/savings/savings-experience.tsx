@@ -1,21 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAccountWallet } from "@/features/account/cdp-client";
+import type { VerifiedAccountSession } from "@/features/account/session-types";
+import { MORPHO_V1_CANDIDATE_ADDRESSES } from "@/server/morpho/config";
 import type {
   Address,
   MorphoVaultCandidate,
+  MorphoVaultPosition,
   MorphoVaultsResult,
 } from "@/server/morpho/types";
 import styles from "./savings-experience.module.css";
 
-type SavingsSession = {
-  user: { subject: string };
-  smartAccount: { address: Address; chainId: 8453 } | null;
-};
-
 type SavingsExperienceProps = {
   initialData?: MorphoVaultsResult | null;
-  session?: SavingsSession | null;
+  session?: VerifiedAccountSession | null;
+  fetchPositions?: (signal?: AbortSignal) => Promise<unknown>;
 };
 
 type LoadState =
@@ -23,15 +23,49 @@ type LoadState =
   | { status: "ready"; data: MorphoVaultsResult }
   | { status: "error"; data: null };
 
+type PositionResult = {
+  accountAddress: Address;
+  fetchedAt: string;
+  vaults: Array<{
+    vaultAddress: Address;
+    position: MorphoVaultPosition | null;
+  }>;
+};
+
+type PositionState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; data: PositionResult }
+  | { status: "error" };
+
+export function AuthenticatedSavingsExperience() {
+  const account = useAccountWallet();
+  return (
+    <SavingsExperience
+      session={account.status === "verified" ? account.session : null}
+      fetchPositions={account.fetchSavingsPositions}
+    />
+  );
+}
+
 export function SavingsExperience({
   initialData = null,
   session = null,
+  fetchPositions,
 }: SavingsExperienceProps) {
   const [loadState, setLoadState] = useState<LoadState>(
     initialData
       ? { status: "ready", data: initialData }
       : { status: "loading", data: null },
   );
+  const [positionResult, setPositionResult] = useState<{
+    key: string;
+    state: PositionState;
+  } | null>(null);
+  const sessionAddress = session?.smartAccount?.address ?? null;
+  const sessionKey = session && sessionAddress
+    ? `${session.user.subject}:${session.accountProvider}:${sessionAddress}`
+    : null;
 
   useEffect(() => {
     if (initialData) return;
@@ -47,12 +81,39 @@ export function SavingsExperience({
       })
       .then((data) => setLoadState({ status: "ready", data }))
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (isAbortError(error)) return;
         setLoadState({ status: "error", data: null });
       });
 
     return () => controller.abort();
   }, [initialData]);
+
+  useEffect(() => {
+    if (!sessionKey || !fetchPositions) return;
+
+    const controller = new AbortController();
+    void fetchPositions(controller.signal)
+      .then((value) => {
+        if (controller.signal.aborted) return;
+        const data = parsePositionResult(value, sessionAddress!);
+        setPositionResult({
+          key: sessionKey,
+          state: data ? { status: "ready", data } : { status: "error" },
+        });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || isAbortError(error)) return;
+        setPositionResult({ key: sessionKey, state: { status: "error" } });
+      });
+
+    return () => controller.abort();
+  }, [fetchPositions, sessionAddress, sessionKey]);
+
+  const positionState: PositionState = !sessionKey
+    ? { status: "idle" }
+    : positionResult?.key === sessionKey
+      ? positionResult.state
+      : { status: "loading" };
 
   return (
     <section className={styles.experience} aria-labelledby="savings-title">
@@ -64,7 +125,7 @@ export function SavingsExperience({
         <span>Base · Morpho V1</span>
       </header>
 
-      <PositionStatus session={session} />
+      <PositionStatus session={session} state={positionState} />
 
       <section className={styles.comparison} aria-labelledby="rates-title">
         <div className={styles.comparisonHeading}>
@@ -90,10 +151,7 @@ export function SavingsExperience({
 
             <div className={styles.candidateList} aria-label="Vault candidates">
               {loadState.data.candidates.map((candidate) => (
-                <VaultCandidateRow
-                  key={candidate.vaultAddress}
-                  candidate={candidate}
-                />
+                <VaultCandidateRow key={candidate.vaultAddress} candidate={candidate} />
               ))}
             </div>
           </>
@@ -101,7 +159,6 @@ export function SavingsExperience({
       </section>
 
       <div className={styles.actionBar} aria-label="Savings actions unavailable">
-        <span>Transactions are not enabled.</span>
         <button type="button" disabled title="Deposits are not enabled">
           Deposit unavailable
         </button>
@@ -109,6 +166,59 @@ export function SavingsExperience({
           Withdraw unavailable
         </button>
       </div>
+    </section>
+  );
+}
+
+function PositionStatus({
+  session,
+  state,
+}: {
+  session: VerifiedAccountSession | null;
+  state: PositionState;
+}) {
+  let content: React.ReactNode;
+  if (!session?.smartAccount || state.status === "idle") {
+    content = <p>Position details remain private until account verification.</p>;
+  } else if (state.status === "loading") {
+    content = <p role="status">Loading supported vault positions…</p>;
+  } else if (state.status === "error") {
+    content = <p role="alert">Supported Morpho positions are temporarily unavailable.</p>;
+  } else {
+    const positions = state.data.vaults.flatMap((entry) =>
+      entry.position ? [entry.position] : [],
+    );
+    content = positions.length === 0 ? (
+      <p>
+        No indexed position was found in the three supported vaults. This does not assert a zero spendable balance.
+      </p>
+    ) : (
+      <div className={styles.positionList}>
+        {positions.map((position) => (
+          <article key={position.vaultAddress}>
+            <div className={styles.positionValue}>
+              <strong>{formatTokenAmount(position.assetsRaw, 6)}</strong>
+              <span>Indexed assets · not max withdraw</span>
+            </div>
+            <dl className={styles.positionFacts}>
+              <div><dt>Shares</dt><dd>{formatShares(position.sharesRaw)}</dd></div>
+              <div><dt>Vault</dt><dd><code title={position.vaultAddress}>{shortenAddress(position.vaultAddress)}</code></dd></div>
+              <div><dt>Indexed</dt><dd><time dateTime={position.indexedAt}>{formatTimestamp(position.indexedAt)}</time></dd></div>
+            </dl>
+          </article>
+        ))}
+        <p>Current withdrawable amount is not provided; no maxWithdraw claim is made.</p>
+      </div>
+    );
+  }
+
+  return (
+    <section className={styles.position} aria-labelledby="position-title">
+      <div>
+        <p className={styles.detailsKicker}>Your position</p>
+        <h3 id="position-title">Supported vault positions</h3>
+      </div>
+      {content}
     </section>
   );
 }
@@ -151,46 +261,23 @@ function VaultCandidateRow({ candidate }: { candidate: MorphoVaultCandidate }) {
       <details className={styles.details}>
         <summary>Fees, liquidity, curator, addresses, and risks</summary>
         <div className={styles.detailsContent}>
-          <p>
-            Read-only candidate, not a recommendation. Yield is variable and
-            vault-specific. Opening details does not select a product.
-          </p>
+          <p>Variable vault yield; no vault is selected or recommended.</p>
           <dl className={styles.metrics}>
-            <Metric
-              label="Vault fee"
-              value={formatRate(candidate.feeRate)}
-              note="Reported by Morpho V1"
-            />
-            <Metric
-              label="Total assets"
-              value={formatTokenAmount(candidate.totalAssetsRaw, 6)}
-              note="Vault-wide, not your balance"
-            />
-            <Metric
-              label="Indexed liquidity"
-              value={formatTokenAmount(candidate.liquidityRaw, 6)}
-              note="Not the account's max withdrawal"
-            />
-            <Metric
-              label="Listing status"
-              value={candidate.listed ? "Listed" : "Not listed"}
-              note="Source snapshot status"
-            />
+            <Metric label="Vault fee" value={formatRate(candidate.feeRate)} note="Reported by Morpho V1" />
+            <Metric label="Total assets" value={formatTokenAmount(candidate.totalAssetsRaw, 6)} note="Vault-wide, not your balance" />
+            <Metric label="Indexed liquidity" value={formatTokenAmount(candidate.liquidityRaw, 6)} note="Not the account's max withdrawal" />
+            <Metric label="Listing status" value={candidate.listed ? "Listed" : "Not listed"} note="Source snapshot status" />
           </dl>
           <div className={styles.provenance}>
             <div>
               <span>Curator address</span>
               <code title={candidate.curatorAddress ?? undefined}>
-                {candidate.curatorAddress
-                  ? shortenAddress(candidate.curatorAddress)
-                  : "Unavailable"}
+                {candidate.curatorAddress ? shortenAddress(candidate.curatorAddress) : "Unavailable"}
               </code>
             </div>
             <div>
               <span>Vault address</span>
-              <code title={candidate.vaultAddress}>
-                {shortenAddress(candidate.vaultAddress)}
-              </code>
+              <code title={candidate.vaultAddress}>{shortenAddress(candidate.vaultAddress)}</code>
             </div>
           </div>
         </div>
@@ -199,48 +286,53 @@ function VaultCandidateRow({ candidate }: { candidate: MorphoVaultCandidate }) {
   );
 }
 
-function Metric({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string;
-  note: string;
-}) {
+function Metric({ label, value, note }: { label: string; value: string; note: string }) {
   return (
     <div>
       <dt>{label}</dt>
-      <dd>
-        <span>{value}</span>
-        <small>{note}</small>
-      </dd>
+      <dd><span>{value}</span><small>{note}</small></dd>
     </div>
   );
 }
 
-function PositionStatus({ session }: { session: SavingsSession | null }) {
-  let status = "Sign in to see a verified USDC position.";
-  if (session && !session.smartAccount) {
-    status = "Verified session; Base account unavailable.";
-  }
-  if (session?.smartAccount) {
-    status = `Verified account ${shortenAddress(session.smartAccount.address)}; position not requested.`;
-  }
+function parsePositionResult(value: unknown, expectedAddress: Address): PositionResult | null {
+  if (
+    !isRecord(value) ||
+    typeof value.accountAddress !== "string" ||
+    value.accountAddress.toLowerCase() !== expectedAddress.toLowerCase() ||
+    typeof value.fetchedAt !== "string" ||
+    !Array.isArray(value.vaults)
+  ) return null;
 
-  return (
-    <section className={styles.position} aria-labelledby="position-title">
-      <div>
-        <p className={styles.detailsKicker}>Your position</p>
-        <h3 id="position-title">USDC balance</h3>
-      </div>
-      <div className={styles.positionValue} aria-label="USDC balance unavailable">
-        <strong aria-hidden="true">—</strong>
-        <span>Balance unavailable</span>
-      </div>
-      <p>{status}</p>
-    </section>
+  const configuredVaults = new Set(
+    MORPHO_V1_CANDIDATE_ADDRESSES.map((address) => address.toLowerCase()),
   );
+  const seenVaults = new Set<string>();
+  const vaults: PositionResult["vaults"] = [];
+  for (const entry of value.vaults) {
+    if (!isRecord(entry) || typeof entry.vaultAddress !== "string") return null;
+    const normalizedVault = entry.vaultAddress.toLowerCase();
+    if (!configuredVaults.has(normalizedVault) || seenVaults.has(normalizedVault)) return null;
+    seenVaults.add(normalizedVault);
+    if (entry.position !== null && !isPosition(entry.position, expectedAddress, entry.vaultAddress)) return null;
+    vaults.push({
+      vaultAddress: entry.vaultAddress as Address,
+      position: entry.position as MorphoVaultPosition | null,
+    });
+  }
+  return { accountAddress: expectedAddress, fetchedAt: value.fetchedAt, vaults };
+}
+
+function isPosition(value: unknown, accountAddress: Address, vaultAddress: string) {
+  return isRecord(value) &&
+    typeof value.accountAddress === "string" &&
+    value.accountAddress.toLowerCase() === accountAddress.toLowerCase() &&
+    typeof value.vaultAddress === "string" &&
+    value.vaultAddress.toLowerCase() === vaultAddress.toLowerCase() &&
+    (typeof value.assetsRaw === "string" || value.assetsRaw === null) &&
+    typeof value.sharesRaw === "string" &&
+    typeof value.indexedAt === "string" &&
+    value.withdrawableRaw === null;
 }
 
 function formatRate(value: number | null) {
@@ -261,6 +353,10 @@ function formatTokenAmount(raw: string | null, decimals: number) {
   return `${grouped}${fraction ? `.${fraction}` : ""} USDC`;
 }
 
+function formatShares(raw: string) {
+  return raw.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 function formatTimestamp(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "time unavailable";
@@ -276,4 +372,12 @@ function formatTimestamp(value: string) {
 
 function shortenAddress(address: Address) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -132,17 +132,20 @@ function HomeHarness({
   sessionFetch = async () => Response.json(session()),
   initialAccountOpen = false,
   detectedCountry = null,
+  routeMode = "dashboard",
 }: {
   accountSdk: AccountWalletSdkBoundary;
   sessionFetch?: SessionFetch;
   initialAccountOpen?: boolean;
   detectedCountry?: string | null;
+  routeMode?: "landing" | "dashboard";
 }) {
   return (
     <AccountWalletSessionOwner sdk={accountSdk} sessionFetch={sessionFetch}>
       <HomeExperience
         detectedCountry={detectedCountry}
         initialAccountOpen={initialAccountOpen}
+        routeMode={routeMode}
         savingsContent={<section aria-label="Savings module">Savings fixture</section>}
         assetBalances={{
           status: "ready",
@@ -167,12 +170,14 @@ function PortfolioHomeHarness({
   detectedCountry = null,
   baseAccountEnabled = false,
   baseAccountConnector,
+  routeMode = "dashboard",
 }: {
   accountSdk: AccountWalletSdkBoundary;
   sessionFetch: SessionFetch;
   detectedCountry?: string | null;
   baseAccountEnabled?: boolean;
   baseAccountConnector?: BaseAccountConnector;
+  routeMode?: "landing" | "dashboard";
 }) {
   return (
     <AccountWalletSessionOwner
@@ -181,7 +186,7 @@ function PortfolioHomeHarness({
       baseAccountEnabled={baseAccountEnabled}
       baseAccountConnector={baseAccountConnector}
     >
-      <PortfolioHomeExperience detectedCountry={detectedCountry} />
+      <PortfolioHomeExperience detectedCountry={detectedCountry} routeMode={routeMode} />
     </AccountWalletSessionOwner>
   );
 }
@@ -201,7 +206,7 @@ afterEach(() => {
 
 describe("login-state home experience", () => {
   test("renders a focused sign-in/create-account landing with no dashboard while signed out", async () => {
-    render(<HomeHarness accountSdk={sdk()} />);
+    render(<HomeHarness accountSdk={sdk()} routeMode="landing" />);
 
     await page().findByRole("heading", {
       name: "The home for your money.",
@@ -223,6 +228,43 @@ describe("login-state home experience", () => {
     expect(page().getByRole("textbox", { name: "Email address" })).toBeTruthy();
   });
 
+  test("keeps email OTP open and routes only after the current server-verified login", async () => {
+    const signedOutSdk = sdk({
+      signInWithEmail: async () => ({ flowId: "email-flow" }),
+      verifyEmailOTP: async () => {},
+    });
+    const view = render(
+      <HomeHarness
+        accountSdk={signedOutSdk}
+        sessionFetch={async () => Response.json(session())}
+        routeMode="landing"
+      />,
+    );
+
+    fireEvent.click(within(page().getByRole("main")).getByRole("button", { name: "Sign in" }));
+    const email = await page().findByRole("textbox", { name: "Email address" });
+    fireEvent.input(email, { target: { value: "fixture@example.test" } });
+    fireEvent.click(page().getByRole("button", { name: "Continue with email" }), {
+      detail: 0,
+      clientX: 0,
+      clientY: 0,
+    });
+    const otp = await page().findByRole("textbox", { name: "Verification code" });
+    expect((page().getByRole("dialog") as HTMLDialogElement).open).toBe(true);
+    fireEvent.input(otp, { target: { value: "123456" } });
+    fireEvent.click(page().getByRole("button", { name: "Verify and continue" }));
+
+    expect(replaceCalls).not.toContain("/dashboard");
+    view.rerender(
+      <HomeHarness
+        accountSdk={{ ...signedOutSdk, isSignedIn: true, ownerKey: OWNER }}
+        sessionFetch={async () => Response.json(session())}
+        routeMode="landing"
+      />,
+    );
+    await waitFor(() => expect(replaceCalls).toContain("/dashboard"));
+  });
+
   test("keeps restoration private, then renders the dense verified dashboard", async () => {
     const pendingSession = deferred<Response>();
     render(
@@ -235,9 +277,10 @@ describe("login-state home experience", () => {
       />,
     );
 
-    expect(page().getByRole("heading", { name: "Checking your account…" })).toBeTruthy();
+    expect(page().getByRole("heading", { name: "Money and assets" })).toBeTruthy();
+    expect(page().getByText("Balances hidden while account verification completes")).toBeTruthy();
     expect(document.body.textContent).not.toContain(ADDRESS);
-    expect(page().queryByText("USDC balance")).toBeNull();
+    expect(page().queryByText("Checking your account…")).toBeNull();
 
     await act(async () => {
       pendingSession.resolve(Response.json(session()));
@@ -285,22 +328,13 @@ describe("login-state home experience", () => {
     await page().findByTitle(ADDRESS);
     fireEvent.click(page().getByRole("button", { name: "Sign out" }));
 
-    const landingTitle = page().getByRole("heading", {
-      name: "The home for your money.",
-    });
-    expect(landingTitle).toBeTruthy();
+    expect(replaceCalls).toContain("/");
     expect(document.body.textContent).not.toContain("0x1111…1111");
-    expect(page().queryByText("USDC balance")).toBeNull();
+    expect(page().getByText("Balances hidden while account verification completes")).toBeTruthy();
 
-    const retries = await page().findAllByRole("button", {
-      name: "Retry sign out",
-    });
-    expect(retries.length).toBeGreaterThanOrEqual(1);
-    fireEvent.click(retries[retries.length - 1]!);
+    const retry = await page().findByRole("button", { name: "Retry sign out" });
+    fireEvent.click(retry);
     await waitFor(() => expect(signOutCalls).toBe(2));
-    expect(page().getByRole("heading", {
-      name: "The home for your money.",
-    })).toBeTruthy();
   });
 
   test("wires verified balances through the production owner without relabeling or summing unpriced ETH", async () => {
@@ -424,6 +458,7 @@ describe("login-state home experience", () => {
         sessionFetch={sessionFetch}
         baseAccountEnabled
         baseAccountConnector={async () => connectedBaseAccount()}
+        routeMode="landing"
       />,
     );
 
@@ -444,6 +479,7 @@ describe("login-state home experience", () => {
         sessionFetch={sessionFetch}
         baseAccountEnabled
         baseAccountConnector={async () => connectedBaseAccount()}
+        routeMode="dashboard"
       />,
     );
 
@@ -468,7 +504,7 @@ describe("login-state home experience", () => {
       />,
     );
 
-    await page().findByRole("heading", { name: "Money and assets" });
+    await page().findByTitle(ADDRESS);
     expect(page().getByRole("combobox", { name: "Country" }).textContent).toContain("Brazil");
     expect(page().getAllByText("12.34 USDC").length).toBe(2);
 
@@ -480,7 +516,7 @@ describe("login-state home experience", () => {
     );
 
     view.unmount();
-    render(<HomeHarness accountSdk={sdk()} initialAccountOpen />);
+    render(<HomeHarness accountSdk={sdk()} initialAccountOpen routeMode="landing" />);
     const dialog = await page().findByRole("dialog", { name: "Sign in to Home" });
     expect((dialog as HTMLDialogElement).open).toBe(true);
     fireEvent.click(page().getByRole("button", { name: "Close sign in" }));

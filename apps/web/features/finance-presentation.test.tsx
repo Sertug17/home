@@ -128,7 +128,7 @@ describe("finance-first presentation", () => {
     expect(markup.indexOf("USDC balance")).toBeLessThan(
       markup.indexOf("Vault candidates"),
     );
-    expect(markup).toContain('aria-label="USDC balance unavailable"');
+    expect(markup).toContain("Position details remain private until account verification.");
     expect(markup).toContain("Variable net APY");
     expect(markup).toContain("Fetched snapshot");
     expect(markup).toContain("4.50%");

@@ -77,16 +77,62 @@
 }
 
 .positionValue span,
-.position > p {
+.position > p,
+.positionList > p {
   color: var(--muted);
   font-size: 0.68rem;
 }
 
-.position > p {
+.position > p,
+.positionList > p {
   margin: 0;
   border-top: 1px solid var(--line);
   padding-top: 10px;
   line-height: 1.4;
+}
+
+.positionList {
+  display: grid;
+  gap: 12px;
+}
+
+.positionList article {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.positionList .positionValue strong {
+  font-size: clamp(1.45rem, 5vw, 2rem);
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.positionFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.positionFacts div {
+  min-width: 0;
+}
+
+.positionFacts dt {
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.positionFacts dd {
+  overflow-wrap: anywhere;
+  margin: 3px 0 0;
+  font-size: 0.64rem;
+}
+
+.positionFacts code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
 }
 
 .comparison {
@@ -304,14 +350,14 @@
 
 @media (min-width: 720px) {
   .position {
-    grid-template-columns: minmax(150px, 0.55fr) minmax(180px, 0.65fr) minmax(260px, 1fr);
-    align-items: center;
+    grid-template-columns: minmax(150px, 0.4fr) minmax(0, 1fr);
+    align-items: start;
   }
 
-  .position > p {
-    border-top: 0;
+  .position > p,
+  .positionList {
     border-left: 1px solid var(--line);
-    padding: 6px 0 6px 18px;
+    padding-left: 18px;
   }
 
   .candidateSummary {
@@ -319,8 +365,8 @@
   }
 
   .actionBar {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: center;
+    grid-template-columns: repeat(2, auto);
+    justify-content: end;
   }
 
   .actionBar button {

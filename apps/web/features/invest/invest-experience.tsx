@@ -28,10 +28,7 @@ export function InvestExperience({
   return (
     <section className={styles.experience} aria-labelledby="invest-title">
       <header className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>Invest · read only</p>
-          <h2 id="invest-title">Assets</h2>
-        </div>
+        <h2 id="invest-title">Assets</h2>
         <span>Prices shown only when sourced</span>
       </header>
 
@@ -55,10 +52,7 @@ export function InvestExperience({
           assets={stockAssets}
         >
           <p>
-            Coinbase-issued Regulation S instruments are limited to eligible
-            jurisdictions outside the US. Native company tickers are display
-            labels; each Base token and its contract remain distinct. Home does
-            not provide eligibility checks or trading.
+            Available only in eligible jurisdictions outside the US. Company tickers are labels for distinct Base tokens; trading is disabled.
           </p>
           <SourceLink
             href={investSources.stockRoster.url}
@@ -86,10 +80,7 @@ export function InvestExperience({
           label="Meme contracts, risks, and sources"
           assets={memeAssets}
         >
-          <p>
-            Informational only, not an endorsement. Meme assets can be highly
-            volatile; inclusion does not imply a route or eligibility.
-          </p>
+          <p>Highly volatile assets; inclusion is not an endorsement or an available trade route.</p>
           {memeAssets.map((asset) =>
             asset.projectUrl ? (
               <SourceLink
@@ -123,10 +114,7 @@ export function InvestExperience({
           assets={cryptoAssets}
         >
           <p>
-            Coinbase describes these tokens as 1:1 representations of assets it
-            holds. That backing statement does not create an exchange or
-            redemption route in Home, and every displayed price is per wrapped
-            token on Base.
+            Coinbase describes these as 1:1 asset representations. Prices are per wrapped Base token; exchange and redemption are unavailable here.
           </p>
           <SourceLink
             href={investSources.coinbaseWrappedAssets.url}

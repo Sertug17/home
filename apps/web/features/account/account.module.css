@@ -235,6 +235,44 @@
   margin: 22px 0 0;
 }
 
+.providerHandoff {
+  position: fixed;
+  z-index: 20;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: min(calc(100% - 32px), 620px);
+  margin: 0 auto;
+  border: 1px solid rgba(10, 11, 13, 0.16);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 44px rgba(10, 11, 13, 0.18);
+  padding: 12px 14px;
+}
+
+.providerHandoff p {
+  margin: 0;
+  color: #454950;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.providerHandoff button {
+  min-height: 36px;
+  border: 1px solid rgba(10, 11, 13, 0.18);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0a0b0d;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -247,6 +285,13 @@
     border-radius: 4px;
     padding: 30px;
     transform: translate(-50%, -50%);
+  }
+
+  .providerHandoff {
+    right: 24px;
+    bottom: 24px;
+    left: auto;
+    margin: 0;
   }
 }
 

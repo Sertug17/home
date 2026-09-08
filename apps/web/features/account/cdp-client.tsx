@@ -91,7 +91,10 @@ export type AccountWalletClient = {
   signInWithBaseAccount: (
     onPhase: (phase: BaseAccountLoginPhase) => void,
   ) => Promise<void>;
+  cancelSignInAttempt: () => void;
   fetchPortfolio: (signal?: AbortSignal) => Promise<unknown>;
+  fetchActivity: (signal?: AbortSignal) => Promise<unknown>;
+  fetchSavingsPositions: (signal?: AbortSignal) => Promise<unknown>;
   retrySessionValidation: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -116,8 +119,15 @@ const unavailableClient: AccountWalletClient = {
   signInWithBaseAccount: async () => {
     throw new BaseAccountLoginError("disabled");
   },
+  cancelSignInAttempt: () => {},
   fetchPortfolio: async () => {
     throw new Error("Portfolio is unavailable.");
+  },
+  fetchActivity: async () => {
+    throw new Error("Activity is unavailable.");
+  },
+  fetchSavingsPositions: async () => {
+    throw new Error("Savings positions are unavailable.");
   },
   retrySessionValidation: async () => {},
   signOut: async () => {},
@@ -217,6 +227,9 @@ export function AccountWalletSessionOwner({
   const accountSelection = useRef<AccountSelection>(embeddedSelection());
   const baseConnection = useRef<ConnectedBaseAccount | null>(null);
   const baseLoginInProgress = useRef(false);
+  const signInAttemptSequence = useRef(0);
+  const cancelledAttemptAwaitingOwner = useRef(false);
+  const cancelledOwnerCleanup = useRef<string | null>(null);
   const currentOwnerKey = useRef(ownerKey);
   const isSessionSuppressed = isSessionSuppressedForOwner(
     suppressedOwnerKey,
@@ -226,6 +239,30 @@ export function AccountWalletSessionOwner({
   useEffect(() => {
     currentOwnerKey.current = ownerKey;
   }, [ownerKey]);
+
+  useEffect(() => {
+    if (
+      !cancelledAttemptAwaitingOwner.current ||
+      !sdkIsSignedIn ||
+      !ownerKey ||
+      cancelledOwnerCleanup.current === ownerKey
+    ) {
+      return;
+    }
+
+    cancelledOwnerCleanup.current = ownerKey;
+    setSuppressedOwnerKey(ownerKey);
+    setVerifiedOwner(null);
+    setStatus("signed-out");
+    setMessage("Sign-in was canceled. Your private details remain hidden.");
+    void sdkSignOut()
+      .catch(() => {})
+      .finally(() => {
+        if (currentOwnerKey.current !== ownerKey) {
+          cancelledOwnerCleanup.current = null;
+        }
+      });
+  }, [ownerKey, sdkIsSignedIn, sdkSignOut]);
 
   const clearPrivateState = useCallback(() => {
     validationRequest.current?.abort();
@@ -424,23 +461,47 @@ export function AccountWalletSessionOwner({
     validateSession,
   ]);
 
+  const beginSignInAttempt = useCallback(() => {
+    const sequence = ++signInAttemptSequence.current;
+    cancelledAttemptAwaitingOwner.current = false;
+    cancelledOwnerCleanup.current = null;
+    clearPrivateState();
+    clearBaseConnection();
+    setStatus("signed-out");
+    setSuppressedOwnerKey(null);
+    setMessage(null);
+    return sequence;
+  }, [clearBaseConnection, clearPrivateState]);
+
+  const cancelSignInAttempt = useCallback(() => {
+    signInAttemptSequence.current += 1;
+    cancelledAttemptAwaitingOwner.current = true;
+    clearPrivateState();
+    clearBaseConnection();
+    setStatus("signed-out");
+    setMessage("Sign-in was canceled. Your private details remain hidden.");
+
+    const activeOwner = currentOwnerKey.current;
+    if (activeOwner) {
+      cancelledOwnerCleanup.current = activeOwner;
+      setSuppressedOwnerKey(activeOwner);
+      void sdkSignOut().catch(() => {});
+    }
+  }, [clearBaseConnection, clearPrivateState, sdkSignOut]);
+
   const requestEmailCode = useCallback(
     async (email: string) => {
-      clearBaseConnection();
-      setSuppressedOwnerKey(null);
-      setMessage(null);
+      beginSignInAttempt();
       const { flowId } = await signInWithEmail(email);
       return { flowId };
-    }, [clearBaseConnection, signInWithEmail],
+    }, [beginSignInAttempt, signInWithEmail],
   );
 
   const verifyEmailCode = useCallback(
     async (flowId: string, otp: string) => {
-      clearBaseConnection();
-      setSuppressedOwnerKey(null);
       setMessage(null);
       await verifyEmailOTP(flowId, otp);
-    }, [clearBaseConnection, verifyEmailOTP],
+    }, [verifyEmailOTP],
   );
 
   const signInWithBaseAccount = useCallback(
@@ -449,12 +510,15 @@ export function AccountWalletSessionOwner({
         throw new BaseAccountLoginError("disabled");
       }
 
-      clearPrivateState();
-      clearBaseConnection();
+      const attemptSequence = beginSignInAttempt();
       baseLoginInProgress.current = true;
-      setSuppressedOwnerKey(null);
-      setMessage(null);
       onPhase("connecting");
+
+      const assertCurrentAttempt = () => {
+        if (attemptSequence !== signInAttemptSequence.current) {
+          throw new BaseAccountConnectorError("cancelled");
+        }
+      };
 
       let connection: ConnectedBaseAccount | null = null;
       let stage: "connecting" | "challenge" | "signing" | "verifying" =
@@ -488,6 +552,7 @@ export function AccountWalletSessionOwner({
 
       try {
         connection = await baseAccountConnector(handleInvalidation);
+        assertCurrentAttempt();
         baseConnection.current = connection;
         accountSelection.current = {
           provider: "base-account",
@@ -504,16 +569,19 @@ export function AccountWalletSessionOwner({
           domain: url.host,
           uri: url.origin,
         });
+        assertCurrentAttempt();
 
         await connection.assertUnchanged();
         stage = "signing";
         onPhase("signing");
         const signature = await connection.signMessage(challenge.message);
+        assertCurrentAttempt();
 
         await connection.assertUnchanged();
         stage = "verifying";
         onPhase("verifying");
         await verifySiweSignature(challenge.flowId, signature);
+        assertCurrentAttempt();
         await connection.assertUnchanged();
       } catch (error) {
         if (baseConnection.current === connection) {
@@ -540,6 +608,7 @@ export function AccountWalletSessionOwner({
     }, [
       baseAccountConnector,
       baseAccountEnabled,
+      beginSignInAttempt,
       clearBaseConnection,
       clearPrivateState,
       sdkSignOut,
@@ -584,19 +653,19 @@ export function AccountWalletSessionOwner({
     isSessionSuppressed || status !== "verified",
   );
 
-  const fetchPortfolio = useCallback(
-    async (signal?: AbortSignal): Promise<unknown> => {
+  const fetchVerifiedResource = useCallback(
+    async (endpoint: "/api/portfolio" | "/api/activity" | "/api/savings/positions", signal?: AbortSignal): Promise<unknown> => {
       if (!session || status !== "verified" || !ownerKey) {
-        throw new Error("Portfolio is unavailable.");
+        throw new Error("Authenticated resource is unavailable.");
       }
       const accessToken = await getAccessToken();
       if (!accessToken) {
-        throw new Error("Portfolio is unavailable.");
+        throw new Error("Authenticated resource is unavailable.");
       }
 
       let response: Response;
       try {
-        response = await (sessionFetch ?? fetch)("/api/portfolio", {
+        response = await (sessionFetch ?? fetch)(endpoint, {
           method: "GET",
           headers: {
             Accept: "application/json",
@@ -611,17 +680,50 @@ export function AccountWalletSessionOwner({
         if (signal?.aborted) {
           throw error;
         }
-        throw new Error("Portfolio is unavailable.");
+        throw new Error("Authenticated resource is unavailable.");
       }
       if (!response.ok) {
-        throw new Error("Portfolio is unavailable.");
+        let code: string | null = null;
+        try {
+          const payload: unknown = await response.json();
+          if (
+            payload &&
+            typeof payload === "object" &&
+            "error" in payload &&
+            payload.error &&
+            typeof payload.error === "object" &&
+            "code" in payload.error &&
+            typeof payload.error.code === "string"
+          ) {
+            code = payload.error.code;
+          }
+        } catch {
+          // The fixed-endpoint caller only needs the bounded status/code seam.
+        }
+        const unavailable = new Error("Authenticated resource is unavailable.");
+        Object.assign(unavailable, { status: response.status, code });
+        throw unavailable;
       }
       try {
         return await response.json();
       } catch {
-        throw new Error("Portfolio is unavailable.");
+        throw new Error("Authenticated resource is unavailable.");
       }
     }, [getAccessToken, ownerKey, session, sessionFetch, status],
+  );
+
+  const fetchPortfolio = useCallback(
+    (signal?: AbortSignal) => fetchVerifiedResource("/api/portfolio", signal),
+    [fetchVerifiedResource],
+  );
+  const fetchActivity = useCallback(
+    (signal?: AbortSignal) => fetchVerifiedResource("/api/activity", signal),
+    [fetchVerifiedResource],
+  );
+  const fetchSavingsPositions = useCallback(
+    (signal?: AbortSignal) =>
+      fetchVerifiedResource("/api/savings/positions", signal),
+    [fetchVerifiedResource],
   );
 
   const client = useMemo<AccountWalletClient>(
@@ -637,13 +739,19 @@ export function AccountWalletSessionOwner({
       requestEmailCode,
       verifyEmailCode,
       signInWithBaseAccount,
+      cancelSignInAttempt,
       fetchPortfolio,
+      fetchActivity,
+      fetchSavingsPositions,
       retrySessionValidation: validateSession,
       signOut,
     }),
     [
       baseAccountEnabled,
+      cancelSignInAttempt,
+      fetchActivity,
       fetchPortfolio,
+      fetchSavingsPositions,
       isInitialized,
       isSessionSuppressed,
       message,

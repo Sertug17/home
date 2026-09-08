@@ -43,7 +43,7 @@ function messageForBaseAccountError(error: unknown): string {
     case "chain-changed":
       return "The network changed during sign-in. Switch to Base and try again.";
     case "verification-unsupported":
-      return "CDP could not verify this Base Account signature. Your account remains signed out; this smart-account signature is not supported by the configured verifier.";
+      return "This Base Account signature could not be verified. Try email or another account.";
     case "disabled":
       return "Base Account sign-in is not enabled for this deployment.";
     default:
@@ -56,18 +56,20 @@ function baseAccountPhaseMessage(phase: BaseAccountLoginPhase): string {
     case "connecting":
       return "Connecting to your existing Base Account…";
     case "signing":
-      return "Confirm the exact CDP sign-in message in Base Account…";
+      return "Confirm sign-in in Base Account…";
     case "verifying":
-      return "Verifying the Base Account signature with CDP…";
+      return "Finishing sign-in…";
   }
 }
 
 export function AccountSignInSheet({
   open,
   onClose,
+  onVerified,
 }: {
   open: boolean;
   onClose: () => void;
+  onVerified?: () => void;
 }) {
   const {
     projectConfigured,
@@ -78,6 +80,7 @@ export function AccountSignInSheet({
     requestEmailCode,
     verifyEmailCode,
     signInWithBaseAccount,
+    cancelSignInAttempt,
     retrySessionValidation,
   } = useAccountWallet();
   const [email, setEmail] = useState("");
@@ -88,10 +91,13 @@ export function AccountSignInSheet({
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [baseAccountPhase, setBaseAccountPhase] =
     useState<BaseAccountLoginPhase | null>(null);
+  const [isProviderHandoff, setIsProviderHandoff] = useState(false);
   const [resendAvailableAt, setResendAvailableAt] = useState<number | null>(null);
   const [resendSeconds, setResendSeconds] = useState(0);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const uiAttemptSequence = useRef(0);
+  const awaitingVerifiedSession = useRef(false);
   const baseAccountFailed =
     status === "unavailable" ||
     status === "signout-error" ||
@@ -139,10 +145,16 @@ export function AccountSignInSheet({
   }, [open]);
 
   useEffect(() => {
-    if (session && status === "verified") {
+    if (
+      session &&
+      status === "verified" &&
+      awaitingVerifiedSession.current
+    ) {
+      awaitingVerifiedSession.current = false;
       onClose();
+      onVerified?.();
     }
-  }, [onClose, session, status]);
+  }, [onClose, onVerified, session, status]);
 
   useEffect(() => {
     if (!open || resendAvailableAt === null) {
@@ -159,37 +171,60 @@ export function AccountSignInSheet({
     return () => window.clearInterval(timer);
   }, [open, resendAvailableAt]);
 
+  function resetLocalAttempt() {
+    uiAttemptSequence.current += 1;
+    awaitingVerifiedSession.current = false;
+    setFlowId(null);
+    setOtp("");
+    setAuthError(null);
+    setIsSendingCode(false);
+    setIsVerifyingCode(false);
+    setBaseAccountPhase(null);
+    setIsProviderHandoff(false);
+    setResendAvailableAt(null);
+    setResendSeconds(0);
+  }
+
+  function closeAndCancelAttempt() {
+    if (isBusy || flowId !== null || awaitingVerifiedSession.current) {
+      cancelSignInAttempt();
+    }
+    resetLocalAttempt();
+    if (!dialogRef.current?.open) {
+      restoreFocusRef.current?.focus();
+      restoreFocusRef.current = null;
+    }
+    onClose();
+  }
+
   function handleCancel(event: SyntheticEvent<HTMLDialogElement>) {
     event.preventDefault();
-    if (!isBusy) {
-      onClose();
-    }
+    closeAndCancelAttempt();
   }
 
   function handleDialogClick(event: MouseEvent<HTMLDialogElement>) {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const clickedOutside =
-      event.clientX < bounds.left ||
-      event.clientX > bounds.right ||
-      event.clientY < bounds.top ||
-      event.clientY > bounds.bottom;
-
-    if (clickedOutside && !isBusy) {
-      onClose();
+    if (event.target === event.currentTarget) {
+      closeAndCancelAttempt();
     }
   }
 
   async function sendCode(nextEmail: string) {
+    const sequence = ++uiAttemptSequence.current;
+    awaitingVerifiedSession.current = false;
     setIsSendingCode(true);
     setAuthError(null);
     try {
       const result = await requestEmailCode(nextEmail);
+      if (sequence !== uiAttemptSequence.current) return;
       setFlowId(result.flowId);
       setResendAvailableAt(Date.now() + RESEND_COOLDOWN_SECONDS * 1000);
     } catch {
+      if (sequence !== uiAttemptSequence.current) return;
       setAuthError("We could not send a code. Check the address and try again.");
     } finally {
-      setIsSendingCode(false);
+      if (sequence === uiAttemptSequence.current) {
+        setIsSendingCode(false);
+      }
     }
   }
 
@@ -211,17 +246,23 @@ export function AccountSignInSheet({
       return;
     }
 
+    const sequence = uiAttemptSequence.current;
     setIsVerifyingCode(true);
     setAuthError(null);
     try {
       await verifyEmailCode(flowId, otp);
+      if (sequence !== uiAttemptSequence.current) return;
+      awaitingVerifiedSession.current = true;
       setOtp("");
       setFlowId(null);
       setResendAvailableAt(null);
     } catch (error) {
+      if (sequence !== uiAttemptSequence.current) return;
       setAuthError(messageForCodeError(error));
     } finally {
-      setIsVerifyingCode(false);
+      if (sequence === uiAttemptSequence.current) {
+        setIsVerifyingCode(false);
+      }
     }
   }
 
@@ -234,18 +275,37 @@ export function AccountSignInSheet({
   }
 
   async function handleBaseAccountSignIn() {
+    const sequence = ++uiAttemptSequence.current;
+    awaitingVerifiedSession.current = false;
     setAuthError(null);
+    setBaseAccountPhase("connecting");
+    setIsProviderHandoff(true);
+    dialogRef.current?.close();
     try {
-      await signInWithBaseAccount(setBaseAccountPhase);
+      await signInWithBaseAccount((phase) => {
+        if (sequence === uiAttemptSequence.current) {
+          setBaseAccountPhase(phase);
+        }
+      });
+      if (sequence !== uiAttemptSequence.current) return;
+      awaitingVerifiedSession.current = true;
     } catch (error) {
+      if (sequence !== uiAttemptSequence.current) return;
       setBaseAccountPhase(null);
+      setIsProviderHandoff(false);
       setAuthError(messageForBaseAccountError(error));
+      const dialog = dialogRef.current;
+      if (open && dialog && !dialog.open) {
+        dialog.showModal();
+        dialog.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+      }
     }
   }
 
   const isChecking = status === "restoring" || status === "validating";
 
   return (
+    <>
     <dialog
       ref={dialogRef}
       className={styles.sheet}
@@ -263,8 +323,7 @@ export function AccountSignInSheet({
         <button
           className={styles.closeButton}
           type="button"
-          onClick={onClose}
-          disabled={isBusy}
+          onClick={closeAndCancelAttempt}
           aria-label="Close sign in"
         >
           ×
@@ -274,7 +333,7 @@ export function AccountSignInSheet({
       {!projectConfigured ? (
         <div className={styles.statusPanel} role="alert">
           <strong>Sign-in is unavailable.</strong>
-          <p>Add the public CDP project ID to this deployment.</p>
+          <p>Try again later.</p>
         </div>
       ) : null}
 
@@ -289,7 +348,7 @@ export function AccountSignInSheet({
         </p>
       ) : null}
 
-      {activeBaseAccountPhase ? (
+      {activeBaseAccountPhase && !isProviderHandoff ? (
         <div className={styles.pendingPanel} aria-live="polite">
           <span className={styles.spinner} aria-hidden="true" />
           {baseAccountPhaseMessage(activeBaseAccountPhase)}
@@ -404,8 +463,7 @@ export function AccountSignInSheet({
                 Continue with Base Account
               </button>
               <p className={styles.fieldHelp}>
-                Uses the existing Base Account you select. Home accepts only
-                the SIWE address returned by server-side CDP verification.
+                Uses the Base Account you select. Details stay hidden until verification.
               </p>
             </>
           ) : null}
@@ -413,9 +471,18 @@ export function AccountSignInSheet({
       ) : null}
 
       <p className={styles.privacyNote}>
-        Home shows account details only after the server verifies the CDP
-        access token. Your email and code are never placed in the URL.
+        Details stay hidden until verification. Your email and code never appear in the URL.
       </p>
     </dialog>
+    {open && isProviderHandoff && activeBaseAccountPhase ? (
+      <aside className={styles.providerHandoff} aria-live="polite">
+        <span className={styles.spinner} aria-hidden="true" />
+        <p>{baseAccountPhaseMessage(activeBaseAccountPhase)}</p>
+        <button type="button" onClick={closeAndCancelAttempt}>
+          Cancel sign in
+        </button>
+      </aside>
+    ) : null}
+    </>
   );
 }

@@ -73,6 +73,9 @@ function AccountProbe() {
       >
         Probe Base sign in
       </button>
+      <button type="button" onClick={client.cancelSignInAttempt}>
+        Cancel sign in
+      </button>
       <button
         type="button"
         onClick={() => void client.fetchPortfolio().catch(() => {})}
@@ -389,6 +392,59 @@ describe("production account session owner", () => {
     );
     expect(page().getByTestId("provider").textContent).toBe("base-account");
     expect(selectedProvider as unknown).toBe("base-account");
+  });
+
+  test("keeps a canceled unabortable Base connection and later SDK success private", async () => {
+    const pendingConnection = deferred<ConnectedBaseAccount>();
+    let disconnectCalls = 0;
+    let sessionCalls = 0;
+    let signOutCalls = 0;
+    const signedOutSdk = baseSdk({
+      isSignedIn: false,
+      ownerKey: null,
+      signOut: async () => {
+        signOutCalls += 1;
+      },
+    });
+    const view = render(
+      <SessionHarness
+        sdk={signedOutSdk}
+        sessionFetch={async () => {
+          sessionCalls += 1;
+          return sessionResponse(sessionFor("late-subject", ADDRESS_A, "base-account"));
+        }}
+        baseAccountEnabled
+        baseAccountConnector={() => pendingConnection.promise}
+      />,
+    );
+
+    fireEvent.click(page().getByRole("button", { name: "Probe Base sign in" }));
+    fireEvent.click(page().getByRole("button", { name: "Cancel sign in" }));
+    await act(async () => {
+      pendingConnection.resolve(connectedBaseAccount({
+        disconnect: async () => { disconnectCalls += 1; },
+      }));
+      await pendingConnection.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(disconnectCalls).toBeGreaterThanOrEqual(1);
+    expect(sessionCalls).toBe(0);
+
+    view.rerender(
+      <SessionHarness
+        sdk={{ ...signedOutSdk, isSignedIn: true, ownerKey: OWNER_A }}
+        sessionFetch={async () => {
+          sessionCalls += 1;
+          return sessionResponse(sessionFor("late-subject", ADDRESS_A, "base-account"));
+        }}
+        baseAccountEnabled
+        baseAccountConnector={() => pendingConnection.promise}
+      />,
+    );
+
+    await waitFor(() => expect(signOutCalls).toBe(1));
+    expect(sessionCalls).toBe(0);
+    expect(page().getByTestId("address").textContent).toBe("private-details-hidden");
   });
 
   test("does not initialize the Base SDK while the deployment flag is off", async () => {

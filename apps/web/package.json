@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "test:browser-auth": "playwright test --config playwright.config.ts"
   },
   "dependencies": {
     "@base-org/account": "2.5.10",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.14.0",
+    "@playwright/test": "1.55.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/react": "16.3.3",
     "@types/bun": "^1.4.1",

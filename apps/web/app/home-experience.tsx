@@ -27,6 +27,11 @@ import { CountrySelect } from "@/components/country-select";
 import { AccountSignInSheet } from "@/features/account/account-screen";
 import { useAccountWallet } from "@/features/account/cdp-client";
 import {
+  ActivityList,
+  useActivity,
+  type ActivityState,
+} from "@/features/activity/activity-list";
+import {
   formatBaseUnitAmount,
   usePortfolio,
   type PortfolioState,
@@ -54,6 +59,7 @@ export type HomeExperienceProps = {
   initialAccountOpen?: boolean;
   assetBalances?: HomeAssetBalancesPresentation;
   landingVisual?: ReactNode;
+  routeMode?: "landing" | "dashboard";
 };
 
 export function PortfolioHomeExperience(
@@ -69,8 +75,15 @@ export function PortfolioHomeExperience(
         }
       : null;
   const portfolio = usePortfolio(session, account.fetchPortfolio);
+  const activity = useActivity(account.status === "verified" ? account.session : null, account.fetchActivity);
 
-  return <HomeExperience {...props} assetBalances={presentPortfolio(portfolio)} />;
+  return (
+    <HomeExperience
+      {...props}
+      assetBalances={presentPortfolio(portfolio)}
+      activity={activity}
+    />
+  );
 }
 
 function presentPortfolio(
@@ -152,7 +165,9 @@ export function HomeExperience({
   initialAccountOpen = false,
   assetBalances,
   landingVisual,
-}: HomeExperienceProps) {
+  routeMode = "landing",
+  activity = { status: "idle" },
+}: HomeExperienceProps & { activity?: ActivityState }) {
   const router = useRouter();
   const account = useAccountWallet();
   const initial = resolvePresentation({ detectedCountry });
@@ -219,6 +234,12 @@ export function HomeExperience({
   const isSignedOut =
     account.status === "signed-out" || account.status === "signout-error";
 
+  useEffect(() => {
+    if (routeMode === "dashboard" && isSignedOut) {
+      router.replace("/?account=signin", { scroll: false });
+    }
+  }, [isSignedOut, routeMode, router]);
+
   function selectRegion(nextRegionId: RegionId) {
     setRegionId(nextRegionId);
     setResolutionSource("explicit");
@@ -240,6 +261,13 @@ export function HomeExperience({
 
   function openAccount() {
     setIsAccountOpen(true);
+  }
+
+  function signOut() {
+    if (routeMode === "dashboard") {
+      router.replace("/", { scroll: false });
+    }
+    void account.signOut().catch(() => {});
   }
 
   return (
@@ -273,16 +301,27 @@ export function HomeExperience({
         <HeaderAccountAction
           status={account.status}
           isSignedIn={account.isSignedIn}
+          routeMode={routeMode}
+          onDashboard={() => router.replace("/dashboard")}
           onSignIn={openAccount}
-          onSignOut={() => void account.signOut().catch(() => {})}
+          onSignOut={signOut}
         />
       </header>
 
-      {isVerified ? (
+      {routeMode === "dashboard" ? (
         <main className="app-main app-main-authenticated">
           <div className="main-heading">
             <h1>Money and assets</h1>
           </div>
+
+          {isUnavailable ? (
+            <div className="dashboard-notice" role="alert">
+              <span>{account.message ?? "Your private details remain hidden."}</span>
+              <button type="button" onClick={() => void account.retrySessionValidation()}>
+                Retry account check
+              </button>
+            </div>
+          ) : null}
 
           <PrimaryNavigation
             activeNavigation={activeNavigation}
@@ -295,48 +334,56 @@ export function HomeExperience({
             id="navigation-panel"
             tabIndex={-1}
             aria-labelledby={`${activeNavigation}-nav`}
+            aria-busy={isChecking}
           >
             {activeNavigation === "home" ? (
               <HomePanel
                 region={region}
                 accountAddress={
-                  account.session?.smartAccount?.address ?? null
+                  isVerified ? account.session?.smartAccount?.address ?? null : null
                 }
-                assetBalances={assetBalances}
+                assetBalances={
+                  isVerified
+                    ? assetBalances
+                    : {
+                        status: "loading",
+                        displayTotal: null,
+                        statusLabel: "Balances hidden while account verification completes",
+                        items: [],
+                      }
+                }
+                activity={isVerified ? activity : { status: "idle" }}
                 onNavigate={navigateTo}
               />
             ) : null}
             {activeNavigation === "save"
-              ? (savingsContent ?? <EmptyPanel label="Savings" />)
+              ? isVerified
+                ? (savingsContent ?? <EmptyPanel label="Savings" />)
+                : <EmptyPanel label="Savings verifying" />
               : null}
             {activeNavigation === "invest"
               ? (investContent ?? <EmptyPanel label="Investments" />)
               : null}
           </section>
         </main>
-      ) : isChecking ? (
-        <AccountLoadingShell />
-      ) : isUnavailable ? (
-        <AccountUnavailableShell
-          message={account.message}
-          onRetry={() => void account.retrySessionValidation()}
-        />
-      ) : isSignedOut ? (
+      ) : (
         <SignedOutLanding
+          isVerified={isVerified}
           signOutError={
             account.status === "signout-error" ? account.message : null
           }
           landingVisual={landingVisual}
+          onDashboard={() => router.replace("/dashboard")}
           onSignIn={openAccount}
           onRetrySignOut={() => void account.signOut().catch(() => {})}
         />
-      ) : null}
+      )}
 
-      <footer className="app-footer">
-        <p>Open source on Base.</p>
-      </footer>
-
-      <AccountSignInSheet open={isAccountOpen} onClose={closeAccount} />
+      <AccountSignInSheet
+        open={isAccountOpen}
+        onClose={closeAccount}
+        onVerified={() => router.replace("/dashboard")}
+      />
     </div>
   );
 }
@@ -344,11 +391,15 @@ export function HomeExperience({
 function HeaderAccountAction({
   status,
   isSignedIn,
+  routeMode,
+  onDashboard,
   onSignIn,
   onSignOut,
 }: {
   status: ReturnType<typeof useAccountWallet>["status"];
   isSignedIn: boolean;
+  routeMode: "landing" | "dashboard";
+  onDashboard: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
 }) {
@@ -369,7 +420,11 @@ function HeaderAccountAction({
   }
 
   if (status === "verified" || (status === "unavailable" && isSignedIn)) {
-    return (
+    return routeMode === "landing" ? (
+      <button className="header-account-link" type="button" onClick={onDashboard}>
+        Dashboard
+      </button>
+    ) : (
       <button className="header-account-link" type="button" onClick={onSignOut}>
         Sign out
       </button>
@@ -384,13 +439,17 @@ function HeaderAccountAction({
 }
 
 function SignedOutLanding({
+  isVerified,
   signOutError,
   landingVisual,
+  onDashboard,
   onSignIn,
   onRetrySignOut,
 }: {
+  isVerified: boolean;
   signOutError: string | null;
   landingVisual?: ReactNode;
+  onDashboard: () => void;
   onSignIn: () => void;
   onRetrySignOut: () => void;
 }) {
@@ -407,12 +466,20 @@ function SignedOutLanding({
           Earn more, buy assets, and grow your wealth.
         </p>
         <div className="landing-actions">
-          <button className="landing-primary" type="button" onClick={onSignIn}>
-            Sign in
-          </button>
-          <button className="landing-secondary" type="button" onClick={onSignIn}>
-            Create account
-          </button>
+          {isVerified ? (
+            <button className="landing-primary" type="button" onClick={onDashboard}>
+              Open dashboard
+            </button>
+          ) : (
+            <>
+              <button className="landing-primary" type="button" onClick={onSignIn}>
+                Sign in
+              </button>
+              <button className="landing-secondary" type="button" onClick={onSignIn}>
+                Create account
+              </button>
+            </>
+          )}
         </div>
         {signOutError ? (
           <div className="landing-status" role="alert">
@@ -427,51 +494,17 @@ function SignedOutLanding({
   );
 }
 
-function AccountLoadingShell() {
-  return (
-    <main className="account-state-main" aria-busy="true" aria-live="polite">
-      <section className="account-state-card">
-        <h1>Checking your account…</h1>
-        <div className="loading-lines" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function AccountUnavailableShell({
-  message,
-  onRetry,
-}: {
-  message: string | null;
-  onRetry: () => void;
-}) {
-  return (
-    <main className="account-state-main">
-      <section className="account-state-card" aria-labelledby="account-error-title">
-        <p className="eyebrow">Account check</p>
-        <h1 id="account-error-title">We couldn’t load your account.</h1>
-        <p>{message ?? "Your private details remain hidden."}</p>
-        <button className="landing-primary" type="button" onClick={onRetry}>
-          Retry account check
-        </button>
-      </section>
-    </main>
-  );
-}
-
 function HomePanel({
   region,
   accountAddress,
   assetBalances,
+  activity,
   onNavigate,
 }: {
   region: PresentationRegion;
   accountAddress: string | null;
   assetBalances?: HomeAssetBalancesPresentation;
+  activity: ActivityState;
   onNavigate: (navigation: NavigationId) => void;
 }) {
   const balanceStatus = assetBalances?.statusLabel ??
@@ -588,7 +621,7 @@ function HomePanel({
             <h2 id="activity-heading">Activity</h2>
           </div>
         </div>
-        <p className="empty-activity">No account activity available.</p>
+        <ActivityList state={activity} />
       </section>
     </div>
   );
