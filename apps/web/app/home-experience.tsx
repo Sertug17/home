@@ -33,6 +33,7 @@ import { ActivityPanel, type FetchActivity } from "@/features/activity";
 import {
   MoneyDataRefreshProvider,
   RecentMoneyActions,
+  type PreparedMoneyAction,
 } from "@/features/money-actions";
 import {
   usePortfolio,
@@ -365,6 +366,7 @@ export function HomeExperience({
                     fetchActivity={account.fetchActivity}
                     fetchOperations={account.fetchOperations}
                     readOperation={readOperation}
+                    recoverOperation={account.executeMoneyAction}
                     activityRefreshTrigger={activityRefreshTrigger}
                     onTransferConfirmed={onTransferConfirmed}
                     onOpenSave={() => navigateTo(savePanelId)}
@@ -531,6 +533,7 @@ function HomePanel({
   fetchActivity,
   fetchOperations,
   readOperation,
+  recoverOperation,
   activityRefreshTrigger,
   onTransferConfirmed,
   onOpenSave,
@@ -540,6 +543,7 @@ function HomePanel({
   fetchActivity: FetchActivity;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
   readOperation: (id: string, signal?: AbortSignal) => Promise<unknown>;
+  recoverOperation?: (action: PreparedMoneyAction) => Promise<unknown>;
   activityRefreshTrigger?: string | number;
   onTransferConfirmed?: () => void;
   onOpenSave: () => void;
@@ -630,6 +634,7 @@ function HomePanel({
               session={activitySession}
               fetchOperations={fetchOperations}
               readOperation={readOperation}
+              recoverOperation={recoverOperation}
               refreshTrigger={activityRefreshTrigger}
               excludeTransactionHashes={indexedTransactionHashes}
               embedded
