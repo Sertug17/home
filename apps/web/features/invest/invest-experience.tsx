@@ -1,36 +1,74 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { InvestAsset } from "@/config/invest-assets";
 import { unavailableMarketData, type MarketDataState } from "./invest-market";
 import {
   getDiscoverAsset,
   getDiscoverShelf,
   marketForAsset,
-  type DiscoverShelfId,
 } from "./discover";
 import { AssetDetailScreen } from "./asset-detail-screen";
 import { CategoryScreen } from "./category-screen";
 import { InvestHub } from "./invest-hub";
+import {
+  investHref,
+  investViewFromSearch,
+  type InvestView,
+} from "./invest-location";
+
+export type { InvestView };
 
 export type InvestExperienceProps = {
   stockMarket?: MarketDataState;
   memeMarket?: MarketDataState;
   cryptoMarket?: MarketDataState;
+  initialView?: InvestView;
 };
-
-type InvestView =
-  | { screen: "hub" }
-  | { screen: "category"; shelfId: DiscoverShelfId }
-  | { screen: "detail"; assetId: string; from: "hub" | DiscoverShelfId };
 
 export function InvestExperience({
   stockMarket = unavailableMarketData,
   memeMarket = unavailableMarketData,
   cryptoMarket = unavailableMarketData,
+  initialView,
 }: InvestExperienceProps = {}) {
-  const [view, setView] = useState<InvestView>({ screen: "hub" });
+  const router = useRouter();
+  const [view, setView] = useState<InvestView>(() => {
+    if (typeof window !== "undefined") {
+      const fromUrl = investViewFromSearch(
+        new URLSearchParams(window.location.search),
+      );
+      if (fromUrl.screen !== "hub") return fromUrl;
+    }
+    return initialView ?? { screen: "hub" };
+  });
+  const [inAppChildDepth, setInAppChildDepth] = useState(0);
   const markets = { stockMarket, memeMarket, cryptoMarket };
+
+  useEffect(() => {
+    const onPopState = () => {
+      setView(investViewFromSearch(new URLSearchParams(window.location.search)));
+      setInAppChildDepth((depth) => Math.max(0, depth - 1));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  function go(next: InvestView) {
+    setView(next);
+    setInAppChildDepth((depth) => depth + 1);
+    router.push(investHref(next), { scroll: false });
+  }
+
+  function leaveChild(parent: InvestView) {
+    setView(parent);
+    if (inAppChildDepth > 0) {
+      router.back();
+      return;
+    }
+    router.replace(investHref(parent), { scroll: false });
+  }
 
   if (view.screen === "category") {
     const shelf = getDiscoverShelf(view.shelfId);
@@ -41,9 +79,9 @@ export function InvestExperience({
         shelfId={shelf.id}
         assets={shelf.assets}
         market={marketForAsset(shelf.assets[0], markets)}
-        onBack={() => setView({ screen: "hub" })}
+        onBack={() => leaveChild({ screen: "hub" })}
         onOpenAsset={(asset, from) =>
-          setView({ screen: "detail", assetId: asset.id, from })
+          go({ screen: "detail", assetId: asset.id, from })
         }
       />
     );
@@ -57,7 +95,7 @@ export function InvestExperience({
         asset={asset}
         market={marketForAsset(asset, markets)}
         onBack={() =>
-          setView(
+          leaveChild(
             view.from === "hub"
               ? { screen: "hub" }
               : { screen: "category", shelfId: view.from },
@@ -72,9 +110,9 @@ export function InvestExperience({
       stockMarket={stockMarket}
       memeMarket={memeMarket}
       cryptoMarket={cryptoMarket}
-      onSeeAll={(shelfId) => setView({ screen: "category", shelfId })}
+      onSeeAll={(shelfId) => go({ screen: "category", shelfId })}
       onOpenAsset={(asset: InvestAsset) =>
-        setView({ screen: "detail", assetId: asset.id, from: "hub" })
+        go({ screen: "detail", assetId: asset.id, from: "hub" })
       }
     />
   );

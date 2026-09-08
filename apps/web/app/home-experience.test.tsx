@@ -15,9 +15,15 @@ import { verifiedLocalCashAssets } from "@/config/portfolio-assets";
 import { presentationRegions, type RegionId } from "@/config/regions";
 
 const replaceCalls: string[] = [];
+const pushCalls: string[] = [];
+let backCalls = 0;
 mock.module("next/navigation", () => ({
   useRouter: () => ({
     replace: (href: string) => replaceCalls.push(href),
+    push: (href: string) => pushCalls.push(href),
+    back: () => {
+      backCalls += 1;
+    },
   }),
 }));
 
@@ -371,12 +377,16 @@ function HomeHarness({
   accountSdk,
   sessionFetch = async () => Response.json(session()),
   initialAccountOpen = false,
+  initialPanel,
+  initialAccountSettingsOpen = false,
   detectedCountry = null,
   routeMode = "dashboard",
 }: {
   accountSdk: AccountWalletSdkBoundary;
   sessionFetch?: SessionFetch;
   initialAccountOpen?: boolean;
+  initialPanel?: "home" | "invest" | "save";
+  initialAccountSettingsOpen?: boolean;
   detectedCountry?: string | null;
   routeMode?: "landing" | "dashboard";
 }) {
@@ -385,6 +395,8 @@ function HomeHarness({
       <HomeExperience
         detectedCountry={detectedCountry}
         initialAccountOpen={initialAccountOpen}
+        initialPanel={initialPanel}
+        initialAccountSettingsOpen={initialAccountSettingsOpen}
         routeMode={routeMode}
         savingsContent={<section aria-label="Savings module">Savings fixture</section>}
         investContent={<section aria-label="Invest module">Invest fixture</section>}
@@ -453,7 +465,10 @@ afterEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   replaceCalls.length = 0;
+  pushCalls.length = 0;
+  backCalls = 0;
   document.body.style.overflow = "";
+  window.history.replaceState({}, "", "/");
 });
 
 describe("login-state home experience", () => {
@@ -481,6 +496,7 @@ describe("login-state home experience", () => {
     expect(dialog.contains(document.activeElement)).toBe(true);
     expect(page().getByRole("textbox", { name: "Email address" })).toBeTruthy();
     expect(page().queryByText("Sign-in is not configured")).toBeNull();
+    expect(pushCalls).toEqual(["/?account=signin"]);
   });
 
   test("hides Create account when CDP is unconfigured and Sign in explains setup", async () => {
@@ -1151,16 +1167,30 @@ describe("login-state home experience", () => {
     fireEvent.click(page().getByRole("button", { name: "Account" }));
     expect(page().getByRole("combobox", { name: "Country" }).textContent).toContain("Brazil");
     expect(page().getByText("Sets how money is shown")).toBeTruthy();
+    expect(pushCalls).toEqual(["/dashboard?account=settings"]);
     fireEvent.click(page().getByRole("button", { name: "Done" }));
+    expect(backCalls).toBe(1);
 
     const tabs = page().getByRole("navigation", { name: "Main navigation" });
     expect(within(tabs).queryByRole("button", { name: "Save" })).toBeNull();
     expect(within(tabs).getByRole("button", { name: "Home" })).toBeTruthy();
     expect(within(tabs).getByRole("button", { name: "Invest" })).toBeTruthy();
 
+    fireEvent.click(page().getByRole("button", { name: "Save" }));
+    expect(page().getByRole("region", { name: "Savings module" })).toBeTruthy();
+    expect(pushCalls).toEqual([
+      "/dashboard?account=settings",
+      "/dashboard?panel=save",
+    ]);
+
     fireEvent.click(within(tabs).getByRole("button", { name: "Invest" }));
     const invest = page().getByRole("region", { name: "Invest module" });
     expect(invest).toBeTruthy();
+    expect(pushCalls).toEqual([
+      "/dashboard?account=settings",
+      "/dashboard?panel=save",
+      "/dashboard?panel=invest",
+    ]);
     expect(document.activeElement).toBe(
       document.getElementById("navigation-panel"),
     );
@@ -1171,5 +1201,41 @@ describe("login-state home experience", () => {
     expect((dialog as HTMLDialogElement).open).toBe(true);
     fireEvent.click(page().getByRole("button", { name: "Close sign in" }));
     await waitFor(() => expect(replaceCalls).toEqual(["/"]));
+  });
+
+  test("honors a dashboard panel deep link on first paint", async () => {
+    render(
+      <HomeHarness
+        accountSdk={sdk({ isSignedIn: true, ownerKey: OWNER })}
+        initialPanel="invest"
+      />,
+    );
+
+    await page().findByRole("region", { name: "Invest module" });
+    expect(pushCalls).toEqual([]);
+    expect(page().getByRole("button", { name: "Invest", current: "page" })).toBeTruthy();
+
+    act(() => {
+      window.history.replaceState({}, "", "/dashboard");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(page().queryByRole("region", { name: "Invest module" })).toBeNull();
+    expect(page().getByRole("heading", { name: "Balances" })).toBeTruthy();
+  });
+
+  test("replaces deep-linked account settings instead of backing out of Home", async () => {
+    render(
+      <HomeHarness
+        accountSdk={sdk({ isSignedIn: true, ownerKey: OWNER })}
+        initialAccountSettingsOpen
+      />,
+    );
+
+    expect(await page().findByRole("combobox", { name: "Country" })).toBeTruthy();
+    await page().findByRole("button", { name: "Sign out" });
+    fireEvent.click(page().getByRole("button", { name: "Done" }));
+    expect(backCalls).toBe(0);
+    expect(replaceCalls).toEqual(["/dashboard"]);
+    expect(await page().findByRole("heading", { name: "Balances" })).toBeTruthy();
   });
 });
