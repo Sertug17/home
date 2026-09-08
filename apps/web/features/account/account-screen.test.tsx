@@ -89,6 +89,7 @@ function SheetHarness({
 
 afterEach(() => {
   cleanup();
+  window.sessionStorage.clear();
   document.body.style.overflow = "";
 });
 
@@ -108,6 +109,8 @@ describe("production account sign-in sheet", () => {
     });
     expect(dialog).toBeInstanceOf(HTMLDialogElement);
     expect((dialog as HTMLDialogElement).open).toBe(true);
+    expect(page().queryByText("Secure account")).toBeNull();
+    expect(page().queryByText(/details stay hidden until verification/i)).toBeNull();
     expect(document.body.style.overflow).toBe("hidden");
     expect(dialog.contains(document.activeElement)).toBe(true);
     expect(document.activeElement).toBe(emailInput);

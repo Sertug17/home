@@ -3,8 +3,9 @@ import { presentationRegions, regionIds } from "@/config/regions";
 import coordinates from "./globe-country-coordinates.json";
 import land from "./globe-land-points.json";
 import {
-  configuredGlobeCountries, geographicVector, locateCountries,
-  projectCountry, shouldAnimateGlobe, type GlobeCountry,
+  configureGlobeRoutes, configuredGlobeCountries, countryFlag, geographicVector, INITIAL_LONGITUDE,
+  locateCountries, POPOVER_MIN_DWELL_MS, projectCountry, projectGlobeRoute, selectGlobePopoverCountry,
+  shouldAnimateGlobe, type GlobeCountry, type GlobePoint,
 } from "./globe-geometry";
 
 const profile = (countryCode: string): GlobeCountry => ({
@@ -65,9 +66,48 @@ describe("sourced globe geography", () => {
       expect(projectCountry(point.longitude, point.latitude, point.longitude + 180).visible).toBe(false);
     }
   });
+
+  test("keeps illustrative routes curated, bounded, phased, and front-face culled", () => {
+    const points = locateCountries(configuredGlobeCountries());
+    const routes = configureGlobeRoutes(points);
+    expect(routes).toHaveLength(12);
+    expect(new Set(routes.map((route) => route.id)).size).toBe(routes.length);
+    expect(routes.every((route) => points.includes(route.from) && points.includes(route.to))).toBe(true);
+    expect(routes.map((route) => route.phase)).toEqual(routes.map((_, index) => index / routes.length));
+
+    const route = routes.find((candidate) => candidate.id === "US-GB")!;
+    const front = projectGlobeRoute(route, INITIAL_LONGITUDE, 0.94);
+    expect(front.path).not.toBe("");
+    expect(front.path.match(/[ML]/g)?.length).toBeLessThanOrEqual(21);
+    for (const coordinate of front.path.match(/-?\d+\.\d+/g)?.map(Number) ?? []) {
+      expect(coordinate).toBeGreaterThanOrEqual(0);
+      expect(coordinate).toBeLessThanOrEqual(100);
+    }
+    expect(front.pulse.visible).toBe(true);
+    expect(front.arrivalProgress).toBeCloseTo(0.5, 8);
+    expect(projectGlobeRoute(route, INITIAL_LONGITUDE + 180).path).toBe("");
+  });
 });
 
 describe("globe motion policy", () => {
+  test("selects one central sourced profile with dwell hysteresis and an ISO flag", () => {
+    const points: GlobePoint[] = [
+      { ...profile("AA"), longitude: 0, latitude: 12 },
+      { ...profile("BB"), longitude: 10, latitude: 12 },
+    ];
+    expect(selectGlobePopoverCountry(points, 0)?.country.countryCode).toBe("AA");
+    expect(
+      selectGlobePopoverCountry(points, 9, "AA", POPOVER_MIN_DWELL_MS - 1)
+        ?.country.countryCode,
+    ).toBe("AA");
+    expect(
+      selectGlobePopoverCountry(points, 9, "AA", POPOVER_MIN_DWELL_MS)
+        ?.country.countryCode,
+    ).toBe("BB");
+    expect(countryFlag("US")).toBe("🇺🇸");
+    expect(countryFlag("GLOBAL")).toBe("");
+  });
+
   test("reduced motion is static by default, with explicit opt-in; manual pause always wins", () => {
     expect(shouldAnimateGlobe(true, null)).toBe(false);
     expect(shouldAnimateGlobe(false, null)).toBe(true);

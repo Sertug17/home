@@ -17,7 +17,7 @@ describe("invest market display", () => {
     }
   });
 
-  test("renders only caller-supplied display values and provenance", () => {
+  test("formats source-supplied USD values while retaining nonnumeric caller display values", () => {
     const state: MarketDataState = {
       status: "ready",
       snapshots: [
@@ -38,6 +38,15 @@ describe("invest market display", () => {
       tone: "ready",
     });
     expect(getMarketDisplay("toshi", state).detail).toBe("No price supplied");
+    expect(getMarketDisplay("nvdac", {
+      status: "ready",
+      snapshots: [{
+        assetId: "nvdac",
+        displayPrice: "$231.708792875",
+        asOf: "2026-09-07T12:00:00Z",
+        sourceLabel: "Fixture source",
+      }],
+    }).value).toBe("$231.71");
   });
 
   test("uses a stable error fallback when no provider message is present", () => {

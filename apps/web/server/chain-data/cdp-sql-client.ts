@@ -121,16 +121,19 @@ export function createCdpSqlHttpTransport({
           "CDP SQL cache age must be between 500 and 900000 milliseconds.",
         );
       }
+      throwIfRequestAborted(request.signal);
       let bearerToken: string;
       try {
         bearerToken = await resolveBearerToken(auth);
       } catch (error) {
+        throwIfRequestAborted(request.signal);
         if (error instanceof ChainDataError) throw error;
         throw new ChainDataError(
           "not-configured",
           "CDP SQL bearer token generation failed.",
         );
       }
+      throwIfRequestAborted(request.signal);
       const controller = new AbortController();
       const onAbort = () => controller.abort(request.signal?.reason);
       request.signal?.addEventListener("abort", onAbort, { once: true });
@@ -178,6 +181,12 @@ export function createCdpSqlHttpTransport({
       }
     },
   };
+}
+
+function throwIfRequestAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new ChainDataError("timed-out", "CDP SQL request was canceled.");
+  }
 }
 
 async function resolveBearerToken(auth: CdpSqlAuth): Promise<string> {

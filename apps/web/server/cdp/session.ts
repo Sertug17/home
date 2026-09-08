@@ -2,6 +2,7 @@ import {
   ACCOUNT_PROVIDER_HEADER,
   BASE_CHAIN_ID,
   type AccountProvider,
+  type AccountProviderRequest,
   type VerifiedAccountSession,
 } from "@/features/account/session-types";
 
@@ -92,6 +93,38 @@ function normalizeSiweAddress(value: VerifiedEndUser): `0x${string}` {
   return [...siweAddresses][0];
 }
 
+function authenticatedAccountProviders(value: unknown): Set<AccountProvider> {
+  if (!value || typeof value !== "object") {
+    throw new InvalidVerifiedIdentityError();
+  }
+  const authenticationMethods = (value as VerifiedEndUser).authenticationMethods;
+  if (!Array.isArray(authenticationMethods)) {
+    throw new InvalidVerifiedIdentityError();
+  }
+
+  const providers = new Set<AccountProvider>();
+  for (const method of authenticationMethods) {
+    if (
+      !method ||
+      typeof method !== "object" ||
+      !("type" in method) ||
+      typeof method.type !== "string"
+    ) {
+      throw new InvalidVerifiedIdentityError();
+    }
+    providers.add(method.type === "siwe" ? "base-account" : "cdp-embedded");
+  }
+  return providers;
+}
+
+function restoredAccountProvider(value: unknown): AccountProvider {
+  const providers = authenticatedAccountProviders(value);
+  if (providers.size !== 1) {
+    throw new InvalidVerifiedIdentityError();
+  }
+  return [...providers][0];
+}
+
 function normalizeVerifiedEndUser(
   value: unknown,
   accountProvider: AccountProvider,
@@ -102,6 +135,12 @@ function normalizeVerifiedEndUser(
 
   const endUser = value as VerifiedEndUser;
   if (typeof endUser.userId !== "string" || !subjectPattern.test(endUser.userId)) {
+    throw new InvalidVerifiedIdentityError();
+  }
+  if (
+    accountProvider === "cdp-embedded" &&
+    !authenticatedAccountProviders(endUser).has("cdp-embedded")
+  ) {
     throw new InvalidVerifiedIdentityError();
   }
 
@@ -207,13 +246,13 @@ function readBearerToken(request: Request): string | null {
   return token;
 }
 
-function readAccountProvider(request: Request): AccountProvider | null {
+function readAccountProvider(request: Request): AccountProviderRequest | null {
   const requested = request.headers.get(ACCOUNT_PROVIDER_HEADER);
   if (requested === null || requested === "cdp-embedded") {
     return "cdp-embedded";
   }
-  if (requested === "base-account") {
-    return "base-account";
+  if (requested === "base-account" || requested === "restore") {
+    return requested;
   }
   return null;
 }
@@ -239,7 +278,14 @@ export function createSessionHandler({
     try {
       const validator = await getValidator();
       const verifiedEndUser = await validator.validateAccessToken(accessToken);
-      const session = normalizeVerifiedEndUser(verifiedEndUser, accountProvider);
+      const selectedProvider =
+        accountProvider === "restore"
+          ? restoredAccountProvider(verifiedEndUser)
+          : accountProvider;
+      if (selectedProvider === "base-account" && !baseAccountEnabled) {
+        return baseAccountDisabledResponse();
+      }
+      const session = normalizeVerifiedEndUser(verifiedEndUser, selectedProvider);
 
       return jsonResponse(session, 200);
     } catch (error) {

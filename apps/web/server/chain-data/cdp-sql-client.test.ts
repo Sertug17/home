@@ -6,6 +6,14 @@ import {
 } from "./cdp-sql-client";
 import { ChainDataError } from "./errors";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function successResponse() {
   return new Response(
     JSON.stringify({
@@ -167,6 +175,50 @@ describe("CDP SQL HTTP transport", () => {
       expect(String(error)).not.toContain("private upstream details");
     }
     expect(callCount).toBe(1);
+  });
+
+  test("does not dispatch when the caller signal is already aborted", async () => {
+    let callCount = 0;
+    const controller = new AbortController();
+    controller.abort("superseded");
+    const transport = createCdpSqlHttpTransport({
+      auth: { mode: "client-api-key", clientApiKey: "client-key-value" },
+      fetch: async () => {
+        callCount += 1;
+        return successResponse();
+      },
+    });
+
+    await expect(
+      transport.run({ sql: "SELECT 1", signal: controller.signal }),
+    ).rejects.toMatchObject({ code: "timed-out" });
+    expect(callCount).toBe(0);
+  });
+
+  test("does not dispatch when cancellation arrives during bearer generation", async () => {
+    const bearer = deferred<string>();
+    let callCount = 0;
+    const controller = new AbortController();
+    const transport = createCdpSqlHttpTransport({
+      auth: {
+        mode: "signed-jwt",
+        generateBearerToken: async () => bearer.promise,
+      },
+      fetch: async () => {
+        callCount += 1;
+        return successResponse();
+      },
+    });
+
+    const request = transport.run({
+      sql: "SELECT 1",
+      signal: controller.signal,
+    });
+    controller.abort("superseded");
+    bearer.resolve("short-lived-jwt");
+
+    await expect(request).rejects.toMatchObject({ code: "timed-out" });
+    expect(callCount).toBe(0);
   });
 
   test("applies a finite local timeout and does not expose credentials", async () => {

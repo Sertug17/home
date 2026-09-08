@@ -11,6 +11,7 @@ import type {
   VerifiedAccountSession,
 } from "@/features/account/session-client";
 import { ACCOUNT_PROVIDER_HEADER } from "@/features/account/session-types";
+import { presentationRegions, type RegionId } from "@/config/regions";
 
 const replaceCalls: string[] = [];
 mock.module("next/navigation", () => ({
@@ -118,6 +119,204 @@ function portfolioSnapshot({
   };
 }
 
+function valuationSnapshot({
+  region,
+  address = ADDRESS,
+  usdc = "0",
+  eth = "0",
+}: {
+  region: RegionId;
+  address?: typeof ADDRESS | typeof ADDRESS_B;
+  usdc?: string;
+  eth?: string;
+}) {
+  const currency = presentationRegions[region].currency.code;
+  const usdcKey =
+    "eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+  const holdings = [
+    {
+      kind: "direct",
+      id: "eth",
+      assetKey: "eip155:8453/native",
+      name: "Ethereum",
+      symbol: "ETH",
+      decimals: 18,
+      assetKind: "native",
+      contractAddress: null,
+      cashCurrency: null,
+      balanceBaseUnits: eth,
+      readStatus: "ready",
+    },
+    {
+      kind: "direct",
+      id: "usdc",
+      assetKey: usdcKey,
+      name: "US dollar",
+      symbol: "USDC",
+      decimals: 6,
+      assetKind: "erc20",
+      contractAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      cashCurrency: "USD",
+      balanceBaseUnits: usdc,
+      readStatus: "ready",
+    },
+    ...[
+      "0xee8f4ec5672f09119b96ab6fb59c27e1b7e44b61",
+      "0x7bfa7c4f149e7415b73bdedfe609237e29cbf34a",
+      "0xbeef010f9cb27031ad51e3333f9af9c6b1228183",
+    ].map((vaultAddress, index) => ({
+      kind: "vault-position",
+      id: `vault-${index}`,
+      assetKey: `eip155:8453/erc20:${vaultAddress}`,
+      name: `Vault ${index}`,
+      symbol: "USDC vault",
+      vaultAddress,
+      decimals: 18,
+      underlyingAssetKey: usdcKey,
+      underlyingSymbol: "USDC",
+      underlyingDecimals: 6,
+      sharesBaseUnits: "0",
+      underlyingBaseUnits: "0",
+      readStatus: "ready",
+      conversionMethod: "erc4626-convertToAssets",
+    })),
+  ];
+  const fetchedAt = "2026-09-08T12:00:00.000Z";
+  const source = {
+    provider: "Coinbase Exchange Rates",
+    method: "fixture",
+    fetchedAt,
+    asOf: null,
+    timeBasis: "retrieved-at",
+  };
+  const cashBuckets = [
+    {
+      id: `cash:${usdcKey}`,
+      roles:
+        currency === "USD"
+          ? ["canonical-usd", "selected-local"]
+          : ["canonical-usd"],
+      assetKey: usdcKey,
+      symbol: "USDC",
+      denominationCurrency: "USD",
+      tokenAmountBaseUnits: usdc,
+      tokenDecimals: 6,
+      indicativeValue: { atoms: usdc, scale: 6 },
+      valuationStatus: "priced",
+    },
+  ];
+  if (currency && currency !== "USD") {
+    cashBuckets.push({
+      id: `cash:unsupported:${currency}`,
+      roles: ["selected-local"],
+      assetKey: null,
+      symbol: presentationRegions[region].candidateAsset?.symbol ?? currency,
+      denominationCurrency: currency,
+      tokenAmountBaseUnits: null,
+      tokenDecimals: null,
+      indicativeValue: null,
+      valuationStatus: "unsupported",
+    } as never);
+  }
+  return {
+    version: 2,
+    walletAddress: address,
+    chainId: 8453,
+    selectedRegion: region,
+    quoteCurrency: currency,
+    block: { number: "16", hash: `0x${"ab".repeat(32)}`, timestamp: "100" },
+    fetchedAt,
+    inventory: {
+      scope: "configured-base-assets-v1",
+      walletDiscoveryComplete: false,
+      holdings,
+      omissions: [],
+    },
+    prices: [],
+    fx: currency
+      ? {
+          baseCurrency: "USD",
+          quoteCurrency: currency,
+          quoteUnitsPerUsd: { atoms: "1", scale: 0 },
+          sourceValue: "1",
+          status: "fresh",
+          source,
+        }
+      : null,
+    nativeEthQuote: {
+      baseCurrency: "USD",
+      assetSymbol: "ETH",
+      assetUnitsPerUsd: { atoms: "5", scale: 4 },
+      sourceValue: "0.0005",
+      status: "fresh",
+      source,
+    },
+    lines: currency
+      ? holdings.map((holding) => ({
+          holdingAssetKey: holding.assetKey,
+          valueCurrency: currency,
+          value: { atoms: "0", scale: 18 },
+          status: "priced",
+          reason: null,
+        }))
+      : [],
+    cashBuckets,
+    total: {
+      label: "supported-portfolio-value",
+      status: currency
+        ? "all-supported-read-holdings-priced"
+        : "unavailable-no-quote-currency",
+      value: currency ? { atoms: usdc, scale: 6 } : null,
+      currency,
+      unpricedAssetKeys: [],
+      unavailableAssetKeys: [],
+    },
+  };
+}
+
+function valuationResponse(
+  input: RequestInfo | URL,
+  options: { address?: typeof ADDRESS | typeof ADDRESS_B; usdc?: string; eth?: string } = {},
+) {
+  const region = new URL(String(input), "http://localhost").searchParams.get(
+    "region",
+  );
+  if (!region || !(region in presentationRegions)) {
+    throw new Error("Valuation request is missing a region.");
+  }
+  return Response.json(
+    valuationSnapshot({ region: region as RegionId, ...options }),
+  );
+}
+
+function activityPage(
+  input: RequestInfo | URL,
+  walletAddress: typeof ADDRESS | typeof ADDRESS_B = ADDRESS,
+) {
+  const url = new URL(String(input), "http://localhost");
+  const to = url.searchParams.get("to");
+  if (!to) throw new Error("Activity request is missing its window end.");
+  const toTime = new Date(to).getTime();
+  return {
+    walletAddress,
+    chainId: BASE_CHAIN_ID,
+    window: {
+      from: new Date(toTime - 31 * 24 * 60 * 60 * 1000).toISOString(),
+      to,
+    },
+    transfers: [],
+    nextCursor: null,
+    source: {
+      provider: "cdp-sql",
+      cached: false,
+      stale: false,
+      executionTimestamp: new Date(toTime - 1_000).toISOString(),
+      executionTimeMs: 2,
+      fetchedAt: to,
+    },
+  };
+}
+
 function connectedBaseAccount(): ConnectedBaseAccount {
   return {
     address: ADDRESS,
@@ -193,13 +392,23 @@ function PortfolioHomeHarness({
 
 Object.defineProperty(window, "matchMedia", {
   configurable: true,
-  value: () => ({ matches: true }),
+  value: () => ({
+    matches: true,
+    media: "",
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => true,
+  }),
 });
 HTMLElement.prototype.scrollIntoView = () => {};
 
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  window.sessionStorage.clear();
   replaceCalls.length = 0;
   document.body.style.overflow = "";
 });
@@ -209,13 +418,15 @@ describe("login-state home experience", () => {
     render(<HomeHarness accountSdk={sdk()} routeMode="landing" />);
 
     await page().findByRole("heading", {
-      name: "The home for your money.",
+      name: "One home for your money.",
     });
     const main = page().getByRole("main");
-    expect(within(main).queryByText("USDC balance")).toBeNull();
+    expect(within(main).queryByText("Wallet & savings value")).toBeNull();
     expect(within(main).queryByText("Assets")).toBeNull();
     expect(within(main).queryByText("Activity")).toBeNull();
     expect(page().queryByRole("navigation", { name: "Main navigation" })).toBeNull();
+    expect(page().queryByRole("button", { name: "Add money" })).toBeNull();
+    expect(page().queryByRole("button", { name: "Receive" })).toBeNull();
 
     const createAccount = within(main).getByRole("button", {
       name: "Create account",
@@ -277,7 +488,7 @@ describe("login-state home experience", () => {
       />,
     );
 
-    expect(page().getByRole("heading", { name: "Money and assets" })).toBeTruthy();
+    expect(page().getByRole("heading", { name: "Portfolio" })).toBeTruthy();
     expect(page().getByText("Balances hidden while account verification completes")).toBeTruthy();
     expect(document.body.textContent).not.toContain(ADDRESS);
     expect(page().queryByText("Checking your account…")).toBeNull();
@@ -287,13 +498,21 @@ describe("login-state home experience", () => {
       await pendingSession.promise;
     });
 
-    await page().findByRole("heading", { name: "Money and assets" });
-    expect(page().getByText("USDC balance")).toBeTruthy();
+    await page().findByRole("heading", { name: "Portfolio" });
+    expect(page().getByText("Wallet & savings value")).toBeTruthy();
     expect(page().getByRole("heading", { name: "Assets" })).toBeTruthy();
     expect(page().getByRole("heading", { name: "Activity" })).toBeTruthy();
     expect(page().getByTitle(ADDRESS).textContent).toBe("0x1111…1111");
     expect(page().getAllByText("12.34 USDC").length).toBeGreaterThanOrEqual(1);
-    expect(page().queryByText("The home for your money.")).toBeNull();
+    expect(page().getByRole("link", { name: "Add money" }).getAttribute("href")).toBe("/fund");
+    expect(page().getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(false);
+    expect(page().getByRole("button", { name: "Receive" }).hasAttribute("disabled")).toBe(false);
+    fireEvent.click(page().getByRole("button", { name: "Receive" }));
+    expect(page().getByRole("dialog", { name: "Receive" })).toBeTruthy();
+    expect(page().getByText(ADDRESS)).toBeTruthy();
+    fireEvent.click(page().getByRole("button", { name: "Close receive dialog" }));
+    expect(page().queryByRole("dialog", { name: "Receive" })).toBeNull();
+    expect(page().queryByText("One home for your money.")).toBeNull();
   });
 
   test("treats a verified session without a smart account as authenticated but not ready", async () => {
@@ -304,10 +523,10 @@ describe("login-state home experience", () => {
       />,
     );
 
-    await page().findByRole("heading", { name: "Money and assets" });
+    await page().findByRole("heading", { name: "Portfolio" });
     expect(page().getByText("Account pending")).toBeTruthy();
     expect(page().getByText("Setup in progress")).toBeTruthy();
-    expect(page().queryByText("The home for your money.")).toBeNull();
+    expect(page().queryByText("One home for your money.")).toBeNull();
   });
 
   test("clears private dashboard content immediately on failed sign-out and exposes manual retry", async () => {
@@ -328,7 +547,7 @@ describe("login-state home experience", () => {
     await page().findByTitle(ADDRESS);
     fireEvent.click(page().getByRole("button", { name: "Sign out" }));
 
-    expect(replaceCalls).toContain("/");
+    await waitFor(() => expect(replaceCalls).toEqual(["/"]));
     expect(document.body.textContent).not.toContain("0x1111…1111");
     expect(page().getByText("Balances hidden while account verification completes")).toBeTruthy();
 
@@ -337,16 +556,20 @@ describe("login-state home experience", () => {
     await waitFor(() => expect(signOutCalls).toBe(2));
   });
 
-  test("wires verified balances through the production owner without relabeling or summing unpriced ETH", async () => {
+  test("wires verified balances through the production owner with bounded token display and no unpriced ETH sum", async () => {
     const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
     const sessionFetch: SessionFetch = async (input, init) => {
       requests.push({ input, init });
       if (input === "/api/session") {
         return Response.json(session());
       }
-      return Response.json(
-        portfolioSnapshot({ usdc: "0", eth: "1" }),
-      );
+      if (String(input).startsWith("/api/activity?")) {
+        return Response.json(activityPage(input));
+      }
+      if (String(input).startsWith("/api/portfolio/valuation?")) {
+        return valuationResponse(input, { usdc: "0", eth: "1" });
+      }
+      return Response.json(portfolioSnapshot({ usdc: "0", eth: "1" }));
     };
 
     render(
@@ -357,27 +580,72 @@ describe("login-state home experience", () => {
       />,
     );
 
-    await page().findByText("USD/USDC balance · ETH shown separately");
-    expect(page().getByRole("heading", { name: "USDC balance" })).toBeTruthy();
-    expect(page().getAllByText("0 USDC").length).toBe(2);
-    expect(page().getByText("0.000000000000000001 ETH")).toBeTruthy();
+    await page().findByText("Wallet and savings only · Borrow separate");
+    expect(
+      page().getByRole("heading", { name: "Wallet & savings value" }),
+    ).toBeTruthy();
+    expect(page().getByText("0 USDC")).toBeTruthy();
+    expect(page().getByText("<0.000001 ETH on Base")).toBeTruthy();
     expect(page().getByText("USD / USDC")).toBeTruthy();
+    expect(page().getByText("BRL / BRZ")).toBeTruthy();
     expect(page().getByText("Ethereum")).toBeTruthy();
-    expect(document.body.textContent).not.toContain("BRL");
+    expect(document.body.textContent).toContain("BRL 0.00");
     expect(document.body.textContent).not.toContain("Total balance");
-    expect(document.body.textContent).not.toContain("$0");
 
     const portfolioRequest = requests.find(
       (request) => request.input === "/api/portfolio",
     );
     expect(portfolioRequest).toBeDefined();
+    const valuationRequest = requests.find((request) =>
+      String(request.input).startsWith("/api/portfolio/valuation?"),
+    );
+    expect(valuationRequest).toBeDefined();
+    expect(
+      new URL(String(valuationRequest?.input), "http://localhost").searchParams.get(
+        "region",
+      ),
+    ).toBe("BR");
+    const activityRequest = requests.find((request) =>
+      String(request.input).startsWith("/api/activity?"),
+    );
+    expect(activityRequest).toBeDefined();
+    expect(String(activityRequest?.input).match(/\?/g)).toHaveLength(1);
+    expect(new URL(String(activityRequest?.input), "http://localhost").searchParams.has("to")).toBe(true);
     expect(
       new Headers(portfolioRequest?.init?.headers).get(ACCOUNT_PROVIDER_HEADER),
     ).toBe("cdp-embedded");
   });
 
+  test("renders an incomplete valuation with no useful subtotal as unavailable", async () => {
+    const sessionFetch: SessionFetch = async (input) => {
+      if (input === "/api/session") return Response.json(session());
+      if (String(input).startsWith("/api/activity?")) {
+        return Response.json(activityPage(input));
+      }
+      if (String(input).startsWith("/api/portfolio/valuation?")) {
+        const snapshot = valuationSnapshot({ region: "US" });
+        return Response.json({
+          ...snapshot,
+          total: { ...snapshot.total, status: "unavailable", value: null },
+        });
+      }
+      return Response.json(portfolioSnapshot());
+    };
+
+    render(
+      <PortfolioHomeHarness
+        accountSdk={sdk({ isSignedIn: true, ownerKey: OWNER })}
+        sessionFetch={sessionFetch}
+        detectedCountry="US"
+      />,
+    );
+
+    expect(await page().findByText("Wallet and savings value unavailable")).toBeTruthy();
+    expect(page().getByText("Unavailable")).toBeTruthy();
+  });
+
   test("clears the previous wallet amount before a newly verified owner portfolio resolves", async () => {
-    const pendingPortfolio = deferred<Response>();
+    const pendingValuation = deferred<Response>();
     const sessionFetch: SessionFetch = async (input, init) => {
       const token = new Headers(init?.headers).get("Authorization");
       const isOwnerB = token === "Bearer token-b";
@@ -392,10 +660,20 @@ describe("login-state home experience", () => {
             : session(),
         );
       }
-      if (isOwnerB) {
-        return pendingPortfolio.promise;
+      if (String(input).startsWith("/api/activity?")) {
+        return Response.json(activityPage(input, isOwnerB ? ADDRESS_B : ADDRESS));
       }
-      return Response.json(portfolioSnapshot({ usdc: "99000000" }));
+      if (String(input).startsWith("/api/portfolio/valuation?")) {
+        return isOwnerB
+          ? pendingValuation.promise
+          : valuationResponse(input, { usdc: "99000000" });
+      }
+      return Response.json(
+        portfolioSnapshot({
+          address: isOwnerB ? ADDRESS_B : ADDRESS,
+          usdc: isOwnerB ? "2500000" : "99000000",
+        }),
+      );
     };
     const view = render(
       <PortfolioHomeHarness
@@ -408,7 +686,7 @@ describe("login-state home experience", () => {
       />,
     );
 
-    await page().findAllByText("99 USDC");
+    await page().findByText("99 USDC");
 
     view.rerender(
       <PortfolioHomeHarness
@@ -421,18 +699,19 @@ describe("login-state home experience", () => {
       />,
     );
 
-    await page().findByText("Updating USD/USDC balance");
+    await page().findByText("Updating wallet and savings value");
     expect(page().queryByText("99 USDC")).toBeNull();
 
     await act(async () => {
-      pendingPortfolio.resolve(
-        Response.json(
-          portfolioSnapshot({ address: ADDRESS_B, usdc: "2500000" }),
-        ),
+      pendingValuation.resolve(
+        valuationResponse("/api/portfolio/valuation?region=GLOBAL", {
+          address: ADDRESS_B,
+          usdc: "2500000",
+        }),
       );
-      await pendingPortfolio.promise;
+      await pendingValuation.promise;
     });
-    expect((await page().findAllByText("2.5 USDC")).length).toBe(2);
+    expect(await page().findByText("2.5 USDC")).toBeTruthy();
   });
 
   test("propagates Base provider selection from sign-in through the real portfolio composition", async () => {
@@ -441,6 +720,12 @@ describe("login-state home experience", () => {
       requests.push({ input, init });
       if (input === "/api/session") {
         return Response.json(session(undefined, "base-account", "siwe-subject"));
+      }
+      if (String(input).startsWith("/api/activity?")) {
+        return Response.json(activityPage(input));
+      }
+      if (String(input).startsWith("/api/portfolio/valuation?")) {
+        return valuationResponse(input, { usdc: "4250000" });
       }
       return Response.json(portfolioSnapshot({ usdc: "4250000" }));
     };
@@ -462,7 +747,7 @@ describe("login-state home experience", () => {
       />,
     );
 
-    await page().findByRole("heading", { name: "The home for your money." });
+    await page().findByRole("heading", { name: "One home for your money." });
     fireEvent.click(
       within(page().getByRole("main")).getByRole("button", { name: "Sign in" }),
     );
@@ -483,16 +768,157 @@ describe("login-state home experience", () => {
       />,
     );
 
-    expect((await page().findAllByText("4.25 USDC")).length).toBe(2);
+    expect(await page().findByText("4.25 USDC")).toBeTruthy();
     const authenticatedRequests = requests.filter(
       (request) =>
-        request.input === "/api/session" || request.input === "/api/portfolio",
+        request.input === "/api/session" ||
+        request.input === "/api/portfolio" ||
+        String(request.input).startsWith("/api/portfolio/valuation?"),
     );
-    expect(authenticatedRequests).toHaveLength(2);
+    expect(authenticatedRequests).toHaveLength(3);
     for (const request of authenticatedRequests) {
       expect(
         new Headers(request.init?.headers).get(ACCOUNT_PROVIDER_HEADER),
       ).toBe("base-account");
+    }
+  });
+
+  test("keeps transfer success mounted while refreshing balances and activity through the real hook/client boundary", async () => {
+    const transactionHash = `0x${"ab".repeat(32)}` as `0x${string}`;
+    const userOperationHash = `0x${"cd".repeat(32)}` as `0x${string}`;
+    const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+    const preparedCreatedAt = new Date().toISOString();
+    const preparedExpiresAt = new Date(Date.now() + 600_000).toISOString();
+    const sessionFetch: SessionFetch = async (input, init) => {
+      requests.push({ input, init });
+      if (input === "/api/session") {
+        return Response.json(session());
+      }
+      if (String(input).startsWith("/api/activity?")) {
+        return Response.json(activityPage(input));
+      }
+      if (String(input).startsWith("/api/transfer-receipt?")) {
+        return Response.json({
+          status: "confirmed",
+          transactionHash,
+          blockNumber: "16",
+          success: true,
+        });
+      }
+      if (input === "/api/actions/send/prepare") {
+        const request = JSON.parse(String(init?.body)) as {
+          recipient: `0x${string}`;
+          amountBaseUnits: string;
+        };
+        return Response.json({
+          id: "11111111-1111-4111-8111-111111111111",
+          reviewHash: "a".repeat(64),
+          owner: {
+            subject: "subject-home",
+            address: ADDRESS,
+            chainId: 8453,
+            accountProvider: "cdp-embedded",
+          },
+          kind: "send",
+          title: "Send USDC",
+          calls: [{
+            to: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".toLowerCase(),
+            data: `0xa9059cbb${request.recipient.slice(2).padStart(64, "0")}${BigInt(request.amountBaseUnits).toString(16).padStart(64, "0")}`,
+            value: "0",
+          }],
+          amounts: [{ assetId: "usdc", symbol: "USDC", decimals: 6, amountBaseUnits: request.amountBaseUnits, direction: "spend" }],
+          warnings: [`Recipient: ${request.recipient}`, "Network fee shown by wallet."],
+          createdAt: preparedCreatedAt,
+          expiresAt: preparedExpiresAt,
+        });
+      }
+      if (String(input).endsWith("/claim")) {
+        const action = await sessionFetch("/api/actions/send/prepare", {
+          body: JSON.stringify({ recipient: ADDRESS_B, amountBaseUnits: "1000001" }),
+        }).then((response) => response.json());
+        return Response.json({
+          action,
+          disposition: "dispatch",
+          operation: { action, status: "submitting", attemptCount: 1, createdAt: action.createdAt, updatedAt: action.createdAt },
+        });
+      }
+      if (String(input).endsWith("/submission")) {
+        const body = JSON.parse(String(init?.body)) as { transactionHash?: `0x${string}` };
+        const action = await sessionFetch("/api/actions/send/prepare", {
+          body: JSON.stringify({ recipient: ADDRESS_B, amountBaseUnits: "1000001" }),
+        }).then((response) => response.json());
+        return Response.json({ operation: {
+          action,
+          status: body.transactionHash ? "confirmed" : "submitted",
+          attemptCount: 1,
+          userOperationHash,
+          ...(body.transactionHash ? { transactionHash } : {}),
+          createdAt: action.createdAt,
+          updatedAt: action.createdAt,
+        } });
+      }
+      if (String(input).startsWith("/api/portfolio/valuation?")) {
+        return valuationResponse(input, { usdc: "5000000" });
+      }
+      return Response.json(portfolioSnapshot({ usdc: "5000000" }));
+    };
+
+    render(
+      <PortfolioHomeHarness
+        accountSdk={sdk({
+          isSignedIn: true,
+          ownerKey: OWNER,
+          sendUserOperation: async () => ({ userOperationHash }),
+          getUserOperation: async () => ({
+            status: "complete",
+            transactionHash,
+            calls: [{
+              to: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+              data: `0xa9059cbb${ADDRESS_B.slice(2).padStart(64, "0")}${BigInt(1000001).toString(16).padStart(64, "0")}`,
+              value: BigInt(0),
+            }],
+          }) as never,
+        })}
+        sessionFetch={sessionFetch}
+      />,
+    );
+
+    await page().findByText("5 USDC");
+    await page().findByText("No supported token transfers in this window.");
+    fireEvent.click(page().getByRole("button", { name: "Send" }));
+    fireEvent.change(page().getByLabelText("Recipient address"), {
+      target: { value: ADDRESS_B },
+    });
+    fireEvent.change(page().getByLabelText("Amount"), {
+      target: { value: "1.000001" },
+    });
+    fireEvent.click(page().getByRole("button", { name: "Review transfer" }));
+    expect(await page().findByText("1.000001 USDC")).toBeTruthy();
+    fireEvent.click(page().getByRole("button", { name: "Confirm action" }));
+
+    await page().findByRole("heading", { name: "Transfer confirmed" });
+    await waitFor(() => {
+      expect(
+        requests.filter((request) => request.input === "/api/portfolio"),
+      ).toHaveLength(3);
+      expect(
+        requests.filter((request) =>
+          String(request.input).startsWith("/api/portfolio/valuation?"),
+        ),
+      ).toHaveLength(2);
+      expect(
+        requests.filter((request) =>
+          String(request.input).startsWith("/api/activity?"),
+        ),
+      ).toHaveLength(2);
+    });
+
+    expect(page().getByRole("heading", { name: "Transfer confirmed" })).toBeTruthy();
+    expect(page().getByText("1.000001 USDC sent on Base.")).toBeTruthy();
+    for (const request of requests.filter((candidate) =>
+      String(candidate.input).startsWith("/api/activity"),
+    )) {
+      expect(String(request.input).match(/\?/g)).toHaveLength(1);
     }
   });
 

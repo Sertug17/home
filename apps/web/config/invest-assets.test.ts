@@ -124,6 +124,10 @@ describe("invest asset registry", () => {
       "DEGEN",
       "TOSHI",
     ]);
+    expect(memeAssets.map((asset) => asset.representation.decimals)).toEqual([
+      18,
+      18,
+    ]);
 
     for (const asset of memeAssets) {
       expect(asset.chainId).toBe(BASE_CHAIN_ID);

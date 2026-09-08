@@ -108,7 +108,7 @@ describe("finance-first presentation", () => {
         status: "ready",
         snapshots: [{
           assetId: "nvdac",
-          displayPrice: "$123.45",
+          displayPrice: "$231.708792875",
           asOf: "2026-09-07T20:00:00.000Z",
           sourceLabel: "Price fixture",
           sourceUrl: "https://prices.example.test/nvdac",
@@ -117,7 +117,8 @@ describe("finance-first presentation", () => {
     );
     expect(markup).toContain('href="https://prices.example.test/nvdac"');
     expect(markup).toContain("Price fixture");
-    expect(markup).toContain("$123.45");
+    expect(markup).toContain("$231.71");
+    expect(markup).not.toContain("$231.708792875");
   });
 
   test("leads savings with an unavailable USDC position and leaves every vault unselected", () => {
@@ -128,10 +129,12 @@ describe("finance-first presentation", () => {
     expect(markup.indexOf("USDC balance")).toBeLessThan(
       markup.indexOf("Vault candidates"),
     );
-    expect(markup).toContain("Position details remain private until account verification.");
+    expect(markup).toContain("Position unavailable until account verification.");
     expect(markup).toContain("Variable net APY");
     expect(markup).toContain("Fetched snapshot");
     expect(markup).toContain("4.50%");
+    expect(markup).toContain("1,250 USDC");
+    expect(markup).toContain("500 USDC");
     expect(markup).not.toContain("aria-pressed");
     expect(markup.match(/disabled=""/g)?.length).toBe(2);
   });

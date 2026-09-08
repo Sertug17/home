@@ -5,7 +5,9 @@
   --surface: #f5f6f7;
   --blue: #0000ff;
   width: 100%;
+  overflow: hidden;
   border: 1px solid var(--line);
+  border-radius: 12px;
   background: #ffffff;
   color: var(--ink);
 }
@@ -33,6 +35,27 @@
   font-weight: 750;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.secondaryNavigation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.secondaryNavigation a {
+  color: var(--base-blue);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.secondaryNavigation a:hover {
+  text-decoration: underline;
 }
 
 .header h2 {
@@ -340,7 +363,7 @@
 .actionBar button {
   min-height: 40px;
   border: 1px solid #c8cbd1;
-  border-radius: 2px;
+  border-radius: 8px;
   background: var(--surface);
   color: #707681;
   cursor: not-allowed;

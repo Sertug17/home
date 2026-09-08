@@ -58,6 +58,7 @@ export type ListBaseErc20TransfersInput = {
   cursor?: string | null;
   cacheMaxAgeMs?: number;
   staleAfterMs?: number;
+  signal?: AbortSignal;
 };
 
 export type CdpSqlColumn = {

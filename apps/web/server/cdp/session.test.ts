@@ -93,6 +93,9 @@ describe("GET /api/session handler", () => {
       receivedToken = accessToken;
       return {
         userId: "cdp-user-123",
+        authenticationMethods: [
+          { type: "email", email: "private@example.com" },
+        ],
         evmSmartAccountObjects: [],
       };
     });
@@ -184,6 +187,83 @@ describe("GET /api/session handler", () => {
     );
   });
 
+  test("restores only an unambiguous server-verified account provider", async () => {
+    const emailHandler = makeHandler(
+      async () => ({
+        userId: "cdp-email-user",
+        authenticationMethods: [
+          { type: "email", email: "private@example.com" },
+        ],
+        evmSmartAccountObjects: [{ address: smartAccountAddress }],
+      }),
+      undefined,
+      true,
+    );
+    const baseHandler = makeHandler(
+      async () => ({
+        userId: "cdp-siwe-user",
+        authenticationMethods: [{ type: "siwe", address: siweAddress }],
+        evmSmartAccountObjects: [{ address: smartAccountAddress }],
+      }),
+      undefined,
+      true,
+    );
+
+    expect(
+      await (
+        await emailHandler(
+          makeRequest("Bearer verified.token.value", "restore"),
+        )
+      ).json(),
+    ).toEqual({
+      user: { subject: "cdp-email-user" },
+      smartAccount: {
+        address: smartAccountAddress.toLowerCase(),
+        chainId: 8453,
+      },
+      accountProvider: "cdp-embedded",
+    });
+    expect(
+      await (
+        await baseHandler(
+          makeRequest("Bearer verified.token.value", "restore"),
+        )
+      ).json(),
+    ).toEqual({
+      user: { subject: "cdp-siwe-user" },
+      smartAccount: {
+        address: siweAddress.toLowerCase(),
+        chainId: 8453,
+      },
+      accountProvider: "base-account",
+    });
+  });
+
+  test("fails closed when restored provider identity is missing or ambiguous", async () => {
+    for (const authenticationMethods of [
+      [],
+      [
+        { type: "email", email: "private@example.com" },
+        { type: "siwe", address: siweAddress },
+      ],
+    ]) {
+      const handler = makeHandler(
+        async () => ({
+          userId: "cdp-ambiguous-user",
+          authenticationMethods,
+          evmSmartAccountObjects: [{ address: smartAccountAddress }],
+        }),
+        undefined,
+        true,
+      );
+      await expectPrivateJson(
+        await handler(makeRequest("Bearer verified.token.value", "restore")),
+        503,
+        unavailableBody,
+      );
+    }
+  });
+
   test("rejects Base Account mode while the deployment flag is off before provider access", async () => {
     let calls = 0;
     const handler = makeHandler(async () => {
@@ -260,6 +340,9 @@ describe("GET /api/session handler", () => {
   test("returns null when the verified identity has no embedded smart account and never uses the EOA", async () => {
     const handler = makeHandler(async () => ({
       userId: "cdp-user-without-smart-account",
+      authenticationMethods: [
+        { type: "email", email: "private@example.com" },
+      ],
       evmAccounts: ["0x1111111111111111111111111111111111111111"],
       evmSmartAccountObjects: [],
     }));
@@ -303,6 +386,11 @@ describe("GET /api/session handler", () => {
   test("fails closed on malformed verified embedded identity data", async () => {
     for (const providerValue of [
       null,
+      {
+        userId: "cdp-siwe-only",
+        authenticationMethods: [{ type: "siwe", address: siweAddress }],
+        evmSmartAccountObjects: [{ address: smartAccountAddress }],
+      },
       { userId: "bad subject!", evmSmartAccountObjects: [] },
       {
         userId: "cdp-user",

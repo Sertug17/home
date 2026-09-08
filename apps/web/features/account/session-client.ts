@@ -1,7 +1,8 @@
+import { recordAuthDiagnostic } from "./auth-diagnostics";
 import {
   ACCOUNT_PROVIDER_HEADER,
   BASE_CHAIN_ID,
-  type AccountProvider,
+  type AccountProviderRequest,
   type VerifiedAccountSession,
 } from "./session-types";
 
@@ -112,7 +113,7 @@ export type SessionFetch = (
 ) => Promise<Response>;
 
 export type SessionValidationOptions = {
-  accountProvider?: AccountProvider;
+  accountProvider?: AccountProviderRequest;
   expectedAddress?: `0x${string}`;
 };
 
@@ -141,11 +142,34 @@ export async function validateAccountSession(
       signal,
     });
   } catch (error) {
+    recordAuthDiagnostic({
+      kind: "session",
+      outcome: "network-error",
+      errorClass:
+        signal?.aborted ||
+        (error instanceof DOMException && error.name === "AbortError")
+          ? "abort"
+          : error instanceof Error
+            ? "fetch-error"
+            : "unknown",
+    });
     if (signal?.aborted) {
       throw error;
     }
     throw new SessionValidationError("unavailable");
   }
+
+  recordAuthDiagnostic({
+    kind: "session",
+    outcome:
+      response.status === 401
+        ? "http-401"
+        : response.ok
+          ? "http-2xx"
+          : response.status >= 500
+            ? "http-5xx"
+            : "http-4xx",
+  });
 
   if (response.status === 401) {
     throw new SessionValidationError("unauthenticated");
@@ -159,11 +183,16 @@ export async function validateAccountSession(
   try {
     payload = await response.json();
   } catch {
+    recordAuthDiagnostic({ kind: "session", outcome: "invalid-json" });
     throw new SessionValidationError("invalid-response");
   }
 
   const session = parseSession(payload);
-  if (!session || session.accountProvider !== accountProvider) {
+  if (
+    !session ||
+    (accountProvider !== "restore" && session.accountProvider !== accountProvider)
+  ) {
+    recordAuthDiagnostic({ kind: "session", outcome: "invalid-response" });
     throw new SessionValidationError("invalid-response");
   }
 

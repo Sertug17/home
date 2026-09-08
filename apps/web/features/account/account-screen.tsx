@@ -92,12 +92,14 @@ export function AccountSignInSheet({
   const [baseAccountPhase, setBaseAccountPhase] =
     useState<BaseAccountLoginPhase | null>(null);
   const [isProviderHandoff, setIsProviderHandoff] = useState(false);
+  const [completedAttemptSequence, setCompletedAttemptSequence] =
+    useState<number | null>(null);
   const [resendAvailableAt, setResendAvailableAt] = useState<number | null>(null);
   const [resendSeconds, setResendSeconds] = useState(0);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const uiAttemptSequence = useRef(0);
-  const awaitingVerifiedSession = useRef(false);
+  const consumedVerifiedAttempt = useRef<number | null>(null);
   const baseAccountFailed =
     status === "unavailable" ||
     status === "signout-error" ||
@@ -132,8 +134,23 @@ export function AccountSignInSheet({
     }
   }, [open]);
 
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!open || !flowId || !dialog?.open) return;
+    dialog.querySelector<HTMLElement>("[data-initial-focus]:not(:disabled)")?.focus();
+  }, [flowId, open]);
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!open || !isProviderHandoff || !baseAccountFailed || !dialog || dialog.open) {
+      return;
+    }
+    dialog.showModal();
+    dialog.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+  }, [baseAccountFailed, isProviderHandoff, open]);
+
   useEffect(() => {
-    if (!open) {
+    if (!open || (isProviderHandoff && !baseAccountFailed)) {
       return;
     }
 
@@ -142,19 +159,21 @@ export function AccountSignInSheet({
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [open]);
+  }, [baseAccountFailed, isProviderHandoff, open]);
 
   useEffect(() => {
     if (
       session &&
       status === "verified" &&
-      awaitingVerifiedSession.current
+      completedAttemptSequence !== null &&
+      completedAttemptSequence === uiAttemptSequence.current &&
+      consumedVerifiedAttempt.current !== completedAttemptSequence
     ) {
-      awaitingVerifiedSession.current = false;
+      consumedVerifiedAttempt.current = completedAttemptSequence;
       onClose();
       onVerified?.();
     }
-  }, [onClose, onVerified, session, status]);
+  }, [completedAttemptSequence, onClose, onVerified, session, status]);
 
   useEffect(() => {
     if (!open || resendAvailableAt === null) {
@@ -173,7 +192,7 @@ export function AccountSignInSheet({
 
   function resetLocalAttempt() {
     uiAttemptSequence.current += 1;
-    awaitingVerifiedSession.current = false;
+    setCompletedAttemptSequence(null);
     setFlowId(null);
     setOtp("");
     setAuthError(null);
@@ -186,7 +205,7 @@ export function AccountSignInSheet({
   }
 
   function closeAndCancelAttempt() {
-    if (isBusy || flowId !== null || awaitingVerifiedSession.current) {
+    if (isBusy || flowId !== null || completedAttemptSequence !== null) {
       cancelSignInAttempt();
     }
     resetLocalAttempt();
@@ -210,7 +229,7 @@ export function AccountSignInSheet({
 
   async function sendCode(nextEmail: string) {
     const sequence = ++uiAttemptSequence.current;
-    awaitingVerifiedSession.current = false;
+    setCompletedAttemptSequence(null);
     setIsSendingCode(true);
     setAuthError(null);
     try {
@@ -252,7 +271,7 @@ export function AccountSignInSheet({
     try {
       await verifyEmailCode(flowId, otp);
       if (sequence !== uiAttemptSequence.current) return;
-      awaitingVerifiedSession.current = true;
+      setCompletedAttemptSequence(sequence);
       setOtp("");
       setFlowId(null);
       setResendAvailableAt(null);
@@ -276,7 +295,7 @@ export function AccountSignInSheet({
 
   async function handleBaseAccountSignIn() {
     const sequence = ++uiAttemptSequence.current;
-    awaitingVerifiedSession.current = false;
+    setCompletedAttemptSequence(null);
     setAuthError(null);
     setBaseAccountPhase("connecting");
     setIsProviderHandoff(true);
@@ -288,7 +307,7 @@ export function AccountSignInSheet({
         }
       });
       if (sequence !== uiAttemptSequence.current) return;
-      awaitingVerifiedSession.current = true;
+      setCompletedAttemptSequence(sequence);
     } catch (error) {
       if (sequence !== uiAttemptSequence.current) return;
       setBaseAccountPhase(null);
@@ -315,7 +334,6 @@ export function AccountSignInSheet({
     >
       <div className={styles.sheetHeader}>
         <div>
-          <p className={styles.kicker}>Secure account</p>
           <h2 id="account-sign-in-title">
             {flowId ? "Check your email" : "Sign in to Home"}
           </h2>
@@ -462,22 +480,24 @@ export function AccountSignInSheet({
               >
                 Continue with Base Account
               </button>
-              <p className={styles.fieldHelp}>
-                Uses the Base Account you select. Details stay hidden until verification.
-              </p>
             </>
           ) : null}
         </form>
       ) : null}
 
-      <p className={styles.privacyNote}>
-        Details stay hidden until verification. Your email and code never appear in the URL.
-      </p>
     </dialog>
-    {open && isProviderHandoff && activeBaseAccountPhase ? (
-      <aside className={styles.providerHandoff} aria-live="polite">
-        <span className={styles.spinner} aria-hidden="true" />
-        <p>{baseAccountPhaseMessage(activeBaseAccountPhase)}</p>
+    {open && isProviderHandoff && !baseAccountFailed ? (
+      <aside
+        className={styles.providerHandoff}
+        aria-live="polite"
+        role="status"
+      >
+        {activeBaseAccountPhase ? (
+          <>
+            <span className={styles.spinner} aria-hidden="true" />
+            <p>{baseAccountPhaseMessage(activeBaseAccountPhase)}</p>
+          </>
+        ) : null}
         <button type="button" onClick={closeAndCancelAttempt}>
           Cancel sign in
         </button>

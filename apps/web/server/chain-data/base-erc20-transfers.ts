@@ -147,6 +147,7 @@ export function createBaseErc20TransferHistory({
           request.cacheMaxAgeMs === null
             ? undefined
             : { maxAgeMs: request.cacheMaxAgeMs },
+        signal: input.signal,
       });
       const metadata = parseMetadata(response);
       const parsedRows = response.result.map((row) => parseTransferRow(row));

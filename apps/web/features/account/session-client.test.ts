@@ -98,6 +98,28 @@ describe("session validation boundary", () => {
     expect([...capturedHeaders.keys()]).not.toContain("x-home-account-address");
   });
 
+  test("accepts an unambiguous provider selected by the server during restoration", async () => {
+    let capturedProvider: string | null = null;
+    const fetchFixture: SessionFetch = async (_input, init) => {
+      capturedProvider = new Headers(init?.headers).get(ACCOUNT_PROVIDER_HEADER);
+      return jsonResponse({
+        user: { subject: "cdp:siwe-subject" },
+        smartAccount: { address: TEST_ADDRESS, chainId: 8453 },
+        accountProvider: "base-account",
+      });
+    };
+
+    const session = await validateAccountSession(
+      "test-access-token",
+      undefined,
+      fetchFixture,
+      { accountProvider: "restore" },
+    );
+
+    expect(capturedProvider as unknown).toBe("restore");
+    expect(session.accountProvider).toBe("base-account");
+  });
+
   test("accepts a verified session whose smart account is not ready", async () => {
     const fetchFixture: SessionFetch = async () =>
       jsonResponse({

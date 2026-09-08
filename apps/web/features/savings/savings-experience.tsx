@@ -1,8 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import { useAccountWallet } from "@/features/account/cdp-client";
 import type { VerifiedAccountSession } from "@/features/account/session-types";
+import { useMoneyDataRefresh } from "@/features/money-actions/refresh";
+import type { OperationResult } from "@/features/money-actions/types";
+import {
+  SavingsActions,
+  type SavingsActionTransport,
+} from "@/features/savings-actions/savings-actions";
+import {
+  formatPercentage,
+  formatTokenAmount as formatBoundedTokenAmount,
+} from "@/features/formatting";
 import { MORPHO_V1_CANDIDATE_ADDRESSES } from "@/server/morpho/config";
 import type {
   Address,
@@ -16,6 +27,8 @@ type SavingsExperienceProps = {
   initialData?: MorphoVaultsResult | null;
   session?: VerifiedAccountSession | null;
   fetchPositions?: (signal?: AbortSignal) => Promise<unknown>;
+  fetchAccountResource?: SavingsActionTransport;
+  onActionConfirmed?: (result: OperationResult) => void | Promise<void>;
 };
 
 type LoadState =
@@ -38,12 +51,20 @@ type PositionState =
   | { status: "ready"; data: PositionResult }
   | { status: "error" };
 
-export function AuthenticatedSavingsExperience() {
+export function AuthenticatedSavingsExperience({
+  onActionConfirmed,
+}: Pick<SavingsExperienceProps, "onActionConfirmed"> = {}) {
   const account = useAccountWallet();
+  const refreshMoneyData = useMoneyDataRefresh();
   return (
     <SavingsExperience
       session={account.status === "verified" ? account.session : null}
       fetchPositions={account.fetchSavingsPositions}
+      fetchAccountResource={account.fetchAccountResource}
+      onActionConfirmed={async (result) => {
+        refreshMoneyData();
+        await onActionConfirmed?.(result);
+      }}
     />
   );
 }
@@ -52,6 +73,8 @@ export function SavingsExperience({
   initialData = null,
   session = null,
   fetchPositions,
+  fetchAccountResource,
+  onActionConfirmed,
 }: SavingsExperienceProps) {
   const [loadState, setLoadState] = useState<LoadState>(
     initialData
@@ -62,6 +85,7 @@ export function SavingsExperience({
     key: string;
     state: PositionState;
   } | null>(null);
+  const [positionRefreshTrigger, setPositionRefreshTrigger] = useState(0);
   const sessionAddress = session?.smartAccount?.address ?? null;
   const sessionKey = session && sessionAddress
     ? `${session.user.subject}:${session.accountProvider}:${sessionAddress}`
@@ -107,7 +131,12 @@ export function SavingsExperience({
       });
 
     return () => controller.abort();
-  }, [fetchPositions, sessionAddress, sessionKey]);
+  }, [fetchPositions, positionRefreshTrigger, sessionAddress, sessionKey]);
+
+  const handleActionConfirmed = useCallback(async (result: OperationResult) => {
+    setPositionRefreshTrigger((value) => value + 1);
+    await onActionConfirmed?.(result);
+  }, [onActionConfirmed]);
 
   const positionState: PositionState = !sessionKey
     ? { status: "idle" }
@@ -124,6 +153,9 @@ export function SavingsExperience({
         </div>
         <span>Base · Morpho V1</span>
       </header>
+      <nav className={styles.secondaryNavigation} aria-label="Related money tools">
+        <Link href="/borrow">Borrow USDC against cbBTC →</Link>
+      </nav>
 
       <PositionStatus session={session} state={positionState} />
 
@@ -158,14 +190,26 @@ export function SavingsExperience({
         ) : null}
       </section>
 
-      <div className={styles.actionBar} aria-label="Savings actions unavailable">
-        <button type="button" disabled title="Deposits are not enabled">
-          Deposit unavailable
-        </button>
-        <button type="button" disabled title="Withdrawals are not enabled">
-          Withdraw unavailable
-        </button>
-      </div>
+      {session?.smartAccount && fetchAccountResource && loadState.status === "ready" && loadState.data.candidates.length > 0 ? (
+        <SavingsActions
+          session={session}
+          candidates={loadState.data.candidates}
+          fetchAccountResource={fetchAccountResource}
+          onConfirmed={handleActionConfirmed}
+        />
+      ) : (
+        <div className={styles.actionBar} aria-label="Savings actions unavailable">
+          <span>
+            {!session?.smartAccount
+              ? "Verify a Base smart account to prepare savings actions."
+              : !fetchAccountResource
+                ? "Authenticated savings action preparation is unavailable."
+                : "Current configured vault data is unavailable."}
+          </span>
+          <button type="button" disabled>Deposit unavailable</button>
+          <button type="button" disabled>Withdraw unavailable</button>
+        </div>
+      )}
     </section>
   );
 }
@@ -179,7 +223,7 @@ function PositionStatus({
 }) {
   let content: React.ReactNode;
   if (!session?.smartAccount || state.status === "idle") {
-    content = <p>Position details remain private until account verification.</p>;
+    content = <p>Position unavailable until account verification.</p>;
   } else if (state.status === "loading") {
     content = <p role="status">Loading supported vault positions…</p>;
   } else if (state.status === "error") {
@@ -197,11 +241,11 @@ function PositionStatus({
         {positions.map((position) => (
           <article key={position.vaultAddress}>
             <div className={styles.positionValue}>
-              <strong>{formatTokenAmount(position.assetsRaw, 6)}</strong>
+              <strong>{formatAssetAmount(position.assetsRaw, 6)}</strong>
               <span>Indexed assets · not max withdraw</span>
             </div>
             <dl className={styles.positionFacts}>
-              <div><dt>Shares</dt><dd>{formatShares(position.sharesRaw)}</dd></div>
+              <div><dt>Share base units</dt><dd>{formatShares(position.sharesRaw)}</dd></div>
               <div><dt>Vault</dt><dd><code title={position.vaultAddress}>{shortenAddress(position.vaultAddress)}</code></dd></div>
               <div><dt>Indexed</dt><dd><time dateTime={position.indexedAt}>{formatTimestamp(position.indexedAt)}</time></dd></div>
             </dl>
@@ -264,8 +308,8 @@ function VaultCandidateRow({ candidate }: { candidate: MorphoVaultCandidate }) {
           <p>Variable vault yield; no vault is selected or recommended.</p>
           <dl className={styles.metrics}>
             <Metric label="Vault fee" value={formatRate(candidate.feeRate)} note="Reported by Morpho V1" />
-            <Metric label="Total assets" value={formatTokenAmount(candidate.totalAssetsRaw, 6)} note="Vault-wide, not your balance" />
-            <Metric label="Indexed liquidity" value={formatTokenAmount(candidate.liquidityRaw, 6)} note="Not the account's max withdrawal" />
+            <Metric label="Total assets" value={formatAssetAmount(candidate.totalAssetsRaw, 6)} note="Vault-wide, not your balance" />
+            <Metric label="Indexed liquidity" value={formatAssetAmount(candidate.liquidityRaw, 6)} note="Not the account's max withdrawal" />
             <Metric label="Listing status" value={candidate.listed ? "Listed" : "Not listed"} note="Source snapshot status" />
           </dl>
           <div className={styles.provenance}>
@@ -320,6 +364,7 @@ function parsePositionResult(value: unknown, expectedAddress: Address): Position
       position: entry.position as MorphoVaultPosition | null,
     });
   }
+  if (seenVaults.size !== configuredVaults.size) return null;
   return { accountAddress: expectedAddress, fetchedAt: value.fetchedAt, vaults };
 }
 
@@ -336,21 +381,13 @@ function isPosition(value: unknown, accountAddress: Address, vaultAddress: strin
 }
 
 function formatRate(value: number | null) {
-  if (value === null) return "Unavailable";
-  return new Intl.NumberFormat("en-US", {
-    style: "percent",
-    minimumFractionDigits: value === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatPercentage(value);
 }
 
-function formatTokenAmount(raw: string | null, decimals: number) {
-  if (raw === null) return "Unavailable";
-  const padded = raw.padStart(decimals + 1, "0");
-  const whole = padded.slice(0, -decimals);
-  const fraction = padded.slice(-decimals).replace(/0+$/, "");
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${grouped}${fraction ? `.${fraction}` : ""} USDC`;
+function formatAssetAmount(raw: string | null, decimals: number) {
+  return raw === null
+    ? "Unavailable"
+    : `${formatBoundedTokenAmount(raw, decimals)} USDC`;
 }
 
 function formatShares(raw: string) {

@@ -1,3 +1,4 @@
+import { AssetRow } from "@/components/finance-rows";
 import { getAssetPresentation } from "@/config/asset-presentation";
 import {
   cryptoAssets,
@@ -18,12 +19,14 @@ export type InvestExperienceProps = {
   stockMarket?: MarketDataState;
   memeMarket?: MarketDataState;
   cryptoMarket?: MarketDataState;
+  assetActions?: (asset: InvestAsset) => React.ReactNode;
 };
 
 export function InvestExperience({
   stockMarket = unavailableMarketData,
   memeMarket = unavailableMarketData,
   cryptoMarket = unavailableMarketData,
+  assetActions,
 }: InvestExperienceProps = {}) {
   return (
     <section className={styles.experience} aria-labelledby="invest-title">
@@ -45,7 +48,7 @@ export function InvestExperience({
           Stock access is unavailable in the United States; country display does not change eligibility.
         </p>
 
-        <AssetList assets={stockAssets} market={stockMarket} />
+        <AssetList assets={stockAssets} market={stockMarket} assetActions={assetActions} />
 
         <AssetDisclosure
           label="Stock contracts, eligibility, and sources"
@@ -74,7 +77,7 @@ export function InvestExperience({
           <p>{memeAssets.length} assets</p>
         </div>
 
-        <AssetList assets={memeAssets} market={memeMarket} />
+        <AssetList assets={memeAssets} market={memeMarket} assetActions={assetActions} />
 
         <AssetDisclosure
           label="Meme contracts, risks, and sources"
@@ -107,7 +110,7 @@ export function InvestExperience({
           Use only the exact Base token and contract shown below.
         </p>
 
-        <AssetList assets={cryptoAssets} market={cryptoMarket} />
+        <AssetList assets={cryptoAssets} market={cryptoMarket} assetActions={assetActions} />
 
         <AssetDisclosure
           label="Wrapped token contracts, backing, and source"
@@ -129,9 +132,11 @@ export function InvestExperience({
 function AssetList({
   assets,
   market,
+  assetActions,
 }: {
   assets: readonly InvestAsset[];
   market: MarketDataState;
+  assetActions?: (asset: InvestAsset) => React.ReactNode;
 }) {
   return (
     <div className={styles.assetTable}>
@@ -139,11 +144,16 @@ function AssetList({
         <span>Asset</span>
         <span>Price snapshot</span>
       </div>
-      <ul>
+      <div className={styles.assetEntries}>
         {assets.map((asset) => (
-          <AssetRow key={asset.id} asset={asset} market={market} />
+          <div className={styles.assetEntry} key={asset.id}>
+            <ul aria-label={`${asset.displayName} market row`}>
+              <InvestAssetRow asset={asset} market={market} />
+            </ul>
+            {assetActions?.(asset)}
+          </div>
         ))}
-      </ul>
+      </div>
       {market.status === "ready" && market.snapshots.length === 0 ? (
         <p className={styles.emptyMarket} role="status">
           No price snapshots supplied.
@@ -153,7 +163,7 @@ function AssetList({
   );
 }
 
-function AssetRow({
+function InvestAssetRow({
   asset,
   market,
 }: {
@@ -162,34 +172,36 @@ function AssetRow({
 }) {
   const price = getMarketDisplay(asset.id, market);
   const presentation = getAssetPresentation(asset);
+  const identity = `${presentation.primarySymbol} · ${presentation.tokenLabel} · ${presentation.networkLabel}`;
+  const priceContext = `${presentation.priceUnitLabel} · ${price.detail}`;
 
   return (
-    <li className={styles.assetRow}>
-      <div className={styles.identity}>
-        <span className={styles.initials} aria-hidden="true">
-          {asset.initials}
-        </span>
-        <span>
-          <strong>{presentation.primaryName}</strong>
-          <small>{presentation.primarySymbol}</small>
-          <small className={styles.tokenIdentity}>
-            {presentation.tokenLabel} · {presentation.networkLabel}
-          </small>
-        </span>
-      </div>
-
-      <div className={styles.price} data-tone={price.tone}>
-        <strong>{price.value}</strong>
-        <small>{presentation.priceUnitLabel}</small>
-        <span>
-          {price.sourceUrl ? (
-            <SourceLink href={price.sourceUrl} label={price.detail} />
-          ) : (
-            price.detail
-          )}
-        </span>
-      </div>
-    </li>
+    <AssetRow
+      icon={asset.initials}
+      iconTone="outlined"
+      label={presentation.primaryName}
+      context={identity}
+      contextTitle={identity}
+      value={price.value}
+      valueContext={priceContext}
+      valueContextTitle={priceContext}
+      valueTone={
+        price.tone === "ready"
+          ? "accent"
+          : price.tone === "error"
+            ? "error"
+            : "muted"
+      }
+      explorer={
+        price.sourceUrl
+          ? {
+              href: price.sourceUrl,
+              label: `Open ${price.detail} price source`,
+              title: price.detail,
+            }
+          : undefined
+      }
+    />
   );
 }
 

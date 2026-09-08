@@ -225,6 +225,7 @@ export const memeAssets = [
     descriptor: "Farcaster-born community token",
     representation: {
       tokenSymbol: "DEGEN",
+      decimals: 18,
       relationship: "Base ERC-20 token; the display and token symbols are the same.",
     },
     projectUrl: "https://www.degen.tips/",
@@ -243,6 +244,7 @@ export const memeAssets = [
     descriptor: "Community meme and utility token",
     representation: {
       tokenSymbol: "TOSHI",
+      decimals: 18,
       relationship: "Base ERC-20 token; the display and token symbols are the same.",
     },
     projectUrl: "https://www.toshithecat.com/",

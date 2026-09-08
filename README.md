@@ -4,18 +4,22 @@ An open-source home for your money on Base.
 
 Home is a mobile-first financial app designed around local currencies: sign in by email, hold and move money, add funds through local payment methods, save, and invest.
 
-**Status: local, read-only build.** Country coverage, the globe landing, email/operator-gated Base Account code, USDC/ETH balance reads, Invest browsing, public Morpho data, and the Codex/SQL adapters are implemented and composed. Some live sign-in and read-consumer paths remain under repair or verification. See the [build status](docs/build-status.md) for the authoritative built/integrated/reviewed/visible milestones and exact remaining gates. No send, trade, deposit, or withdrawal is enabled; database persistence and financial execution remain future work.
+**Status: local finance spike, not production-approved.** The app includes local-currency wallet/savings valuation, USDC/ETH send and receive, durable operation recovery, indexed activity, Morpho USDC deposit/withdrawal, email-controlled crypto trade preparation/execution, a bounded cbBTC/USDC borrowing market, and a Coinbase funding handoff. The landing, animated Home mark, and shared finance components are integrated.
+
+Real wallet signatures and funded end-to-end flows have not been exercised. Stock trading and external Base-account trading remain gated; Borrow requires a compatible deployed account, and hosted funding requires Coinbase access/origin configuration. See [build status](docs/build-status.md) for validation evidence and remaining limits.
 
 ## Run locally
 
-Requires Node.js 22+ and Bun 1.3.12.
+Requires Bun 1.3.12 and Node.js with `node:sqlite` support (22.13+; validated on Node 24).
 
 ```sh
 bun install --frozen-lockfile
 bun dev
 ```
 
-Open http://localhost:3000. The dev server binds to loopback only and supports hot reload. Browsing works without credentials; email sign-in consumes the public CDP project ID and requires matching server credentials for verification. Store configuration in `apps/web/.env.local` using the root `.env.example` as a template; do not overwrite an existing local environment file. No database is required for this read-only milestone.
+Open http://localhost:3000. The server binds to loopback; development document navigation from `127.0.0.1` redirects to the canonical `localhost` origin. Configure that exact origin in the CDP project. Browsing works without credentials; email sign-in requires the public CDP project ID and matching server verification credentials. Store configuration in gitignored `apps/web/.env.local` using the root `.env.example`; do not overwrite an existing local environment file.
+
+Money-action records use a private, automatically created SQLite database under `.local/`. No hosted database is needed for the local spike. This is not shared production persistence; review the [wallet runtime notes](docs/wallet-runtime-spike.md) before deployment.
 
 ```sh
 bun test        # Deterministic unit and contract tests; live probes stay opt-in
@@ -23,6 +27,7 @@ bun lint        # ESLint
 bun typecheck   # Next route types and strict TypeScript
 bun build       # Production build
 bun check       # Tests, lint, typecheck and production build
+bun run --cwd apps/web test:browser-auth # Actual-component auth scenarios with mocked boundaries
 bun start       # Serve a production build
 ```
 
@@ -41,13 +46,13 @@ Edit `apps/web/app/home-experience.tsx` for the Home shell, `apps/web/features/`
 - [Currency defaults](docs/currency-defaults.md) — confirmed selections, including **CADD for Canada** and **wARS for Argentina**.
 - [Stablecoin candidates](docs/stablecoin-candidates.json) — sourced Base contract metadata; verification remains pending and every asset is disabled.
 
-## Planned stack
+## Stack and boundaries
 
-Next.js, TypeScript and Tailwind; CDP email sign-in and user-controlled smart accounts; Neon Postgres through Vercel Marketplace; CDP SQL history, RPC balances/receipts and CDP webhooks. Build locally first, then deploy to Vercel at the end of the initial build. No cron or standalone indexer initially.
+Next.js, TypeScript, Tailwind and local SQLite; CDP email authentication/user-controlled smart accounts, CDP SQL history and trade quotes, Base RPC balances/receipts, and Morpho. Production shared persistence, webhook operations, and deployment remain separate work. No new hosted provider was provisioned for this spike.
 
-Country defaults come from approximate geo detection with a manual override. The interface leads with native currency names and symbols; underlying token details remain available. Agent-assisted actions use the same review flow and require user signing.
+Country selection controls presentation, not eligibility. Wallet and savings value covers the configured inventory; Borrow collateral and debt are shown separately. Exact asset/network details and user approval remain part of financial review.
 
-Later features include Morpho borrowing, a Venice agent interface with x402/DIEM exploration, and a Rain debit card with Base settlement.
+Venice/agent inference, Rain cards, additional funding providers, unrestricted assets, and broader borrowing markets are not implemented.
 
 ## Forking and contributing
 

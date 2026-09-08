@@ -65,11 +65,13 @@ function deferred<T>() {
 function PortfolioProbe({
   verifiedSession,
   fetchPortfolio,
+  refreshTrigger,
 }: {
   verifiedSession: VerifiedPortfolioSession | null;
   fetchPortfolio: FetchPortfolio;
+  refreshTrigger?: string | number;
 }) {
-  const state = usePortfolio(verifiedSession, fetchPortfolio);
+  const state = usePortfolio(verifiedSession, fetchPortfolio, refreshTrigger);
   return (
     <div>
       <output data-testid="status">{state.status}</output>
@@ -107,6 +109,33 @@ describe("usePortfolio production hook", () => {
     expect(view.getByTestId("wallet").textContent).toBe(ADDRESS_A);
     expect(view.getByTestId("usdc").textContent).toBe("0");
     expect(seenSignals).toHaveLength(1);
+  });
+
+  test("reloads the same owner when the optional refresh trigger changes", async () => {
+    let calls = 0;
+    const fetchPortfolio: FetchPortfolio = async () => {
+      calls += 1;
+      return snapshot(ADDRESS_A, String(calls));
+    };
+    const view = render(
+      <PortfolioProbe
+        verifiedSession={session("subject-a", ADDRESS_A)}
+        fetchPortfolio={fetchPortfolio}
+        refreshTrigger={0}
+      />,
+    );
+
+    await waitFor(() => expect(view.getByTestId("usdc").textContent).toBe("1"));
+    view.rerender(
+      <PortfolioProbe
+        verifiedSession={session("subject-a", ADDRESS_A)}
+        fetchPortfolio={fetchPortfolio}
+        refreshTrigger={1}
+      />,
+    );
+
+    await waitFor(() => expect(view.getByTestId("usdc").textContent).toBe("2"));
+    expect(calls).toBe(2);
   });
 
   test("clears A immediately for B, aborts A, and ignores A's late response", async () => {

@@ -8,24 +8,27 @@ describe("SupportedGlobe static-first contract", () => {
     const markup = renderToStaticMarkup(<SupportedGlobe />);
     expect(markup).toContain('data-renderer="static"');
     expect(markup).toContain('role="img"');
-    expect(markup).toContain('aria-label="A world of country profiles"');
-    expect(markup).toContain("country &amp; currency profiles. Product availability varies.");
-    expect(markup).toContain("Points do not guarantee banking, funding, or product eligibility.");
-    expect(markup).toContain("Static globe view.");
+    expect(markup).toContain('aria-label="Interactive world with illustrative money connections"');
+    expect(markup).toContain("country &amp; currency profiles connected by a small illustrative route set.");
+    expect(markup).toContain("Routes are not transactions, live volume, payment activity, or verified corridors.");
+    expect(markup).toContain("Illustrative connections, not live activity.");
+    expect(markup).toContain("Static globe and route view.");
     expect(markup).not.toContain("<h1");
     expect(markup).not.toContain("Sign in");
   });
 
-  test("keeps every configured marker and hemisphere culling without a redundant explorer or pause button", () => {
+  test("keeps every configured marker, a bounded route set, and inert roving targets in the static fallback", () => {
     const markup = renderToStaticMarkup(<SupportedGlobe />);
     for (const country of configuredGlobeCountries()) {
       expect(markup).toContain(`data-country="${country.countryCode}"`);
+      expect(markup).toContain(`aria-label="${country.countryName}, ${country.currency.code}. Highlight illustrative connections."`);
     }
-    expect(markup).not.toContain("tabindex"); // Static fallback has no inert controls.
+    expect(markup.match(/data-route=/g) ?? []).toHaveLength(12);
+    expect(markup.match(/tabindex="-1"/g) ?? []).toHaveLength(configuredGlobeCountries().length);
+    expect(markup).not.toContain('tabindex="0"');
     expect(markup).not.toContain("<select");
-    expect(markup).not.toContain("<button");
     const hidden = locateCountries(configuredGlobeCountries()).filter((country) => !projectCountry(country.longitude, country.latitude).visible);
-    expect(markup.match(/visibility="hidden"/g) ?? []).toHaveLength(hidden.length);
+    expect(markup.match(/<circle data-country="[^"]+"[^>]+visibility="hidden"/g) ?? []).toHaveLength(hidden.length);
   });
 
   test("accepts explicit profiles without changing the configured default or inventing country locations", () => {

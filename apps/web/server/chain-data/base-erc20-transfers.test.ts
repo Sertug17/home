@@ -127,6 +127,24 @@ describe("Base ERC20 transfer query", () => {
 });
 
 describe("Base ERC20 transfer adapter", () => {
+  test("forwards the caller abort signal to the SQL transport", async () => {
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+    const history = createBaseErc20TransferHistory({
+      assets,
+      transport: {
+        async run(request) {
+          receivedSignal = request.signal;
+          return transportFor([]).run(request);
+        },
+      },
+      now: () => NOW,
+    });
+
+    await history.listTransfers(input({ signal: controller.signal }));
+    expect(receivedSignal).toBe(controller.signal);
+  });
+
   test("preserves uint256 and index values as strings and marks stale cached data", async () => {
     const history = createBaseErc20TransferHistory({
       assets,

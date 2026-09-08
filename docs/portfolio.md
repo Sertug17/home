@@ -1,7 +1,7 @@
-# Base wallet balances
+# Base wallet balances and supported valuation
 
-Status: integrated into the verified Home dashboard as a read-only server/API, client hook, and presentation path. No private-wallet live read was performed during implementation.
-Updated: 2026-09-07
+Status: the original `/api/portfolio` USDC/native-ETH quantity contract remains unchanged for transfer compatibility. A separate authenticated `/api/portfolio/valuation?region=...` read and Home presentation are integrated locally with deterministic fixtures. No private-wallet live read was performed during implementation.
+Updated: 2026-09-08
 
 ## What this reads
 
@@ -103,6 +103,30 @@ Home presents the formatted USDC token amount as the dominant **USD/USDC balance
 States are `loading`, `ready`, `error`, and `unavailable`. Logout and account changes hide the previous snapshot immediately. Each request receives an abort signal, and sequence guards prevent late A-account or logged-out responses from becoming visible. A real successful zero is `ready`; malformed, failed, and unavailable responses retain unknown state and are never converted to zero.
 
 `formatBaseUnitAmount(baseUnits, decimals)` performs exact decimal placement and strips only insignificant trailing fractional zeroes. It does not round. For example, one wei displays as `0.000000000000000001`, not zero.
+
+## Supported portfolio valuation
+
+`GET /api/portfolio/valuation?region=<RegionId>` is a separate versioned read contract. It preserves the original `/api/portfolio` parser and response because confirmed transfers continue to use that fresh USDC/native-ETH quantity read for preflight checks and signing safety.
+
+The valuation route accepts exactly one validated region and obtains the account solely from the same verified in-process session boundary. It is private, no-store, provider-bound, and never accepts a browser-supplied wallet as authority. Region/account changes abort the old client request and hide its snapshot before the replacement resolves.
+
+The supported inventory is intentionally fixed and incomplete:
+
+- native ETH on Base;
+- canonical Base USDC;
+- the 11 exact Invest contracts;
+- the enabled EURC and IDRX contracts in every region, with only their Cash-bucket roles varying by selected currency;
+- three configured Morpho USDC vault positions.
+
+All direct balances, vault shares, ERC-4626 `asset()` checks, and `convertToAssets` calls are pinned to one confirmed Base block. JSON-RPC calls are chunked to at most ten and matched by validated IDs. A missing/failed read is unavailable; a successful zero remains zero. Each vault contributes once through its onchain share balance converted to verified canonical USDC at the pinned block. Indexed Morpho assets and vault shares are not separately added.
+
+Exact-contract Codex quotes retain the raw decimal coefficient, chain/address, provider timestamp and retrieval timestamp. The quote request uses the same fixed supported contract set in every region, including EURC and IDRX, independent of wallet holdings or nonzero balances. Source age is re-evaluated at fetch completion and on cache hits without changing provenance, so a cached quote cannot remain fresh after its provider timestamp exceeds the five-minute budget. Missing, stale, invalid, duplicate, wrong-contract, or unavailable quotes remain unpriced; Home never assumes a stablecoin peg.
+
+One public Coinbase USD exchange-rate response supplies the configured 19 fiat rates plus the reciprocal ETH input. Decimal strings are preserved, cached for 60 seconds, and labeled with retrieval-time provenance because the response has no provider `asOf`. Valuation uses BigInt rational arithmetic, sums exact fractions before half-even rounding, and never parses display strings or uses JavaScript `number` for money math.
+
+Home labels the aggregate **Supported portfolio value** and explicitly marks partial results. An incomplete valuation is unavailable rather than a false zero when none of the successfully valued holdings contributes a nonzero subtotal; a complete, successfully read zero portfolio remains zero. Positive fiat values below display precision render as a bound such as `USD <0.01`, and server serialization increases precision when needed so a positive rational is not rounded into zero at the normal scale. USD regions have one USDC Cash bucket with both canonical-USD and selected-local roles, so the balance contributes once. EUR and IDR regions add their verified local token as a separate Cash row in its own denomination; the other enabled local token remains in the existing Assets presentation rather than disappearing. Other preserved candidates—including CADD and wARS—remain visibly unavailable, and TRYB remains unresolved. `GLOBAL` asks the user to choose a country and never implies USD.
+
+The response does not claim complete wallet net worth. NFTs, arbitrary ERC-20s, LPs, bridges, and unconfigured protocols remain outside the inventory.
 
 ## Verification boundary
 

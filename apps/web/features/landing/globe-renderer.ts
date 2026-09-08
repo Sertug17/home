@@ -61,7 +61,7 @@ export type GlobeRenderer = {
 export function createGlobeRenderer(
   canvas: HTMLCanvasElement,
   stage: HTMLDivElement,
-  onFrame: (longitude: number) => void,
+  onFrame: (longitude: number, frameTime: number) => void,
   onUnavailable: () => void,
 ): GlobeRenderer {
   const gl = canvas.getContext("webgl", {
@@ -290,7 +290,7 @@ export function createGlobeRenderer(
       gl.drawArrays(gl.POINTS, 0, positions.length / 3);
       gl.disableVertexAttribArray(pointPosition);
       presentedLongitude = longitude;
-      onFrame(longitude);
+      onFrame(longitude, performance.now());
     };
 
     stage.addEventListener("pointerdown", pointerDown);

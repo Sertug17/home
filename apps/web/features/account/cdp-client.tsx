@@ -1,6 +1,14 @@
 "use client";
 
 import {
+  getUserOperation,
+  sendUserOperation,
+  type GetUserOperationOptions,
+  type GetUserOperationResult,
+  type SendUserOperationOptions,
+  type SendUserOperationResult,
+} from "@coinbase/cdp-core";
+import {
   CDPHooksProvider,
   useCurrentUser,
   useGetAccessToken,
@@ -17,6 +25,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -25,10 +34,16 @@ import {
 import {
   BaseAccountConnectorError,
   connectBaseAccount,
+  restoreBaseAccount,
   type BaseAccountConnector,
   type BaseAccountInvalidation,
+  type BaseAccountRestorer,
   type ConnectedBaseAccount,
 } from "./base-account-connector";
+import {
+  classifyAuthDiagnosticError,
+  recordAuthDiagnostic,
+} from "./auth-diagnostics";
 import {
   getVisibleVerifiedSession,
   SessionValidationError,
@@ -40,7 +55,33 @@ import {
 import {
   ACCOUNT_PROVIDER_HEADER,
   BASE_CHAIN_ID,
+  type AccountProvider,
+  type AccountProviderRequest,
 } from "./session-types";
+import { parsePortfolioSnapshot } from "@/features/portfolio/parse";
+import {
+  claimMoneyAction,
+  readMoneyAction,
+  recordMoneyActionStatus,
+  recordMoneyActionSubmission,
+  type MoneyActionApiFetch,
+} from "@/features/money-actions/client";
+import type {
+  OperationResult,
+  PreparedMoneyAction,
+} from "@/features/money-actions/types";
+import type { StoredMoneyActionOperation } from "@/server/money-actions/store";
+import {
+  assertTransferRequest,
+  buildTransferCall,
+  findTransferBalance,
+} from "@/features/transfers/transfer-helpers";
+import {
+  TransferExecutionError,
+  type ConfirmedTransfer,
+  type PendingTransfer,
+  type TransferRequest,
+} from "@/features/transfers/types";
 import {
   isSessionSuppressedForOwner,
   signOutWithSessionSuppressed,
@@ -77,6 +118,12 @@ export class BaseAccountLoginError extends Error {
   }
 }
 
+export type AccountResourceOptions = {
+  method?: "GET" | "POST";
+  body?: unknown;
+  signal?: AbortSignal;
+};
+
 export type AccountWalletClient = {
   projectConfigured: boolean;
   baseAccountEnabled: boolean;
@@ -93,8 +140,20 @@ export type AccountWalletClient = {
   ) => Promise<void>;
   cancelSignInAttempt: () => void;
   fetchPortfolio: (signal?: AbortSignal) => Promise<unknown>;
-  fetchActivity: (signal?: AbortSignal) => Promise<unknown>;
+  fetchPortfolioValuation: (
+    region: import("@/config/regions").RegionId,
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
+  fetchActivity: (query: string, signal?: AbortSignal) => Promise<unknown>;
   fetchSavingsPositions: (signal?: AbortSignal) => Promise<unknown>;
+  fetchAccountResource: (path: string, options?: AccountResourceOptions) => Promise<unknown>;
+  prepareMoneyAction: (endpoint: string, input: unknown) => Promise<PreparedMoneyAction>;
+  executeMoneyAction: (action: PreparedMoneyAction) => Promise<OperationResult>;
+  fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
+  pendingTransfer: PendingTransfer | null;
+  sendTransfer: (request: TransferRequest, intentId: string) => Promise<ConfirmedTransfer>;
+  checkPendingTransfer: () => Promise<ConfirmedTransfer>;
+  startNewTransfer: () => void;
   retrySessionValidation: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -123,12 +182,35 @@ const unavailableClient: AccountWalletClient = {
   fetchPortfolio: async () => {
     throw new Error("Portfolio is unavailable.");
   },
+  fetchPortfolioValuation: async () => {
+    throw new Error("Portfolio valuation is unavailable.");
+  },
   fetchActivity: async () => {
     throw new Error("Activity is unavailable.");
   },
   fetchSavingsPositions: async () => {
     throw new Error("Savings positions are unavailable.");
   },
+  fetchAccountResource: async () => {
+    throw new Error("Authenticated resource is unavailable.");
+  },
+  prepareMoneyAction: async () => {
+    throw new TransferExecutionError("unavailable");
+  },
+  executeMoneyAction: async () => {
+    throw new TransferExecutionError("unavailable");
+  },
+  fetchOperations: async () => {
+    throw new Error("Operations are unavailable.");
+  },
+  pendingTransfer: null,
+  sendTransfer: async () => {
+    throw new TransferExecutionError("unavailable");
+  },
+  checkPendingTransfer: async () => {
+    throw new TransferExecutionError("unavailable");
+  },
+  startNewTransfer: () => {},
   retrySessionValidation: async () => {},
   signOut: async () => {},
 };
@@ -150,19 +232,60 @@ export type AccountWalletSdkBoundary = {
     signature: `0x${string}`,
   ) => Promise<void>;
   getAccessToken: () => Promise<string | null>;
+  sendUserOperation?: (
+    options: SendUserOperationOptions,
+  ) => Promise<SendUserOperationResult>;
+  getUserOperation?: (
+    options: GetUserOperationOptions,
+  ) => Promise<GetUserOperationResult>;
   signOut: () => Promise<void>;
 };
 
 type AccountSelection =
+  | { provider: "restoring"; hint: AccountProvider | null }
+  | { provider: "pending-authentication"; attemptedProvider: AccountProvider }
+  | { provider: "blocked-authentication" }
   | { provider: "cdp-embedded" }
   | {
       provider: "base-account";
       expectedAddress: `0x${string}`;
       ownerKey: string | null;
+      admissionReady: boolean;
     };
+
+type AccountProviderHint = AccountProvider | `pending:${AccountProvider}`;
+
+const ACCOUNT_PROVIDER_HINT_KEY = "home:account-provider";
 
 function embeddedSelection(): AccountSelection {
   return { provider: "cdp-embedded" };
+}
+
+function initialAccountSelection(): AccountSelection {
+  try {
+    const hint = window.sessionStorage.getItem(ACCOUNT_PROVIDER_HINT_KEY);
+    if (hint === "cdp-embedded" || hint === "base-account") {
+      return { provider: "restoring", hint };
+    }
+    if (hint !== null) {
+      return { provider: "blocked-authentication" };
+    }
+  } catch {
+    // The restored SDK identity can still select one unambiguous provider.
+  }
+  return { provider: "restoring", hint: null };
+}
+
+function writeAccountProviderHint(provider: AccountProviderHint | null) {
+  try {
+    if (provider) {
+      window.sessionStorage.setItem(ACCOUNT_PROVIDER_HINT_KEY, provider);
+    } else {
+      window.sessionStorage.removeItem(ACCOUNT_PROVIDER_HINT_KEY);
+    }
+  } catch {
+    // This hint may only restrict restoration; storage is not an auth boundary.
+  }
 }
 
 function baseLoginFailureFromConnector(
@@ -180,6 +303,16 @@ function baseLoginFailureFromConnector(
   }
 }
 
+async function releaseBaseAccountConnection(
+  connection: ConnectedBaseAccount,
+): Promise<void> {
+  if (connection.release) {
+    connection.release();
+    return;
+  }
+  await connection.disconnect();
+}
+
 function invalidationMessage(reason: BaseAccountInvalidation): string {
   switch (reason) {
     case "account-changed":
@@ -191,18 +324,288 @@ function invalidationMessage(reason: BaseAccountInvalidation): string {
   }
 }
 
+const transactionHashPattern = /^0x[0-9a-fA-F]{64}$/;
+const TRANSFER_CONFIRMATION_TIMEOUT_MS = 120_000;
+const TRANSFER_CONFIRMATION_POLL_MS = 1_500;
+
+function transferBoundaryKey(
+  ownerKey: string,
+  session: VerifiedAccountSession,
+): string | null {
+  return session.smartAccount
+    ? `${ownerKey}\u0000${session.user.subject}\u0000${session.smartAccount.address}\u0000${session.accountProvider}`
+    : null;
+}
+
+function normalizeTransactionHash(value: unknown): `0x${string}` {
+  if (typeof value !== "string" || !transactionHashPattern.test(value)) {
+    throw new TransferExecutionError("failed");
+  }
+  return value.toLowerCase() as `0x${string}`;
+}
+
+const accountResourcePrefixes = [
+  "/api/actions",
+  "/api/savings/actions",
+  "/api/trades",
+  "/api/borrow",
+  "/api/funding",
+] as const;
+
+function normalizeAccountResourcePath(path: string): string {
+  if (
+    typeof path !== "string" ||
+    !path.startsWith("/") ||
+    path.startsWith("//") ||
+    path.includes("\\") ||
+    path.includes("#") ||
+    /(?:^|\/)\.\.?($|\/)|%2e|%2f|%5c/i.test(path)
+  ) {
+    throw new TransferExecutionError("invalid-request");
+  }
+  let url: URL;
+  try {
+    url = new URL(path, "https://home.invalid");
+  } catch {
+    throw new TransferExecutionError("invalid-request");
+  }
+  if (
+    url.origin !== "https://home.invalid" ||
+    !accountResourcePrefixes.some(
+      (prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`),
+    )
+  ) {
+    throw new TransferExecutionError("invalid-request");
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+function operationResult(operation: StoredMoneyActionOperation): OperationResult {
+  return {
+    id: operation.action.id,
+    status: operation.status,
+    ...(operation.transactionHash ? { transactionHash: operation.transactionHash } : {}),
+    ...(operation.userOperationHash ? { userOperationHash: operation.userOperationHash } : {}),
+  };
+}
+
+async function sameProviderCalls(
+  actual: GetUserOperationResult["calls"],
+  expected: PreparedMoneyAction["calls"],
+): Promise<boolean> {
+  if (actual.length !== expected.length) return false;
+  for (const [index, call] of actual.entries()) {
+    const wanted = expected[index];
+    const data = (call.data ?? "0x").toLowerCase();
+    let dataMatches = data === wanted.data.toLowerCase();
+    if (wanted.dataHash) {
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
+      const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      dataMatches = hex === wanted.dataHash;
+    }
+    if (
+      call.to.toLowerCase() !== wanted.to.toLowerCase() ||
+      !dataMatches ||
+      BigInt(call.value ?? BigInt(0)).toString(10) !== wanted.value
+    ) return false;
+  }
+  return true;
+}
+
+function transferError(error: unknown): TransferExecutionError {
+  if (error instanceof TransferExecutionError) {
+    return error;
+  }
+  if (
+    error instanceof BaseAccountConnectorError &&
+    error.reason === "cancelled"
+  ) {
+    return new TransferExecutionError("rejected", error);
+  }
+  return new TransferExecutionError("failed", error);
+}
+
+class MoneyActionExpiredBeforeDispatchError extends Error {
+  constructor() {
+    super("money-action-expired-before-dispatch");
+    this.name = "MoneyActionExpiredBeforeDispatchError";
+  }
+}
+
+function assertMoneyActionDispatchable(
+  action: PreparedMoneyAction,
+  assertActive: () => void,
+): void {
+  assertActive();
+  const expiresAt = Date.parse(action.expiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    throw new MoneyActionExpiredBeforeDispatchError();
+  }
+}
+
+function waitForPoll(): Promise<void> {
+  return new Promise((resolve) =>
+    window.setTimeout(resolve, TRANSFER_CONFIRMATION_POLL_MS),
+  );
+}
+
+async function waitForEmbeddedReceipt(
+  userOperationHash: `0x${string}`,
+  smartAccount: `0x${string}`,
+  getOperation: NonNullable<AccountWalletSdkBoundary["getUserOperation"]>,
+  accountProvider: VerifiedAccountSession["accountProvider"],
+  getAccessToken: () => Promise<string | null>,
+  sessionFetch: SessionFetch | undefined,
+  assertActive: () => void,
+  expectedCalls?: PreparedMoneyAction["calls"],
+): Promise<`0x${string}`> {
+  const normalizedUserOperationHash = normalizeTransactionHash(userOperationHash);
+  const deadline = Date.now() + TRANSFER_CONFIRMATION_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    assertActive();
+    let result: GetUserOperationResult;
+    try {
+      result = await getOperation({
+        userOperationHash: normalizedUserOperationHash,
+        evmSmartAccount: smartAccount,
+        network: "base",
+      });
+    } catch {
+      await waitForPoll();
+      continue;
+    }
+    assertActive();
+    if (expectedCalls && !(await sameProviderCalls(result.calls, expectedCalls))) {
+      throw new TransferExecutionError("submission-unknown");
+    }
+    if (
+      result.status === "failed" ||
+      result.receipts?.some((receipt) => receipt.revert !== undefined)
+    ) {
+      throw new TransferExecutionError("failed");
+    }
+    if (result.status === "dropped") {
+      throw new TransferExecutionError("submission-unknown");
+    }
+    if (result.status === "complete") {
+      let transactionHash: `0x${string}`;
+      try {
+        transactionHash = normalizeTransactionHash(result.transactionHash);
+      } catch {
+        await waitForPoll();
+        continue;
+      }
+      return waitForBaseReceipt(
+        transactionHash,
+        accountProvider,
+        getAccessToken,
+        sessionFetch,
+        assertActive,
+        deadline,
+        {
+          userOperationHash: normalizedUserOperationHash,
+          sender: smartAccount,
+        },
+      );
+    }
+    await waitForPoll();
+  }
+  throw new TransferExecutionError("confirmation-timeout");
+}
+
+async function waitForBaseReceipt(
+  transactionHash: `0x${string}`,
+  accountProvider: VerifiedAccountSession["accountProvider"],
+  getAccessToken: () => Promise<string | null>,
+  sessionFetch: SessionFetch | undefined,
+  assertActive: () => void,
+  deadline = Date.now() + TRANSFER_CONFIRMATION_TIMEOUT_MS,
+  operation?: { userOperationHash: `0x${string}`; sender: `0x${string}` },
+): Promise<`0x${string}`> {
+  const normalizedHash = normalizeTransactionHash(transactionHash);
+  const parameters = new URLSearchParams({ hash: normalizedHash });
+  if (operation) {
+    parameters.set("userOpHash", operation.userOperationHash);
+    parameters.set("sender", operation.sender);
+  }
+  while (Date.now() < deadline) {
+    assertActive();
+    const accessToken = await getAccessToken();
+    assertActive();
+    if (!accessToken) {
+      throw new TransferExecutionError("stale-session");
+    }
+
+    let response: Response;
+    try {
+      response = await (sessionFetch ?? fetch)(
+        `/api/transfer-receipt?${parameters.toString()}`,
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            [ACCOUNT_PROVIDER_HEADER]: accountProvider,
+          },
+          cache: "no-store",
+          credentials: "same-origin",
+        },
+      );
+    } catch {
+      await waitForPoll();
+      continue;
+    }
+    assertActive();
+    if (!response.ok) {
+      await waitForPoll();
+      continue;
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      await waitForPoll();
+      continue;
+    }
+    assertActive();
+    if (!isRecord(payload) || payload.transactionHash !== normalizedHash) {
+      await waitForPoll();
+      continue;
+    }
+    if (payload.status === "confirmed") {
+      if (payload.success !== true) {
+        throw new TransferExecutionError("failed");
+      }
+      return normalizedHash;
+    }
+    if (payload.status !== "pending" && payload.status !== "unresolved") {
+      await waitForPoll();
+      continue;
+    }
+    await waitForPoll();
+  }
+  throw new TransferExecutionError("confirmation-timeout");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function AccountWalletSessionOwner({
   children,
   sdk,
   sessionFetch,
   baseAccountEnabled = false,
   baseAccountConnector = connectBaseAccount,
+  baseAccountRestorer = restoreBaseAccount,
 }: {
   children: ReactNode;
   sdk: AccountWalletSdkBoundary;
   sessionFetch?: SessionFetch;
   baseAccountEnabled?: boolean;
   baseAccountConnector?: BaseAccountConnector;
+  baseAccountRestorer?: BaseAccountRestorer;
 }) {
   const {
     isInitialized,
@@ -213,66 +616,133 @@ export function AccountWalletSessionOwner({
     signInWithSiwe,
     verifySiweSignature,
     getAccessToken,
+    sendUserOperation: sdkSendUserOperation,
+    getUserOperation: sdkGetUserOperation,
     signOut: sdkSignOut,
   } = sdk;
   const [verifiedOwner, setVerifiedOwner] =
     useState<VerifiedSessionOwner | null>(null);
   const [status, setStatus] = useState<AccountSessionStatus>("restoring");
   const [message, setMessage] = useState<string | null>(null);
+  const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null);
+  const pendingTransferRef = useRef<PendingTransfer | null>(null);
   const [suppressedOwnerKey, setSuppressedOwnerKey] = useState<string | null>(
     null,
   );
   const validationRequest = useRef<AbortController | null>(null);
   const validationSequence = useRef(0);
-  const accountSelection = useRef<AccountSelection>(embeddedSelection());
+  const transferSequence = useRef(0);
+  const transferInProgress = useRef(false);
+  const accountSelection = useRef<AccountSelection>(initialAccountSelection());
   const baseConnection = useRef<ConnectedBaseAccount | null>(null);
   const baseLoginInProgress = useRef(false);
   const signInAttemptSequence = useRef(0);
-  const cancelledAttemptAwaitingOwner = useRef(false);
-  const cancelledOwnerCleanup = useRef<string | null>(null);
+  const activeSignInProvider = useRef<"cdp-embedded" | "base-account" | null>(null);
+  const emailFlowAttempts = useRef(new Map<string, number>());
+  const unabortableAuthAttempts = useRef(new Set<number>());
+  const revokedAuthAttempts = useRef(new Set<number>());
+  const quarantineCleanupOwners = useRef(new Set<string>());
+  const [authQuarantineRevision, setAuthQuarantineRevision] = useState(0);
   const currentOwnerKey = useRef(ownerKey);
   const isSessionSuppressed = isSessionSuppressedForOwner(
     suppressedOwnerKey,
     ownerKey,
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     currentOwnerKey.current = ownerKey;
   }, [ownerKey]);
 
   useEffect(() => {
+    recordAuthDiagnostic({
+      kind: "auth-state",
+      initialized: isInitialized,
+      signedIn: sdkIsSignedIn,
+      ownerPresent: Boolean(ownerKey),
+      status,
+      providerSelection: accountSelection.current.provider,
+      suppressed: isSessionSuppressed,
+    });
+  }, [
+    isInitialized,
+    isSessionSuppressed,
+    ownerKey,
+    sdkIsSignedIn,
+    status,
+  ]);
+
+  const revokeAuthAttempt = useCallback((attempt: number) => {
     if (
-      !cancelledAttemptAwaitingOwner.current ||
+      unabortableAuthAttempts.current.has(attempt) &&
+      !revokedAuthAttempts.current.has(attempt)
+    ) {
+      revokedAuthAttempts.current.add(attempt);
+      setAuthQuarantineRevision((revision) => revision + 1);
+    }
+  }, []);
+
+  const settleAuthAttempt = useCallback(
+    async (attempt: number) => {
+      unabortableAuthAttempts.current.delete(attempt);
+      if (!revokedAuthAttempts.current.has(attempt)) return;
+      const activeOwner = currentOwnerKey.current;
+      if (activeOwner) setSuppressedOwnerKey(activeOwner);
+      try {
+        recordAuthDiagnostic({ kind: "signout", reason: "quarantine" });
+        await sdkSignOut();
+        revokedAuthAttempts.current.delete(attempt);
+        quarantineCleanupOwners.current.clear();
+        setAuthQuarantineRevision((revision) => revision + 1);
+      } catch {
+        setStatus("signout-error");
+        setMessage(
+          "A canceled sign-in is quarantined and private, but provider cleanup did not finish. Retry sign out.",
+        );
+      }
+    },
+    [sdkSignOut],
+  );
+
+  useEffect(() => {
+    if (
+      revokedAuthAttempts.current.size === 0 ||
       !sdkIsSignedIn ||
       !ownerKey ||
-      cancelledOwnerCleanup.current === ownerKey
+      quarantineCleanupOwners.current.has(ownerKey)
     ) {
       return;
     }
 
-    cancelledOwnerCleanup.current = ownerKey;
+    quarantineCleanupOwners.current.add(ownerKey);
     setSuppressedOwnerKey(ownerKey);
     setVerifiedOwner(null);
     setStatus("signed-out");
-    setMessage("Sign-in was canceled. Your private details remain hidden.");
-    void sdkSignOut()
-      .catch(() => {})
-      .finally(() => {
-        if (currentOwnerKey.current !== ownerKey) {
-          cancelledOwnerCleanup.current = null;
-        }
-      });
-  }, [ownerKey, sdkIsSignedIn, sdkSignOut]);
+    setMessage("A canceled sign-in completed late. Its private details remain hidden.");
+    recordAuthDiagnostic({ kind: "signout", reason: "quarantine" });
+    void sdkSignOut().catch(() => {
+      setStatus("signout-error");
+      setMessage(
+        "A canceled sign-in is quarantined and private, but provider cleanup did not finish. Retry sign out.",
+      );
+    });
+  }, [authQuarantineRevision, ownerKey, sdkIsSignedIn, sdkSignOut]);
+
+  const updatePendingTransfer = useCallback((value: PendingTransfer | null) => {
+    pendingTransferRef.current = value;
+    setPendingTransfer(value);
+  }, []);
 
   const clearPrivateState = useCallback(() => {
     validationRequest.current?.abort();
     validationSequence.current += 1;
+    transferSequence.current += 1;
+    transferInProgress.current = false;
+    updatePendingTransfer(null);
     setVerifiedOwner(null);
-  }, []);
+  }, [updatePendingTransfer]);
 
   const clearBaseConnection = useCallback(() => {
     baseLoginInProgress.current = false;
-    accountSelection.current = embeddedSelection();
     const connection = baseConnection.current;
     baseConnection.current = null;
     if (connection) {
@@ -282,6 +752,8 @@ export function AccountWalletSessionOwner({
 
   const rejectBaseSession = useCallback(
     async (failureMessage: string) => {
+      accountSelection.current = { provider: "blocked-authentication" };
+      writeAccountProviderHint("pending:base-account");
       clearPrivateState();
       clearBaseConnection();
       setStatus("signed-out");
@@ -289,6 +761,7 @@ export function AccountWalletSessionOwner({
       if (!ownerKey) {
         return;
       }
+      recordAuthDiagnostic({ kind: "signout", reason: "invalidated-base" });
       await signOutWithSessionSuppressed({
         ownerKey,
         signOut: sdkSignOut,
@@ -303,8 +776,71 @@ export function AccountWalletSessionOwner({
     }, [clearBaseConnection, clearPrivateState, ownerKey, sdkSignOut]);
 
   const validateSession = useCallback(async () => {
-    if (!isInitialized || !sdkIsSignedIn || !ownerKey || isSessionSuppressed) {
+    if (
+      !isInitialized ||
+      !sdkIsSignedIn ||
+      !ownerKey ||
+      isSessionSuppressed ||
+      revokedAuthAttempts.current.size > 0
+    ) {
       return;
+    }
+
+    let selection = accountSelection.current;
+    const activeAttempt = signInAttemptSequence.current;
+    const isCurrentEmailAuthenticationPending =
+      selection.provider === "pending-authentication" &&
+      selection.attemptedProvider === "cdp-embedded" &&
+      activeSignInProvider.current === "cdp-embedded" &&
+      unabortableAuthAttempts.current.has(activeAttempt) &&
+      !revokedAuthAttempts.current.has(activeAttempt);
+    if (isCurrentEmailAuthenticationPending) {
+      return;
+    }
+    if (
+      selection.provider === "pending-authentication" ||
+      selection.provider === "blocked-authentication" ||
+      (selection.provider === "base-account" &&
+        (!baseAccountEnabled ||
+          (selection.ownerKey !== null && selection.ownerKey !== ownerKey)))
+    ) {
+      accountSelection.current = { provider: "blocked-authentication" };
+      clearPrivateState();
+      setStatus("signed-out");
+      setMessage(
+        "For safety, this unfinished sign-in must be started again. No wallet was substituted.",
+      );
+      recordAuthDiagnostic({
+        kind: "signout",
+        reason: "blocked-or-pending",
+      });
+      await signOutWithSessionSuppressed({
+        ownerKey,
+        signOut: sdkSignOut,
+        suppress: setSuppressedOwnerKey,
+        onFailure: () => {
+          setStatus("signout-error");
+          setMessage(
+            "Sign-in cleanup is required. Private details remain hidden, but provider sign-out did not finish.",
+          );
+        },
+      });
+      return;
+    }
+
+    const restoringSelection = selection.provider === "restoring";
+    const requestedProvider: AccountProviderRequest =
+      selection.provider === "restoring"
+        ? selection.hint ?? "restore"
+        : selection.provider;
+
+    if (selection.provider === "base-account" && !selection.admissionReady) {
+      return;
+    }
+    if (selection.provider === "base-account" && selection.ownerKey === null) {
+      selection = { ...selection, ownerKey };
+      accountSelection.current = selection;
+      baseLoginInProgress.current = false;
     }
 
     validationRequest.current?.abort();
@@ -315,23 +851,30 @@ export function AccountWalletSessionOwner({
     setStatus("validating");
     setMessage(null);
 
-    let selection = accountSelection.current;
-    if (selection.provider === "base-account") {
-      if (
-        !baseAccountEnabled ||
-        (selection.ownerKey !== null && selection.ownerKey !== ownerKey)
-      ) {
-        clearBaseConnection();
-        selection = embeddedSelection();
-      } else if (selection.ownerKey === null) {
-        selection = { ...selection, ownerKey };
-        accountSelection.current = selection;
-        baseLoginInProgress.current = false;
-      }
-    }
+    const isCurrentValidation = () =>
+      !controller.signal.aborted &&
+      sequence === validationSequence.current &&
+      currentOwnerKey.current === ownerKey &&
+      revokedAuthAttempts.current.size === 0;
+    let restoredConnection: ConnectedBaseAccount | null = null;
+    let validatedProvider: AccountProvider | null = null;
 
     try {
-      const accessToken = await getAccessToken();
+      let accessToken: string | null;
+      try {
+        accessToken = await getAccessToken();
+        recordAuthDiagnostic({
+          kind: "token",
+          outcome: accessToken ? "present" : "missing",
+        });
+      } catch (error) {
+        recordAuthDiagnostic({
+          kind: "token",
+          outcome: "error",
+          errorClass: classifyAuthDiagnosticError(error),
+        });
+        throw error;
+      }
       if (!accessToken) {
         throw new SessionValidationError("unauthenticated");
       }
@@ -341,42 +884,101 @@ export function AccountWalletSessionOwner({
         controller.signal,
         sessionFetch,
         {
-          accountProvider: selection.provider,
+          accountProvider: requestedProvider,
           expectedAddress:
             selection.provider === "base-account"
               ? selection.expectedAddress
               : undefined,
         },
       );
-      if (controller.signal.aborted || sequence !== validationSequence.current) {
+      validatedProvider = session.accountProvider;
+      if (!isCurrentValidation()) {
         return;
       }
 
+      if (restoringSelection && session.accountProvider === "base-account") {
+        if (!session.smartAccount) {
+          throw new SessionValidationError("invalid-response");
+        }
+        let invalidation: BaseAccountInvalidation | null = null;
+        restoredConnection = await baseAccountRestorer((reason) => {
+          invalidation ??= reason;
+          if (restoredConnection && baseConnection.current === restoredConnection) {
+            accountSelection.current = { provider: "blocked-authentication" };
+            writeAccountProviderHint("pending:base-account");
+            void rejectBaseSession(invalidationMessage(reason));
+          }
+        });
+        if (!isCurrentValidation()) {
+          await releaseBaseAccountConnection(restoredConnection);
+          return;
+        }
+        if (invalidation) {
+          await restoredConnection.disconnect();
+          throw new BaseAccountConnectorError(invalidation);
+        }
+        if (
+          restoredConnection.address.toLowerCase() !==
+          session.smartAccount.address.toLowerCase()
+        ) {
+          await restoredConnection.disconnect();
+          restoredConnection = null;
+          await rejectBaseSession(
+            "The server-verified SIWE address did not match the restored Base Account. Sign-in was blocked.",
+          );
+          return;
+        }
+        await restoredConnection.assertUnchanged();
+        if (!isCurrentValidation()) {
+          await releaseBaseAccountConnection(restoredConnection);
+          return;
+        }
+        baseConnection.current = restoredConnection;
+        accountSelection.current = {
+          provider: "base-account",
+          expectedAddress: session.smartAccount.address,
+          ownerKey,
+          admissionReady: true,
+        };
+        writeAccountProviderHint("base-account");
+      } else if (restoringSelection) {
+        accountSelection.current = embeddedSelection();
+        writeAccountProviderHint("cdp-embedded");
+      }
+
+      activeSignInProvider.current = null;
       setVerifiedOwner({ ownerKey, session });
       setStatus("verified");
     } catch (error) {
-      if (controller.signal.aborted || sequence !== validationSequence.current) {
+      if (!isCurrentValidation()) {
+        if (restoredConnection) {
+          await releaseBaseAccountConnection(restoredConnection);
+        }
         return;
       }
 
       setVerifiedOwner(null);
       if (
-        selection.provider === "base-account" &&
-        error instanceof SessionValidationError &&
-        error.reason === "address-mismatch"
+        (selection.provider === "base-account" ||
+          validatedProvider === "base-account") &&
+        error instanceof BaseAccountConnectorError &&
+        (error.reason === "account-changed" || error.reason === "chain-changed")
       ) {
-        await rejectBaseSession(
-          "The server-verified SIWE address did not match the connected Base Account. Sign-in was blocked.",
-        );
+        await restoredConnection?.disconnect();
+        await rejectBaseSession(invalidationMessage(error.reason));
         return;
       }
       if (
-        selection.provider === "base-account" &&
+        (selection.provider === "base-account" ||
+          requestedProvider === "base-account") &&
         error instanceof SessionValidationError &&
-        error.reason === "invalid-response"
+        (error.reason === "address-mismatch" || error.reason === "invalid-response")
       ) {
+        await restoredConnection?.disconnect();
         await rejectBaseSession(
-          "CDP did not return one verified SIWE address for this Base Account. Sign-in was blocked.",
+          error.reason === "address-mismatch"
+            ? "The server-verified SIWE address did not match the connected Base Account. Sign-in was blocked."
+            : "CDP did not return one verified SIWE address for this Base Account. Sign-in was blocked.",
         );
         return;
       }
@@ -387,6 +989,7 @@ export function AccountWalletSessionOwner({
         setStatus("signed-out");
         setMessage("Your session expired. Sign in again to continue.");
         clearBaseConnection();
+        recordAuthDiagnostic({ kind: "signout", reason: "no-token-or-401" });
         await signOutWithSessionSuppressed({
           ownerKey,
           signOut: sdkSignOut,
@@ -401,16 +1004,23 @@ export function AccountWalletSessionOwner({
         return;
       }
 
+      if (restoredConnection) {
+        await releaseBaseAccountConnection(restoredConnection);
+      }
       setStatus("unavailable");
       setMessage(
-        selection.provider === "base-account"
+        selection.provider === "base-account" ||
+          requestedProvider === "base-account" ||
+          validatedProvider === "base-account"
           ? "Base Account verification is unavailable. Your private details remain hidden."
           : "Account verification is unavailable. Your private details remain hidden.",
       );
     }
   }, [
     baseAccountEnabled,
+    baseAccountRestorer,
     clearBaseConnection,
+    clearPrivateState,
     getAccessToken,
     isInitialized,
     isSessionSuppressed,
@@ -452,6 +1062,7 @@ export function AccountWalletSessionOwner({
       validationRequest.current?.abort();
     };
   }, [
+    authQuarantineRevision,
     clearBaseConnection,
     clearPrivateState,
     isInitialized,
@@ -461,47 +1072,109 @@ export function AccountWalletSessionOwner({
     validateSession,
   ]);
 
-  const beginSignInAttempt = useCallback(() => {
-    const sequence = ++signInAttemptSequence.current;
-    cancelledAttemptAwaitingOwner.current = false;
-    cancelledOwnerCleanup.current = null;
-    clearPrivateState();
-    clearBaseConnection();
-    setStatus("signed-out");
-    setSuppressedOwnerKey(null);
-    setMessage(null);
-    return sequence;
-  }, [clearBaseConnection, clearPrivateState]);
+  const beginSignInAttempt = useCallback(
+    (provider: "cdp-embedded" | "base-account") => {
+      const previousAttempt = signInAttemptSequence.current;
+      const sequence = ++signInAttemptSequence.current;
+      revokeAuthAttempt(previousAttempt);
+      for (const [flowId, attempt] of emailFlowAttempts.current) {
+        if (attempt === previousAttempt) {
+          emailFlowAttempts.current.delete(flowId);
+        }
+      }
+      activeSignInProvider.current = provider;
+      clearPrivateState();
+      clearBaseConnection();
+      accountSelection.current = {
+        provider: "pending-authentication",
+        attemptedProvider: provider,
+      };
+      writeAccountProviderHint(`pending:${provider}`);
+      setStatus("signed-out");
+      if (
+        revokedAuthAttempts.current.size === 0 &&
+        currentOwnerKey.current === null
+      ) {
+        setSuppressedOwnerKey(null);
+      }
+      setMessage(null);
+      return sequence;
+    },
+    [clearBaseConnection, clearPrivateState, revokeAuthAttempt],
+  );
 
   const cancelSignInAttempt = useCallback(() => {
+    const canceledAttempt = signInAttemptSequence.current;
     signInAttemptSequence.current += 1;
-    cancelledAttemptAwaitingOwner.current = true;
+    revokeAuthAttempt(canceledAttempt);
+    for (const [flowId, attempt] of emailFlowAttempts.current) {
+      if (attempt === canceledAttempt) {
+        emailFlowAttempts.current.delete(flowId);
+      }
+    }
+    const canceledProvider = activeSignInProvider.current;
+    activeSignInProvider.current = null;
     clearPrivateState();
     clearBaseConnection();
+    if (canceledProvider) {
+      accountSelection.current = { provider: "blocked-authentication" };
+      writeAccountProviderHint(`pending:${canceledProvider}`);
+    }
     setStatus("signed-out");
     setMessage("Sign-in was canceled. Your private details remain hidden.");
 
     const activeOwner = currentOwnerKey.current;
     if (activeOwner) {
-      cancelledOwnerCleanup.current = activeOwner;
       setSuppressedOwnerKey(activeOwner);
+      recordAuthDiagnostic({ kind: "signout", reason: "explicit-cancel" });
       void sdkSignOut().catch(() => {});
     }
-  }, [clearBaseConnection, clearPrivateState, sdkSignOut]);
+  }, [clearBaseConnection, clearPrivateState, revokeAuthAttempt, sdkSignOut]);
 
   const requestEmailCode = useCallback(
     async (email: string) => {
-      beginSignInAttempt();
+      const attempt = beginSignInAttempt("cdp-embedded");
       const { flowId } = await signInWithEmail(email);
+      emailFlowAttempts.current.set(flowId, attempt);
       return { flowId };
     }, [beginSignInAttempt, signInWithEmail],
   );
 
   const verifyEmailCode = useCallback(
     async (flowId: string, otp: string) => {
+      const attempt = emailFlowAttempts.current.get(flowId);
+      if (
+        attempt === undefined ||
+        attempt !== signInAttemptSequence.current ||
+        revokedAuthAttempts.current.size > 0
+      ) {
+        throw new Error("A previous sign-in is still being cleaned up.");
+      }
       setMessage(null);
-      await verifyEmailOTP(flowId, otp);
-    }, [verifyEmailOTP],
+      unabortableAuthAttempts.current.add(attempt);
+      let sdkCompleted = false;
+      try {
+        await verifyEmailOTP(flowId, otp);
+        sdkCompleted = true;
+        if (
+          attempt === signInAttemptSequence.current &&
+          !revokedAuthAttempts.current.has(attempt)
+        ) {
+          accountSelection.current = embeddedSelection();
+          writeAccountProviderHint("cdp-embedded");
+          setAuthQuarantineRevision((revision) => revision + 1);
+        }
+      } finally {
+        if (
+          sdkCompleted ||
+          attempt !== signInAttemptSequence.current ||
+          revokedAuthAttempts.current.has(attempt)
+        ) {
+          emailFlowAttempts.current.delete(flowId);
+        }
+        await settleAuthAttempt(attempt);
+      }
+    }, [settleAuthAttempt, verifyEmailOTP],
   );
 
   const signInWithBaseAccount = useCallback(
@@ -510,7 +1183,7 @@ export function AccountWalletSessionOwner({
         throw new BaseAccountLoginError("disabled");
       }
 
-      const attemptSequence = beginSignInAttempt();
+      const attemptSequence = beginSignInAttempt("base-account");
       baseLoginInProgress.current = true;
       onPhase("connecting");
 
@@ -524,18 +1197,26 @@ export function AccountWalletSessionOwner({
       let stage: "connecting" | "challenge" | "signing" | "verifying" =
         "connecting";
       const handleInvalidation = (reason: BaseAccountInvalidation) => {
-        baseLoginInProgress.current = false;
-        accountSelection.current = embeddedSelection();
-        const invalidatedConnection = baseConnection.current;
-        baseConnection.current = null;
-        if (invalidatedConnection) {
-          void invalidatedConnection.disconnect();
+        if (attemptSequence !== signInAttemptSequence.current) {
+          if (connection) void connection.disconnect();
+          return;
         }
+        signInAttemptSequence.current += 1;
+        revokeAuthAttempt(attemptSequence);
+        baseLoginInProgress.current = false;
+        accountSelection.current = { provider: "blocked-authentication" };
+        writeAccountProviderHint("pending:base-account");
+        if (baseConnection.current === connection) baseConnection.current = null;
+        if (connection) void connection.disconnect();
         clearPrivateState();
         setStatus("signed-out");
         setMessage(invalidationMessage(reason));
         const activeOwner = currentOwnerKey.current;
         if (activeOwner) {
+          recordAuthDiagnostic({
+            kind: "signout",
+            reason: "invalidated-base",
+          });
           void signOutWithSessionSuppressed({
             ownerKey: activeOwner,
             signOut: sdkSignOut,
@@ -558,6 +1239,7 @@ export function AccountWalletSessionOwner({
           provider: "base-account",
           expectedAddress: connection.address,
           ownerKey: null,
+          admissionReady: false,
         };
 
         await connection.assertUnchanged();
@@ -580,15 +1262,32 @@ export function AccountWalletSessionOwner({
         await connection.assertUnchanged();
         stage = "verifying";
         onPhase("verifying");
-        await verifySiweSignature(challenge.flowId, signature);
-        assertCurrentAttempt();
-        await connection.assertUnchanged();
+        unabortableAuthAttempts.current.add(attemptSequence);
+        try {
+          await verifySiweSignature(challenge.flowId, signature);
+          assertCurrentAttempt();
+          await connection.assertUnchanged();
+          assertCurrentAttempt();
+          accountSelection.current = {
+            provider: "base-account",
+            expectedAddress: connection.address,
+            ownerKey: null,
+            admissionReady: true,
+          };
+          writeAccountProviderHint("base-account");
+          setAuthQuarantineRevision((revision) => revision + 1);
+        } finally {
+          await settleAuthAttempt(attemptSequence);
+        }
       } catch (error) {
         if (baseConnection.current === connection) {
-          clearBaseConnection();
+          baseConnection.current = null;
+          await connection?.disconnect();
         } else if (connection) {
           await connection.disconnect();
         }
+        accountSelection.current = { provider: "blocked-authentication" };
+        writeAccountProviderHint("pending:base-account");
         if (error instanceof BaseAccountConnectorError) {
           throw new BaseAccountLoginError(
             baseLoginFailureFromConnector(error),
@@ -597,6 +1296,10 @@ export function AccountWalletSessionOwner({
         }
         if (stage === "verifying") {
           try {
+            recordAuthDiagnostic({
+              kind: "signout",
+              reason: "invalidated-base",
+            });
             await sdkSignOut();
           } catch {
             // The session remains private even if provider sign-out fails here.
@@ -609,14 +1312,14 @@ export function AccountWalletSessionOwner({
       baseAccountConnector,
       baseAccountEnabled,
       beginSignInAttempt,
-      clearBaseConnection,
       clearPrivateState,
+      revokeAuthAttempt,
       sdkSignOut,
+      settleAuthAttempt,
       signInWithSiwe,
       verifySiweSignature,
     ],
   );
-
   const signOut = useCallback(async () => {
     if (!ownerKey) {
       clearBaseConnection();
@@ -625,8 +1328,10 @@ export function AccountWalletSessionOwner({
 
     setStatus("signed-out");
     setMessage(null);
+    activeSignInProvider.current = null;
     clearPrivateState();
     clearBaseConnection();
+    recordAuthDiagnostic({ kind: "signout", reason: "explicit-logout" });
     const signedOut = await signOutWithSessionSuppressed({
       ownerKey,
       signOut: sdkSignOut,
@@ -640,6 +1345,11 @@ export function AccountWalletSessionOwner({
     });
 
     if (signedOut) {
+      revokedAuthAttempts.current.clear();
+      unabortableAuthAttempts.current.clear();
+      quarantineCleanupOwners.current.clear();
+      writeAccountProviderHint(null);
+      setAuthQuarantineRevision((revision) => revision + 1);
       setMessage("You are signed out.");
       return;
     }
@@ -652,9 +1362,28 @@ export function AccountWalletSessionOwner({
     ownerKey,
     isSessionSuppressed || status !== "verified",
   );
+  const visibleTransferBoundary =
+    session && ownerKey ? transferBoundaryKey(ownerKey, session) : null;
+  const currentTransferBoundary = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (currentTransferBoundary.current !== visibleTransferBoundary) {
+      transferSequence.current += 1;
+      transferInProgress.current = false;
+      updatePendingTransfer(null);
+      currentTransferBoundary.current = visibleTransferBoundary;
+    }
+  }, [updatePendingTransfer, visibleTransferBoundary]);
 
   const fetchVerifiedResource = useCallback(
-    async (endpoint: "/api/portfolio" | "/api/activity" | "/api/savings/positions", signal?: AbortSignal): Promise<unknown> => {
+    async (
+      endpoint:
+        | "/api/portfolio"
+        | "/api/portfolio/valuation"
+        | "/api/activity"
+        | "/api/savings/positions",
+      signal?: AbortSignal,
+      query?: string,
+    ): Promise<unknown> => {
       if (!session || status !== "verified" || !ownerKey) {
         throw new Error("Authenticated resource is unavailable.");
       }
@@ -665,7 +1394,9 @@ export function AccountWalletSessionOwner({
 
       let response: Response;
       try {
-        response = await (sessionFetch ?? fetch)(endpoint, {
+        response = await (sessionFetch ?? fetch)(
+          query ? `${endpoint}?${query}` : endpoint,
+          {
           method: "GET",
           headers: {
             Accept: "application/json",
@@ -675,7 +1406,8 @@ export function AccountWalletSessionOwner({
           cache: "no-store",
           credentials: "same-origin",
           signal,
-        });
+          },
+        );
       } catch (error) {
         if (signal?.aborted) {
           throw error;
@@ -712,12 +1444,93 @@ export function AccountWalletSessionOwner({
     }, [getAccessToken, ownerKey, session, sessionFetch, status],
   );
 
+  const fetchAccountResource = useCallback(
+    async (path: string, options: AccountResourceOptions = {}): Promise<unknown> => {
+      const safePath = normalizeAccountResourcePath(path);
+      if (!session?.smartAccount || status !== "verified" || !ownerKey) {
+        throw new TransferExecutionError("stale-session");
+      }
+      const boundary = transferBoundaryKey(ownerKey, session);
+      const sequence = transferSequence.current;
+      const assertActive = () => {
+        if (!boundary || transferSequence.current !== sequence || currentTransferBoundary.current !== boundary) {
+          throw new TransferExecutionError("stale-session");
+        }
+      };
+      assertActive();
+      const accessToken = await getAccessToken();
+      assertActive();
+      if (!accessToken) throw new TransferExecutionError("stale-session");
+      const method = options.method ?? "GET";
+      if (method === "GET" && options.body !== undefined) {
+        throw new TransferExecutionError("invalid-request");
+      }
+      let response: Response;
+      try {
+        response = await (sessionFetch ?? fetch)(safePath, {
+          method,
+          headers: {
+            Accept: "application/json",
+            ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+            Authorization: `Bearer ${accessToken}`,
+            [ACCOUNT_PROVIDER_HEADER]: session.accountProvider,
+          },
+          ...(method === "POST" ? { body: JSON.stringify(options.body ?? {}) } : {}),
+          cache: "no-store",
+          credentials: "same-origin",
+          redirect: "error",
+          signal: options.signal,
+        });
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        if (error instanceof TransferExecutionError) throw error;
+        throw new TransferExecutionError("unavailable", error);
+      }
+      assertActive();
+      if (!response.ok) {
+        const failure = new TransferExecutionError(
+          response.status === 409 ? "submission-pending" : "unavailable",
+        );
+        Object.assign(failure, { status: response.status });
+        throw failure;
+      }
+      try {
+        const value = await response.json();
+        assertActive();
+        return value;
+      } catch (error) {
+        if (error instanceof TransferExecutionError) throw error;
+        throw new TransferExecutionError("unavailable", error);
+      }
+    },
+    [getAccessToken, ownerKey, session, sessionFetch, status],
+  );
+
+  const fetchMoneyActionApi = useCallback<MoneyActionApiFetch>(
+    (path, init = {}) => fetchAccountResource(path, {
+      method: init.method === "POST" ? "POST" : "GET",
+      ...(init.body === undefined ? {} : { body: JSON.parse(String(init.body)) }),
+      ...(init.signal ? { signal: init.signal } : {}),
+    }),
+    [fetchAccountResource],
+  );
+
   const fetchPortfolio = useCallback(
     (signal?: AbortSignal) => fetchVerifiedResource("/api/portfolio", signal),
     [fetchVerifiedResource],
   );
+  const fetchPortfolioValuation = useCallback(
+    (region: import("@/config/regions").RegionId, signal?: AbortSignal) =>
+      fetchVerifiedResource(
+        "/api/portfolio/valuation",
+        signal,
+        new URLSearchParams({ region }).toString(),
+      ),
+    [fetchVerifiedResource],
+  );
   const fetchActivity = useCallback(
-    (signal?: AbortSignal) => fetchVerifiedResource("/api/activity", signal),
+    (query: string, signal?: AbortSignal) =>
+      fetchVerifiedResource("/api/activity", signal, query),
     [fetchVerifiedResource],
   );
   const fetchSavingsPositions = useCallback(
@@ -725,6 +1538,499 @@ export function AccountWalletSessionOwner({
       fetchVerifiedResource("/api/savings/positions", signal),
     [fetchVerifiedResource],
   );
+  const fetchOperations = useCallback(
+    (signal?: AbortSignal) => fetchMoneyActionApi("/api/actions/operations", { method: "GET", signal }),
+    [fetchMoneyActionApi],
+  );
+  const prepareMoneyAction = useCallback(
+    async (endpoint: string, input: unknown): Promise<PreparedMoneyAction> => {
+      const value = await fetchMoneyActionApi(endpoint, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      if (
+        !isRecord(value) ||
+        typeof value.id !== "string" ||
+        typeof value.reviewHash !== "string" ||
+        !isRecord(value.owner) ||
+        !session?.smartAccount ||
+        value.owner.subject !== session.user.subject ||
+        typeof value.owner.address !== "string" ||
+        value.owner.address.toLowerCase() !== session.smartAccount.address.toLowerCase() ||
+        value.owner.chainId !== BASE_CHAIN_ID ||
+        value.owner.accountProvider !== session.accountProvider ||
+        !Array.isArray(value.calls) ||
+        !Array.isArray(value.amounts) ||
+        !Array.isArray(value.warnings)
+      ) {
+        throw new TransferExecutionError("unavailable");
+      }
+      return value as unknown as PreparedMoneyAction;
+    },
+    [fetchMoneyActionApi, session],
+  );
+
+  const executeMoneyAction = useCallback(
+    async (action: PreparedMoneyAction): Promise<OperationResult> => {
+      if (
+        transferInProgress.current ||
+        !session?.smartAccount ||
+        !ownerKey ||
+        status !== "verified" ||
+        action.owner.subject !== session.user.subject ||
+        action.owner.address.toLowerCase() !== session.smartAccount.address.toLowerCase() ||
+        action.owner.chainId !== BASE_CHAIN_ID ||
+        action.owner.accountProvider !== session.accountProvider
+      ) {
+        throw new TransferExecutionError("stale-session");
+      }
+      const boundary = transferBoundaryKey(ownerKey, session);
+      if (!boundary || currentTransferBoundary.current !== boundary) {
+        throw new TransferExecutionError("stale-session");
+      }
+      const sequence = transferSequence.current;
+      const assertActive = () => {
+        if (transferSequence.current !== sequence || currentTransferBoundary.current !== boundary) {
+          throw new TransferExecutionError("stale-session");
+        }
+      };
+      transferInProgress.current = true;
+      try {
+        const claim = await claimMoneyAction(fetchMoneyActionApi, action);
+        assertActive();
+        const canonicalAction = claim.action;
+        const calls = canonicalAction.calls.map((call) => ({
+          to: call.to,
+          data: call.data,
+          value: BigInt(call.value),
+        }));
+        if (claim.disposition === "recover") {
+          return await recoverClaimedMoneyAction(claim.operation, canonicalAction, assertActive);
+        }
+
+        if (canonicalAction.kind === "send") {
+          const spend = canonicalAction.amounts.find((amount) => amount.direction === "spend");
+          if (!spend || (spend.assetId !== "usdc" && spend.assetId !== "eth")) {
+            await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "failed");
+            throw new TransferExecutionError("invalid-request");
+          }
+          const portfolio = parsePortfolioSnapshot(await fetchPortfolio(), {
+            subject: session.user.subject,
+            smartAccountAddress: session.smartAccount.address,
+            chainId: BASE_CHAIN_ID,
+          });
+          if (BigInt(spend.amountBaseUnits) > findTransferBalance(portfolio.assets, spend.assetId)) {
+            await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "failed");
+            throw new TransferExecutionError("insufficient-balance");
+          }
+        }
+        assertActive();
+
+        if (session.accountProvider === "base-account") {
+          const connection = baseConnection.current;
+          if (!connection || !connection.sendCalls || !connection.getCallsStatus || connection.address.toLowerCase() !== session.smartAccount.address.toLowerCase()) {
+            await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "failed");
+            throw new TransferExecutionError("stale-session");
+          }
+          let submissionId: string;
+          try {
+            submissionId = await connection.sendCalls(
+              calls,
+              canonicalAction.id,
+              async () => assertMoneyActionDispatchable(canonicalAction, assertActive),
+            );
+          } catch (error) {
+            if (error instanceof MoneyActionExpiredBeforeDispatchError) {
+              return operationResult(
+                await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "expired"),
+              );
+            }
+            if (error instanceof TransferExecutionError) {
+              throw error;
+            }
+            if (error instanceof BaseAccountConnectorError && error.reason === "cancelled") {
+              await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "rejected");
+              throw new TransferExecutionError("rejected", error);
+            }
+            await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "unknown");
+            throw new TransferExecutionError("submission-unknown", error);
+          }
+          await recordMoneyActionSubmission(fetchMoneyActionApi, canonicalAction.id, { submissionId });
+          return await recoverBaseCalls(canonicalAction.id, submissionId, connection, assertActive);
+        }
+
+        if (!sdkSendUserOperation || !sdkGetUserOperation) {
+          await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "failed");
+          throw new TransferExecutionError("unavailable");
+        }
+        try {
+          assertMoneyActionDispatchable(canonicalAction, assertActive);
+        } catch (error) {
+          if (error instanceof MoneyActionExpiredBeforeDispatchError) {
+            return operationResult(
+              await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "expired"),
+            );
+          }
+          throw error;
+        }
+        let userOperationHash: `0x${string}`;
+        try {
+          const submission = await sdkSendUserOperation({
+            evmSmartAccount: session.smartAccount.address,
+            network: "base",
+            calls,
+            idempotencyKey: canonicalAction.id,
+          });
+          userOperationHash = normalizeTransactionHash(submission.userOperationHash);
+        } catch (error) {
+          await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "unknown");
+          throw new TransferExecutionError("submission-unknown", error);
+        }
+        await recordMoneyActionSubmission(fetchMoneyActionApi, canonicalAction.id, { userOperationHash });
+        const transactionHash = await waitForEmbeddedReceipt(
+          userOperationHash,
+          session.smartAccount.address,
+          sdkGetUserOperation,
+          session.accountProvider,
+          getAccessToken,
+          sessionFetch,
+          assertActive,
+          canonicalAction.calls,
+        );
+        const operation = await recordMoneyActionSubmission(fetchMoneyActionApi, canonicalAction.id, {
+          userOperationHash,
+          transactionHash,
+        });
+        return operationResult(operation);
+      } finally {
+        if (transferSequence.current === sequence) transferInProgress.current = false;
+      }
+
+      async function recoverClaimedMoneyAction(
+        operation: StoredMoneyActionOperation,
+        prepared: PreparedMoneyAction,
+        assertStillActive: () => void,
+      ): Promise<OperationResult> {
+        if (["confirmed", "failed", "rejected", "expired"].includes(operation.status)) {
+          return operationResult(operation);
+        }
+        if (operation.transactionHash) {
+          await waitForBaseReceipt(
+            operation.transactionHash,
+            prepared.owner.accountProvider,
+            getAccessToken,
+            sessionFetch,
+            assertStillActive,
+            undefined,
+            operation.userOperationHash
+              ? { userOperationHash: operation.userOperationHash, sender: prepared.owner.address }
+              : undefined,
+          );
+          return operationResult(await readMoneyAction(fetchMoneyActionApi, prepared.id));
+        }
+        if (operation.userOperationHash && sdkGetUserOperation) {
+          const transactionHash = await waitForEmbeddedReceipt(
+            operation.userOperationHash,
+            prepared.owner.address,
+            sdkGetUserOperation,
+            prepared.owner.accountProvider,
+            getAccessToken,
+            sessionFetch,
+            assertStillActive,
+            prepared.calls,
+          );
+          return operationResult(await recordMoneyActionSubmission(fetchMoneyActionApi, prepared.id, {
+            userOperationHash: operation.userOperationHash,
+            transactionHash,
+          }));
+        }
+        if (operation.submissionId && baseConnection.current?.getCallsStatus) {
+          return recoverBaseCalls(prepared.id, operation.submissionId, baseConnection.current, assertStillActive);
+        }
+        if (operation.status === "submitting") {
+          await recordMoneyActionStatus(fetchMoneyActionApi, prepared.id, "unknown");
+        }
+        throw new TransferExecutionError("submission-unknown");
+      }
+
+      async function recoverBaseCalls(
+        id: string,
+        submissionId: string,
+        connection: ConnectedBaseAccount,
+        assertStillActive: () => void,
+      ): Promise<OperationResult> {
+        if (!connection.getCallsStatus) throw new TransferExecutionError("submission-unknown");
+        const deadline = Date.now() + TRANSFER_CONFIRMATION_TIMEOUT_MS;
+        while (Date.now() < deadline) {
+          assertStillActive();
+          try {
+            const result = await connection.getCallsStatus(submissionId);
+            if (result.status === "failed") {
+              return operationResult(await recordMoneyActionStatus(fetchMoneyActionApi, id, "unknown"));
+            }
+            if (result.status === "complete") {
+              await waitForBaseReceipt(
+                result.transactionHash,
+                "base-account",
+                getAccessToken,
+                sessionFetch,
+                assertStillActive,
+                deadline,
+              );
+              return operationResult(await recordMoneyActionSubmission(fetchMoneyActionApi, id, {
+                submissionId,
+                transactionHash: result.transactionHash,
+              }));
+            }
+          } catch (error) {
+            if (error instanceof TransferExecutionError) throw error;
+          }
+          await waitForPoll();
+        }
+        throw new TransferExecutionError("confirmation-timeout");
+      }
+    },
+    [
+      fetchMoneyActionApi,
+      fetchPortfolio,
+      getAccessToken,
+      ownerKey,
+      sdkGetUserOperation,
+      sdkSendUserOperation,
+      session,
+      sessionFetch,
+      status,
+    ],
+  );
+
+  const confirmPendingTransfer = useCallback(
+    async (
+      handle: PendingTransfer,
+      assertActive: () => void,
+    ): Promise<ConfirmedTransfer> => {
+      try {
+        let transactionHash: `0x${string}`;
+        if (handle.userOperationHash) {
+          if (!sdkGetUserOperation || !session?.smartAccount) {
+            throw new TransferExecutionError("unavailable");
+          }
+          transactionHash = await waitForEmbeddedReceipt(
+            handle.userOperationHash,
+            session.smartAccount.address,
+            sdkGetUserOperation,
+            handle.provider,
+            getAccessToken,
+            sessionFetch,
+            assertActive,
+          );
+        } else if (handle.transactionHash) {
+          transactionHash = await waitForBaseReceipt(
+            handle.transactionHash,
+            handle.provider,
+            getAccessToken,
+            sessionFetch,
+            assertActive,
+          );
+        } else {
+          throw new TransferExecutionError("submission-unknown");
+        }
+        updatePendingTransfer(null);
+        return {
+          assetId: handle.assetId,
+          recipient: handle.recipient,
+          amountBaseUnits: handle.amountBaseUnits,
+          transactionHash,
+        };
+      } catch (error) {
+        const normalized = transferError(error);
+        if (normalized.reason === "failed") {
+          updatePendingTransfer(null);
+        } else if (normalized.reason === "submission-unknown") {
+          updatePendingTransfer({ ...handle, state: "unknown" });
+        }
+        throw normalized;
+      }
+    },
+    [getAccessToken, sdkGetUserOperation, session, sessionFetch, updatePendingTransfer],
+  );
+
+  const sendTransfer = useCallback(
+    async (request: TransferRequest, intentId: string): Promise<ConfirmedTransfer> => {
+      assertTransferRequest(request);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(intentId)) {
+        throw new TransferExecutionError("invalid-request");
+      }
+      if (
+        transferInProgress.current ||
+        pendingTransferRef.current ||
+        !session?.smartAccount ||
+        !ownerKey ||
+        status !== "verified" ||
+        session.smartAccount.chainId !== BASE_CHAIN_ID
+      ) {
+        throw new TransferExecutionError(
+          pendingTransferRef.current ? "submission-pending" : "unavailable",
+        );
+      }
+
+      const boundary = transferBoundaryKey(ownerKey, session);
+      if (!boundary || currentTransferBoundary.current !== boundary) {
+        throw new TransferExecutionError("stale-session");
+      }
+      const sequence = transferSequence.current;
+      const assertActive = () => {
+        if (
+          transferSequence.current !== sequence ||
+          currentTransferBoundary.current !== boundary
+        ) {
+          throw new TransferExecutionError("stale-session");
+        }
+      };
+
+      transferInProgress.current = true;
+      let dispatched = false;
+      let handle: PendingTransfer | null = null;
+      try {
+        assertActive();
+        const portfolioPayload = await fetchPortfolio();
+        assertActive();
+        const portfolio = parsePortfolioSnapshot(portfolioPayload, {
+          subject: session.user.subject,
+          smartAccountAddress: session.smartAccount.address,
+          chainId: BASE_CHAIN_ID,
+        });
+        const balance = findTransferBalance(portfolio.assets, request.assetId);
+        if (BigInt(request.amountBaseUnits) > balance) {
+          throw new TransferExecutionError("insufficient-balance");
+        }
+
+        const call = buildTransferCall(request);
+
+        if (session.accountProvider === "base-account") {
+          const connection = baseConnection.current;
+          if (
+            !connection ||
+            connection.address.toLowerCase() !== session.smartAccount.address.toLowerCase() ||
+            !connection.sendTransaction
+          ) {
+            throw new TransferExecutionError("stale-session");
+          }
+          await connection.assertUnchanged();
+          assertActive();
+          handle = {
+            ...request,
+            intentId,
+            provider: session.accountProvider,
+            state: "unknown",
+          };
+          updatePendingTransfer(handle);
+          dispatched = true;
+          const transactionHash = normalizeTransactionHash(
+            await connection.sendTransaction(call),
+          );
+          handle = { ...handle, state: "submitted", transactionHash };
+          updatePendingTransfer(handle);
+          await connection.assertUnchanged();
+          assertActive();
+        } else {
+          if (!sdkSendUserOperation || !sdkGetUserOperation) {
+            throw new TransferExecutionError("unavailable");
+          }
+          handle = {
+            ...request,
+            intentId,
+            provider: session.accountProvider,
+            state: "unknown",
+          };
+          updatePendingTransfer(handle);
+          dispatched = true;
+          const submission = await sdkSendUserOperation({
+            evmSmartAccount: session.smartAccount.address,
+            network: "base",
+            calls: [call],
+            idempotencyKey: intentId,
+          });
+          const userOperationHash = normalizeTransactionHash(
+            submission.userOperationHash,
+          );
+          handle = { ...handle, state: "submitted", userOperationHash };
+          updatePendingTransfer(handle);
+          assertActive();
+        }
+
+        return await confirmPendingTransfer(handle, assertActive);
+      } catch (error) {
+        const normalized = transferError(error);
+        if (!dispatched) {
+          updatePendingTransfer(null);
+          throw normalized;
+        }
+        if (handle && !handle.transactionHash && !handle.userOperationHash) {
+          updatePendingTransfer({ ...handle, state: "unknown" });
+          throw new TransferExecutionError("submission-unknown", normalized);
+        }
+        if (normalized.reason === "failed") {
+          updatePendingTransfer(null);
+          throw normalized;
+        }
+        throw normalized;
+      } finally {
+        if (transferSequence.current === sequence) {
+          transferInProgress.current = false;
+        }
+      }
+    },
+    [
+      confirmPendingTransfer,
+      fetchPortfolio,
+      ownerKey,
+      sdkGetUserOperation,
+      sdkSendUserOperation,
+      session,
+      status,
+      updatePendingTransfer,
+    ],
+  );
+
+  const checkPendingTransfer = useCallback(async (): Promise<ConfirmedTransfer> => {
+    const handle = pendingTransferRef.current;
+    if (
+      transferInProgress.current ||
+      !handle ||
+      !session?.smartAccount ||
+      !ownerKey ||
+      status !== "verified"
+    ) {
+      throw new TransferExecutionError("unavailable");
+    }
+    const boundary = transferBoundaryKey(ownerKey, session);
+    if (!boundary || currentTransferBoundary.current !== boundary) {
+      throw new TransferExecutionError("stale-session");
+    }
+    const sequence = transferSequence.current;
+    const assertActive = () => {
+      if (
+        transferSequence.current !== sequence ||
+        currentTransferBoundary.current !== boundary
+      ) {
+        throw new TransferExecutionError("stale-session");
+      }
+    };
+    transferInProgress.current = true;
+    try {
+      return await confirmPendingTransfer(handle, assertActive);
+    } finally {
+      if (transferSequence.current === sequence) {
+        transferInProgress.current = false;
+      }
+    }
+  }, [confirmPendingTransfer, ownerKey, session, status]);
+
+  const startNewTransfer = useCallback(() => {
+    if (!transferInProgress.current) {
+      updatePendingTransfer(null);
+    }
+  }, [updatePendingTransfer]);
 
   const client = useMemo<AccountWalletClient>(
     () => ({
@@ -741,25 +2047,43 @@ export function AccountWalletSessionOwner({
       signInWithBaseAccount,
       cancelSignInAttempt,
       fetchPortfolio,
+      fetchPortfolioValuation,
       fetchActivity,
       fetchSavingsPositions,
+      fetchAccountResource,
+      prepareMoneyAction,
+      executeMoneyAction,
+      fetchOperations,
+      pendingTransfer,
+      sendTransfer,
+      checkPendingTransfer,
+      startNewTransfer,
       retrySessionValidation: validateSession,
       signOut,
     }),
     [
       baseAccountEnabled,
       cancelSignInAttempt,
+      checkPendingTransfer,
+      executeMoneyAction,
+      fetchAccountResource,
       fetchActivity,
+      fetchOperations,
       fetchPortfolio,
+      fetchPortfolioValuation,
       fetchSavingsPositions,
       isInitialized,
       isSessionSuppressed,
       message,
       ownerKey,
+      pendingTransfer,
+      prepareMoneyAction,
       requestEmailCode,
       sdkIsSignedIn,
       session,
+      sendTransfer,
       signInWithBaseAccount,
+      startNewTransfer,
       signOut,
       status,
       validateSession,
@@ -804,6 +2128,8 @@ function AccountWalletBridge({
         await verifySiweSignature({ flowId, signature });
       },
       getAccessToken,
+      sendUserOperation,
+      getUserOperation,
       signOut,
     }),
     [

@@ -1,0 +1,202 @@
+/* Local, authorized assets; see public/home-mark/PROVENANCE.md. */
+@font-face {
+  font-family: "Home Mark Base Sans";
+  src: url("/home-mark/BaseSans-Medium.woff") format("woff");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Home Mark Doto";
+  src: url("/home-mark/Doto.ttf") format("truetype");
+  font-display: swap;
+  /* Deliberately no weight range: preserves the reference's variable face. */
+}
+
+.root {
+  --mark-blue: #002ef4;
+  position: relative;
+  display: inline-block;
+  width: 123.16px;
+  min-width: 123.16px;
+  height: 28px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+@supports (color: color(display-p3 0 0 1)) {
+  .root {
+    --mark-blue: color(display-p3 0 0 1);
+  }
+}
+
+.control {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 30.333333px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--mark-blue);
+  cursor: pointer;
+  overflow: visible;
+  text-decoration: none;
+}
+
+.control:hover {
+  /* Natural home advance is wider than base. This never resizes .root. */
+  width: 82px;
+}
+
+.control:focus-visible {
+  outline: 2px solid var(--mark-blue);
+  outline-offset: 3px;
+}
+
+.artwork {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  width: 123.16px;
+  height: 28px;
+  gap: 3.733333px;
+  transform-origin: left bottom;
+  pointer-events: none;
+  user-select: none;
+  overflow: visible;
+}
+
+.square {
+  position: relative;
+  flex: 0 0 28px;
+  height: 28px;
+  border-radius: 2.8px;
+  background: currentColor;
+  opacity: 0;
+}
+
+.square:first-child {
+  opacity: 1;
+}
+
+.ascender {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: block;
+  height: 140%;
+  width: auto;
+  max-width: none;
+  transform: scaleY(0);
+  transform-origin: center;
+  overflow: hidden;
+}
+
+.dotoLayer,
+.letterLayer {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  line-height: 70%;
+  white-space: nowrap;
+}
+
+.dotoLayer {
+  bottom: 18%;
+  gap: 0.933333px;
+  font-family: "Home Mark Doto", monospace;
+  font-size: 53.666667px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.doto {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.grid {
+  position: absolute;
+  bottom: 1.2%;
+  left: 1%;
+  display: grid;
+  width: 85%;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(5, 1fr);
+  gap: 1.194667px;
+}
+
+.grid > span {
+  aspect-ratio: 1;
+  background: currentColor;
+}
+
+.letterLayer {
+  bottom: 5.6px;
+  font-family: "Home Mark Base Sans", sans-serif;
+  font-size: 51.333333px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.letterLayer > span {
+  display: block;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.mobileSquare {
+  display: none;
+}
+
+@media (width < 768px) {
+  .root {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .control,
+  .control:hover {
+    width: 44px;
+    height: 44px;
+  }
+
+  .artwork {
+    display: none;
+  }
+
+  .mobileSquare {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: block;
+    width: 24px;
+    height: 24px;
+    border-radius: 2px;
+    background: currentColor;
+    pointer-events: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .control {
+    color: LinkText;
+  }
+
+  .control:focus-visible {
+    outline-color: Highlight;
+  }
+}

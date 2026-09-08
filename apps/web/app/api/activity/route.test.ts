@@ -2,12 +2,23 @@ import { describe, expect, test } from "bun:test";
 import { GET, dynamic, runtime } from "./route";
 
 describe("GET /api/activity route composition", () => {
-  test("is dynamic, Node-only, and rejects unauthenticated reads before SQL", async () => {
+  test("uses the Node runtime, stays dynamic, and rejects unauthenticated reads before CDP SQL", async () => {
     expect(runtime).toBe("nodejs");
     expect(dynamic).toBe("force-dynamic");
-    const response = await GET(new Request("http://127.0.0.1:3122/api/activity"));
+
+    const response = await GET(
+      new Request(
+        "http://127.0.0.1:3115/api/activity?to=2026-09-07T12%3A00%3A00.000Z",
+      ),
+    );
+
     expect(response.status).toBe(401);
-    expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
-    expect(response.headers.get("vary")).toBe("Authorization, X-Home-Account-Provider");
+    expect(response.headers.get("cache-control")).toBe(
+      "private, no-store, max-age=0",
+    );
+    expect(response.headers.get("pragma")).toBe("no-cache");
+    expect(response.headers.get("vary")).toBe(
+      "Authorization, X-Home-Account-Provider",
+    );
   });
 });

@@ -35,6 +35,7 @@ const unavailableState: OwnedPortfolioState = {
 export function usePortfolio(
   session: VerifiedPortfolioSession | null,
   fetchPortfolio: FetchPortfolio,
+  refreshTrigger?: string | number,
 ): PortfolioState {
   const sequence = useRef(0);
   const [state, setState] = useState<OwnedPortfolioState>(unavailableState);
@@ -96,7 +97,14 @@ export function usePortfolio(
     );
 
     return () => controller.abort();
-  }, [chainId, fetchPortfolio, ownerKey, smartAccountAddress, subject]);
+  }, [
+    chainId,
+    fetchPortfolio,
+    ownerKey,
+    refreshTrigger,
+    smartAccountAddress,
+    subject,
+  ]);
 
   if (state.ownerKey !== ownerKey) {
     setState(
