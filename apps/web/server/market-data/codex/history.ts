@@ -1,9 +1,4 @@
 import {
-  investAssets,
-  type InvestAsset,
-  type InvestAssetId,
-} from "@/config/invest-assets";
-import {
   CODEX_CACHE_TTL_MS,
   CODEX_GRAPHQL_ENDPOINT,
   CODEX_REQUEST_TIMEOUT_MS,
@@ -13,6 +8,9 @@ import { parseJsonWithNumberLexemes } from "./lossless-json";
 import {
   isMarketPriceRange,
   MARKET_PRICE_HISTORY_VERSION,
+  resolveMarketPriceAssetIdentity,
+  type MarketPriceAssetId,
+  type MarketPriceAssetIdentity,
   type MarketPriceHistoryPoint,
   type MarketPriceHistoryResponse,
   type MarketPriceRange,
@@ -57,6 +55,9 @@ type HistoryReaderOptions = {
   fetchImpl?: FetchLike;
   now?: Clock;
   timeoutMs?: number;
+  cacheTtlMs?: number;
+  cacheMaxEntries?: number;
+  maxInFlight?: number;
 };
 
 type CacheEntry = {
@@ -64,19 +65,17 @@ type CacheEntry = {
   response: MarketPriceHistoryResponse;
 };
 
-const assetById = new Map<InvestAssetId, InvestAsset>(
-  investAssets.map((asset) => [asset.id, asset]),
-);
-
-function isInvestAssetId(value: string): value is InvestAssetId {
-  return assetById.has(value as InvestAssetId);
-}
+export const CODEX_HISTORY_CACHE_MAX_ENTRIES = 64;
+export const CODEX_HISTORY_MAX_IN_FLIGHT = 8;
 
 export function createCodexMarketHistoryReader({
   apiKey,
   fetchImpl = fetch,
   now = () => new Date(),
   timeoutMs = CODEX_REQUEST_TIMEOUT_MS,
+  cacheTtlMs = CODEX_CACHE_TTL_MS,
+  cacheMaxEntries = CODEX_HISTORY_CACHE_MAX_ENTRIES,
+  maxInFlight = CODEX_HISTORY_MAX_IN_FLIGHT,
 }: HistoryReaderOptions) {
   const cache = new Map<string, CacheEntry>();
   const inFlight = new Map<string, Promise<MarketPriceHistoryResponse>>();
@@ -85,15 +84,16 @@ export function createCodexMarketHistoryReader({
     assetId: string,
     range: string,
   ): Promise<MarketPriceHistoryResponse> {
+    const identity = resolveMarketPriceAssetIdentity(assetId);
     if (!isMarketPriceRange(range)) {
       return createHistoryResponse({
-        assetId: isInvestAssetId(assetId) ? assetId : null,
+        assetId: identity?.assetId ?? null,
         range: null,
         status: "unavailable",
         unavailableReason: "invalid-range",
       });
     }
-    if (!isInvestAssetId(assetId)) {
+    if (!identity) {
       return createHistoryResponse({
         assetId: null,
         range,
@@ -103,25 +103,36 @@ export function createCodexMarketHistoryReader({
     }
     if (!apiKey?.trim()) {
       return createHistoryResponse({
-        assetId,
+        assetId: identity.assetId,
         range,
         status: "unavailable",
         unavailableReason: "not-configured",
       });
     }
 
-    const cacheKey = `${assetId}:${range}`;
+    const cacheKey = `${identity.assetId}:${range}`;
     const currentTime = now().getTime();
+    pruneExpiredCache(cache, currentTime, cacheTtlMs);
     const cached = cache.get(cacheKey);
-    if (cached && currentTime - cached.storedAt <= CODEX_CACHE_TTL_MS) {
+    if (cached) {
+      cache.delete(cacheKey);
+      cache.set(cacheKey, cached);
       return cached.response;
     }
     const pending = inFlight.get(cacheKey);
     if (pending) return pending;
+    if (inFlight.size >= maxInFlight) {
+      return createHistoryResponse({
+        assetId: identity.assetId,
+        range,
+        status: "unavailable",
+        unavailableReason: "overloaded",
+      });
+    }
 
     const request = fetchHistory({
       apiKey: apiKey.trim(),
-      asset: assetById.get(assetId)!,
+      identity,
       range,
       fetchImpl,
       now,
@@ -131,7 +142,12 @@ export function createCodexMarketHistoryReader({
 
     try {
       const response = await request;
-      cache.set(cacheKey, { storedAt: now().getTime(), response });
+      setBoundedCacheEntry(
+        cache,
+        cacheKey,
+        { storedAt: now().getTime(), response },
+        cacheMaxEntries,
+      );
       return response;
     } finally {
       inFlight.delete(cacheKey);
@@ -139,8 +155,34 @@ export function createCodexMarketHistoryReader({
   };
 }
 
+function pruneExpiredCache(
+  cache: Map<string, CacheEntry>,
+  currentTime: number,
+  cacheTtlMs: number,
+) {
+  for (const [key, entry] of cache) {
+    if (currentTime - entry.storedAt > cacheTtlMs) cache.delete(key);
+  }
+}
+
+function setBoundedCacheEntry(
+  cache: Map<string, CacheEntry>,
+  key: string,
+  entry: CacheEntry,
+  cacheMaxEntries: number,
+) {
+  if (cacheMaxEntries <= 0) return;
+  cache.delete(key);
+  while (cache.size >= cacheMaxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+  cache.set(key, entry);
+}
+
 export function createErrorMarketHistoryResponse(
-  assetId: InvestAssetId | null = null,
+  assetId: MarketPriceAssetId | null = null,
   range: MarketPriceRange | null = null,
 ): MarketPriceHistoryResponse {
   return createHistoryResponse({
@@ -173,14 +215,14 @@ export function clearCodexMarketHistoryCacheForTests() {
 
 async function fetchHistory({
   apiKey,
-  asset,
+  identity,
   range,
   fetchImpl,
   now,
   timeoutMs,
 }: {
   apiKey: string;
-  asset: InvestAsset;
+  identity: MarketPriceAssetIdentity;
   range: MarketPriceRange;
   fetchImpl: FetchLike;
   now: Clock;
@@ -192,7 +234,7 @@ async function fetchHistory({
   const from = to - window.durationSeconds;
   const payload = await executeCodexBars({
     apiKey,
-    symbol: `${asset.contractAddress.toLowerCase()}:${asset.chainId}`,
+    symbol: `${identity.contractAddress.toLowerCase()}:${identity.chainId}`,
     from,
     to,
     resolution: window.resolution,
@@ -202,7 +244,7 @@ async function fetchHistory({
   const points = normalizeBars(payload);
 
   return createHistoryResponse({
-    assetId: asset.id as InvestAssetId,
+    assetId: identity.assetId,
     range,
     fetchedAt: fetchedAt.toISOString(),
     status: points.length > 0 ? "ready" : "empty",
@@ -317,7 +359,7 @@ function createHistoryResponse({
   points = [],
   unavailableReason,
 }: {
-  assetId: InvestAssetId | null;
+  assetId: MarketPriceAssetId | null;
   range: MarketPriceRange | null;
   fetchedAt?: string | null;
   status: MarketPriceHistoryResponse["status"];
@@ -329,6 +371,7 @@ function createHistoryResponse({
     provider: "codex",
     assetId,
     range,
+    currency: "USD",
     fetchedAt,
     status,
     points,

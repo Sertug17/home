@@ -27,6 +27,7 @@ const {
   LIVELINE_PLOT_PADDING,
   LIVELINE_SWAP_SETTLE_MS,
   PriceChart,
+  formatChartValue,
   toLivelinePoints,
   visibleWindowSeconds,
 } = await import("./price-chart");
@@ -123,6 +124,7 @@ describe("PriceChart Liveline", () => {
       (range) => ranges.push(range),
     );
 
+    expect(within(document.body).getByText("USD")).toBeTruthy();
     const group = within(document.body).getByRole("group", { name: "Price range" });
     expect(group.textContent).toContain("1D");
     expect(group.textContent).toContain("1Y");
@@ -320,6 +322,15 @@ describe("PriceChart states", () => {
 });
 
 describe("Liveline adapters", () => {
+  test("formats chart values as explicit USD without collapsing tiny prices", () => {
+    expect(formatChartValue(64210)).toBe("$64.21K");
+    expect(formatChartValue(0.0123456)).toBe("$0.012346");
+    expect(formatChartValue(0.00001234)).toBe("$0.00001234");
+    expect(formatChartValue(1.234e-7)).toBe("$0.0000001234");
+    expect(formatChartValue(2e-7)).toBe("$0.0000002");
+    expect(formatChartValue(3e-7)).toBe("$0.0000003");
+  });
+
   test("converts ISO points to unix-second Liveline points", () => {
     expect(
       toLivelinePoints([

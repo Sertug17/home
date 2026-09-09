@@ -3,39 +3,41 @@ import {
   getCodexMarketHistory,
 } from "@/server/market-data/codex/history";
 import {
+  isDynamicMarketPriceAssetId,
   isMarketPriceRange,
+  matchesMarketPriceAssetIdentity,
+  resolveMarketPriceAssetIdentity,
   type MarketPriceHistoryResponse,
   type MarketPriceRange,
 } from "@/server/market-data/codex/history-contract";
-import { investAssets, type InvestAssetId } from "@/config/invest-assets";
-
-const allowedAssetIds = new Set<string>(investAssets.map((asset) => asset.id));
-
-function isInvestAssetId(value: string): value is InvestAssetId {
-  return allowedAssetIds.has(value);
-}
+import {
+  getCodexTrendingMemes,
+  type TrendingMemesResult,
+} from "@/server/market-data/codex/trending";
 
 type HistoryReader = (
   assetId: string,
   range: string,
 ) => Promise<MarketPriceHistoryResponse>;
+type DynamicCatalogReader = () => Promise<TrendingMemesResult>;
 
 export function createMarketPriceHistoryHandler(
   readHistory: HistoryReader = getCodexMarketHistory,
+  readDynamicCatalog: DynamicCatalogReader = getCodexTrendingMemes,
 ) {
   return async function GET(request: Request) {
     const url = new URL(request.url);
     const assetId = url.searchParams.get("assetId") ?? "";
     const range = url.searchParams.get("range") ?? "";
-    const knownAsset = isInvestAssetId(assetId);
+    const identity = resolveMarketPriceAssetIdentity(assetId);
     const knownRange = isMarketPriceRange(range);
 
-    if (!knownAsset || !knownRange) {
+    if (!identity || !knownRange) {
       return Response.json(
         createUnavailableQueryResponse(
-          knownAsset ? assetId : null,
+          identity?.assetId ?? null,
           knownRange ? range : null,
-          knownAsset ? "invalid-range" : "unknown-asset",
+          identity ? "invalid-range" : "unknown-asset",
         ),
         {
           status: 400,
@@ -44,8 +46,62 @@ export function createMarketPriceHistoryHandler(
       );
     }
 
+    if (isDynamicMarketPriceAssetId(identity.assetId)) {
+      try {
+        const catalog = await readDynamicCatalog();
+        const admitted =
+          catalog.status === "ready" &&
+          (catalog.assets.some(
+            (asset) =>
+              asset.id === identity.assetId &&
+              matchesMarketPriceAssetIdentity(asset),
+          ) ||
+            catalog.snapshots.some(
+              (snapshot) => snapshot.assetId === identity.assetId,
+            ));
+        if (!admitted) {
+          return Response.json(
+            createUnavailableQueryResponse(
+              identity.assetId,
+              range,
+              "unknown-asset",
+            ),
+            {
+              status: 404,
+              headers: { "Cache-Control": "no-store" },
+            },
+          );
+        }
+      } catch {
+        return Response.json(
+          createUnavailableQueryResponse(
+            identity.assetId,
+            range,
+            "unknown-asset",
+          ),
+          {
+            status: 404,
+            headers: { "Cache-Control": "no-store" },
+          },
+        );
+      }
+    }
+
     try {
-      const payload = await readHistory(assetId, range);
+      const payload = await readHistory(identity.assetId, range);
+      if (
+        payload.assetId !== identity.assetId ||
+        payload.range !== range ||
+        payload.currency !== "USD"
+      ) {
+        throw new Error("History reader returned mismatched identity");
+      }
+      if (payload.unavailableReason === "overloaded") {
+        return Response.json(payload, {
+          status: 503,
+          headers: { "Cache-Control": "no-store" },
+        });
+      }
       const cacheControl = payload.unavailableReason
         ? "public, max-age=30"
         : "public, max-age=30, stale-while-revalidate=30";
@@ -53,7 +109,7 @@ export function createMarketPriceHistoryHandler(
         headers: { "Cache-Control": cacheControl },
       });
     } catch {
-      return Response.json(createErrorMarketHistoryResponse(assetId, range), {
+      return Response.json(createErrorMarketHistoryResponse(identity.assetId, range), {
         status: 502,
         headers: { "Cache-Control": "no-store" },
       });
@@ -71,6 +127,7 @@ function createUnavailableQueryResponse(
     provider: "codex",
     assetId,
     range,
+    currency: "USD",
     fetchedAt: null,
     status: "unavailable",
     points: [],
