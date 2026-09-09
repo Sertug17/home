@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { investAssets } from "@/config/invest-assets";
 import {
+  presentationRegions,
+  type FiatCurrencyCode,
+} from "@/config/regions";
+import {
   MARKET_PRICE_DISPLAY_FRESHNESS_MS,
   MARKET_PRICES_VERSION,
   type MarketPricesResponse,
@@ -11,7 +15,18 @@ import {
   unavailableMarketData,
   type MarketDataState,
   type MarketSnapshot,
+  type PresentationFxQuote,
 } from "./invest-market";
+
+const presentationFiatCodes = new Set<FiatCurrencyCode>(
+  Object.values(presentationRegions).flatMap((region) =>
+    region.currency.code ? [region.currency.code] : [],
+  ),
+);
+
+function isFiatCurrencyCode(value: string): value is FiatCurrencyCode {
+  return presentationFiatCodes.has(value as FiatCurrencyCode);
+}
 
 const MARKET_PRICES_ENDPOINT = "/api/market-prices";
 const VISIBILITY_REFRESH_COOLDOWN_MS = 60_000;
@@ -27,6 +42,7 @@ export type PricedInvestMarketProps = {
   stockMarket: MarketDataState;
   memeMarket: MarketDataState;
   cryptoMarket?: MarketDataState;
+  fx: readonly PresentationFxQuote[] | null;
 };
 
 export type UseMarketPricesOptions = {
@@ -111,6 +127,7 @@ export function useMarketPrices({
     const marketProps: PricedInvestMarketProps = {
       stockMarket: marketResponse.markets.stock ?? unavailableMarketData,
       memeMarket: marketResponse.markets.meme ?? unavailableMarketData,
+      fx: marketResponse.fx ?? null,
     };
     if (categories.includes("crypto" as (typeof categories)[number])) {
       marketProps.cryptoMarket =
@@ -207,6 +224,9 @@ function parseMarketPricesResponse(value: unknown): MarketPricesResponse | null 
     markets[category] = market;
   }
 
+  const fx = parseFxQuotes(record.fx);
+  if (record.fx !== undefined && fx === null) return null;
+
   return {
     version: MARKET_PRICES_VERSION,
     provider: "codex",
@@ -215,7 +235,62 @@ function parseMarketPricesResponse(value: unknown): MarketPricesResponse | null 
       ? { unavailableReason: "not-configured" as const }
       : {}),
     markets,
+    ...(fx ? { fx } : {}),
   };
+}
+
+function parseFxQuotes(value: unknown): PresentationFxQuote[] | null {
+  if (value === undefined) return null;
+  if (!Array.isArray(value)) return null;
+  const quotes: PresentationFxQuote[] = [];
+  for (const item of value) {
+    const record = readRecord(item);
+    if (
+      !record ||
+      typeof record.quoteCurrency !== "string" ||
+      !isFiatCurrencyCode(record.quoteCurrency) ||
+      (record.status !== "fresh" && record.status !== "unavailable")
+    ) {
+      return null;
+    }
+    if (record.status === "unavailable") {
+      if (record.quoteUnitsPerUsd !== null && record.quoteUnitsPerUsd !== undefined) {
+        return null;
+      }
+      quotes.push({
+        quoteCurrency: record.quoteCurrency,
+        quoteUnitsPerUsd: null,
+        status: "unavailable",
+      });
+      continue;
+    }
+    const factor = readExactScale(record.quoteUnitsPerUsd);
+    if (!factor) return null;
+    quotes.push({
+      quoteCurrency: record.quoteCurrency,
+      quoteUnitsPerUsd: factor,
+      status: "fresh",
+    });
+  }
+  return quotes;
+}
+
+function readExactScale(
+  value: unknown,
+): { atoms: string; scale: number } | null {
+  const record = readRecord(value);
+  if (
+    !record ||
+    typeof record.atoms !== "string" ||
+    !/^(?:0|[1-9]\d*)$/.test(record.atoms) ||
+    typeof record.scale !== "number" ||
+    !Number.isSafeInteger(record.scale) ||
+    record.scale < 0 ||
+    record.scale > 10_000
+  ) {
+    return null;
+  }
+  return { atoms: record.atoms, scale: record.scale };
 }
 
 function parseMarketState(value: unknown): MarketDataState | null {
