@@ -1155,6 +1155,12 @@ describe("login-state home experience", () => {
           success: true,
         });
       }
+      if (input === "/api/actions/operations?scope=unresolved-send&limit=50") {
+        return Response.json({ scope: "unresolved-send", operations: [] });
+      }
+      if (input === "/api/actions/operations") {
+        return Response.json({ operations: [] });
+      }
       if (input === "/api/actions/send/prepare") {
         const request = JSON.parse(String(init?.body)) as {
           recipient: `0x${string}`;
@@ -1241,7 +1247,7 @@ describe("login-state home experience", () => {
         name: digit === "." ? "Decimal point" : digit,
       }));
     }
-    fireEvent.click(page().getByRole("button", { name: "Continue" }));
+    fireEvent.click(await page().findByRole("button", { name: "Continue" }));
     fireEvent.change(page().getByLabelText("To"), {
       target: { value: ADDRESS_B },
     });
@@ -1313,6 +1319,9 @@ describe("login-state home experience", () => {
     const sessionFetch: SessionFetch = async (input) => {
       if (input === "/api/session") return Response.json(session());
       if (String(input).startsWith("/api/activity?")) return Response.json(activityPage(input));
+      if (input === "/api/actions/operations?scope=unresolved-send&limit=50") {
+        return Response.json({ scope: "unresolved-send", operations: [unresolved] });
+      }
       if (input === "/api/actions/operations") return Response.json({ operations: [unresolved] });
       if (input === `/api/actions/${actionId}`) {
         return Response.json({

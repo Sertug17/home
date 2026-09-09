@@ -23,7 +23,7 @@ type TransferWallet = Pick<
   | "sendTransfer"
   | "checkPendingTransfer"
   | "startNewTransfer"
->;
+> & Partial<Pick<AccountWalletClient, "prepareMoneyAction" | "executeMoneyAction" | "fetchAccountResource">>;
 
 function verifiedWallet(
   sendTransfer: TransferWallet["sendTransfer"] = async (request) => ({
@@ -50,10 +50,47 @@ function verifiedWallet(
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
+}
+
+function preparedSendAction(options: { expiresAt?: string; ownerAddress?: `0x${string}` } = {}) {
+  const recipientData = `${RECIPIENT.slice(2).padStart(64, "0")}${BigInt(100000).toString(16).padStart(64, "0")}`;
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    reviewHash: "a".repeat(64),
+    owner: {
+      subject: "subject-a",
+      address: options.ownerAddress ?? ADDRESS,
+      chainId: 8453 as const,
+      accountProvider: "cdp-embedded" as const,
+    },
+    kind: "send" as const,
+    title: "Send USDC",
+    calls: [{
+      to: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" as const,
+      data: `0xa9059cbb${recipientData}` as `0x${string}`,
+      value: "0",
+    }],
+    amounts: [{
+      assetId: "usdc" as const,
+      symbol: "USDC",
+      decimals: 6,
+      amountBaseUnits: "100000",
+      direction: "spend" as const,
+    }],
+    warnings: ["Network fee shown by wallet."],
+    createdAt: "2026-09-08T05:00:00.000Z",
+    expiresAt: options.expiresAt ?? "2026-12-08T05:10:00.000Z",
+  };
+}
+
+function unresolvedSendResponse(operations: unknown[] = []) {
+  return { scope: "unresolved-send", operations };
 }
 
 function page() {
@@ -69,7 +106,7 @@ function typeAmount(digits: string) {
 }
 
 function composeSend(options: { asset?: "usdc" | "eth"; amount: string; recipient?: string }) {
-    fireEvent.click(page().getByRole("button", { name: "Send" }));
+  fireEvent.click(page().getByRole("button", { name: "Send" }));
     expect(page().getByRole("dialog", { name: "Send" })).toBeTruthy();
     expect(page().queryByRole("button", { name: "Back" })).toBeNull();
   if (options.asset === "eth") {
@@ -83,6 +120,23 @@ function composeSend(options: { asset?: "usdc" | "eth"; amount: string; recipien
     target: { value: options.recipient ?? RECIPIENT },
   });
   fireEvent.click(page().getByRole("button", { name: "Continue" }));
+}
+
+async function composeDurableSend(options: { asset?: "usdc" | "eth"; amount: string; recipient?: string }) {
+  fireEvent.click(page().getByRole("button", { name: "Send" }));
+  await page().findByRole("button", { name: "Continue" });
+  if (options.asset === "eth") {
+    fireEvent.change(page().getByLabelText("Asset"), { target: { value: "eth" } });
+  }
+  typeAmount(options.amount);
+  fireEvent.click(page().getByRole("button", { name: "Continue" }));
+  fireEvent.change(page().getByLabelText("To"), {
+    target: { value: options.recipient ?? RECIPIENT },
+  });
+  await act(async () => {
+    fireEvent.click(page().getByRole("button", { name: "Continue" }));
+    await Promise.resolve();
+  });
 }
 
 afterEach(() => {
@@ -212,36 +266,10 @@ describe("TransferActions modals", () => {
   });
 
   test("reopens an unresolved durable send as Check status recover, not a second prepare", async () => {
-    const recipientData = `${RECIPIENT.slice(2).padStart(64, "0")}${BigInt(100000).toString(16).padStart(64, "0")}`;
-    const action = {
-      id: "11111111-1111-4111-8111-111111111111",
-      reviewHash: "a".repeat(64),
-      owner: {
-        subject: "subject-a",
-        address: ADDRESS,
-        chainId: 8453 as const,
-        accountProvider: "cdp-embedded" as const,
-      },
-      kind: "send" as const,
-      title: "Send USDC",
-      calls: [{
-        to: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" as const,
-        data: `0xa9059cbb${recipientData}` as `0x${string}`,
-        value: "0",
-      }],
-      amounts: [{
-        assetId: "usdc" as const,
-        symbol: "USDC",
-        decimals: 6,
-        amountBaseUnits: "100000",
-        direction: "spend" as const,
-      }],
-      warnings: ["Network fee shown by wallet."],
-      createdAt: "2026-09-08T05:00:00.000Z",
-      expiresAt: "2026-12-08T05:10:00.000Z",
-    };
+    const action = preparedSendAction();
     let prepares = 0;
     let executes = 0;
+    let historyPath = "";
     render(
       <TransferActionsForWallet
         wallet={{
@@ -254,15 +282,16 @@ describe("TransferActions modals", () => {
             executes += 1;
             return { id: action.id, status: "unknown" };
           },
-          fetchOperations: async () => ({
-            operations: [{
+          fetchAccountResource: async (path) => {
+            historyPath = path;
+            return unresolvedSendResponse([{
               action,
               status: "submitting",
               attemptCount: 1,
               createdAt: action.createdAt,
               updatedAt: action.createdAt,
-            }],
-          }),
+            }]);
+          },
         }}
       />,
     );
@@ -271,9 +300,247 @@ describe("TransferActions modals", () => {
     expect(await page().findByRole("button", { name: "Check status" })).toBeTruthy();
     expect(page().getByRole("alert").textContent).toMatch(/do not submit it again/);
     expect(page().queryByRole("button", { name: "Send $0.10" })).toBeNull();
+    expect(historyPath).toBe("/api/actions/operations?scope=unresolved-send&limit=50");
     fireEvent.click(page().getByRole("button", { name: "Check status" }));
     await waitFor(() => expect(executes).toBe(1));
     expect(prepares).toBe(0);
+  });
+
+  test("blocks a fresh durable send while history is pending even if Continue is raced", async () => {
+    const history = deferred<unknown>();
+    const action = preparedSendAction();
+    let prepares = 0;
+    render(
+      <TransferActionsForWallet
+        wallet={{
+          ...verifiedWallet(),
+          fetchAccountResource: async () => history.promise,
+          prepareMoneyAction: async () => {
+            prepares += 1;
+            return action;
+          },
+          executeMoneyAction: async () => ({ id: action.id, status: "unknown" }),
+        }}
+      />,
+    );
+
+    fireEvent.click(page().getByRole("button", { name: "Send" }));
+    typeAmount("1");
+    const checking = page().getByRole("button", { name: "Checking recent sends…" }) as HTMLButtonElement;
+    expect(checking.disabled).toBe(true);
+    fireEvent.click(checking);
+    expect(prepares).toBe(0);
+
+    await act(async () => {
+      history.resolve(unresolvedSendResponse());
+      await history.promise;
+    });
+    fireEvent.click(page().getByRole("button", { name: "Continue" }));
+    fireEvent.change(page().getByLabelText("To"), { target: { value: RECIPIENT } });
+    fireEvent.click(page().getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(prepares).toBe(1));
+  });
+
+  test("fails closed on rejected history and allows an explicit retry", async () => {
+    const firstHistory = deferred<unknown>();
+    let historyCalls = 0;
+    const action = preparedSendAction();
+    render(
+      <TransferActionsForWallet
+        wallet={{
+          ...verifiedWallet(),
+          fetchAccountResource: async () => {
+            historyCalls += 1;
+            if (historyCalls === 1) return firstHistory.promise;
+            return unresolvedSendResponse();
+          },
+          prepareMoneyAction: async () => action,
+          executeMoneyAction: async () => ({ id: action.id, status: "unknown" }),
+        }}
+      />,
+    );
+
+    fireEvent.click(page().getByRole("button", { name: "Send" }));
+    await act(async () => {
+      firstHistory.reject(new Error("history unavailable"));
+      try { await firstHistory.promise; } catch {}
+    });
+    expect(page().getByRole("alert").textContent).toMatch(/couldn’t be checked/);
+    expect(page().queryByRole("button", { name: "Continue" })).toBeNull();
+    fireEvent.click(page().getByRole("button", { name: "Retry recent sends" }));
+    await page().findByRole("button", { name: "Continue" });
+    expect(historyCalls).toBe(2);
+  });
+
+  test("does not fall back to the legacy sender when durable prepare exists without history", async () => {
+    const action = preparedSendAction();
+    let prepares = 0;
+    let legacySends = 0;
+    render(
+      <TransferActionsForWallet
+        wallet={{
+          ...verifiedWallet(async (request) => {
+            legacySends += 1;
+            return { ...request, transactionHash: HASH };
+          }),
+          prepareMoneyAction: async () => {
+            prepares += 1;
+            return action;
+          },
+          executeMoneyAction: async () => ({ id: action.id, status: "unknown" }),
+        }}
+      />,
+    );
+
+    fireEvent.click(page().getByRole("button", { name: "Send" }));
+    expect(page().getByRole("alert").textContent).toMatch(/couldn’t be checked/);
+    expect(page().getByRole("button", { name: "Retry recent sends" })).toBeTruthy();
+    expect(prepares).toBe(0);
+    expect(legacySends).toBe(0);
+  });
+
+  test("fails closed when recent-operation history is malformed", async () => {
+    const action = preparedSendAction();
+    render(
+      <TransferActionsForWallet
+        wallet={{
+          ...verifiedWallet(),
+          fetchAccountResource: async () => unresolvedSendResponse([{ status: "submitting", action: null }]),
+          prepareMoneyAction: async () => action,
+          executeMoneyAction: async () => ({ id: action.id, status: "unknown" }),
+        }}
+      />,
+    );
+
+    fireEvent.click(page().getByRole("button", { name: "Send" }));
+    expect((await page().findByRole("alert")).textContent).toMatch(/invalid response/);
+    expect(page().getByRole("button", { name: "Retry recent sends" })).toBeTruthy();
+    expect(page().queryByRole("button", { name: "Continue" })).toBeNull();
+  });
+
+  test("does not accept generic recent history as complete send-recovery evidence", async () => {
+    const action = preparedSendAction();
+    let prepares = 0;
+    render(
+      <TransferActionsForWallet
+        wallet={{
+          ...verifiedWallet(),
+          fetchAccountResource: async () => ({ operations: [] }),
+          prepareMoneyAction: async () => {
+            prepares += 1;
+            return action;
+          },
+          executeMoneyAction: async () => ({ id: action.id, status: "unknown" }),
+        }}
+      />,
+    );
+
+    fireEvent.click(page().getByRole("button", { name: "Send" }));
+    expect((await page().findByRole("alert")).textContent).toMatch(/invalid response/);
+    expect(page().getByRole("button", { name: "Retry recent sends" })).toBeTruthy();
+    expect(prepares).toBe(0);
+  });
+
+  test("does not let an old owner's deferred history reopen recovery after the owner changes", async () => {
+    const oldHistory = deferred<unknown>();
+    const oldAction = preparedSendAction();
+    const nextAddress = "0x3333333333333333333333333333333333333333" as const;
+    const view = render(
+      <TransferActionsForWallet
+        wallet={{
+          ...verifiedWallet(),
+          fetchAccountResource: async () => oldHistory.promise,
+          prepareMoneyAction: async () => oldAction,
+          executeMoneyAction: async () => ({ id: oldAction.id, status: "unknown" }),
+        }}
+      />,
+    );
+    fireEvent.click(page().getByRole("button", { name: "Send" }));
+    expect(page().getByRole("status").textContent).toBe("Checking recent sends…");
+
+    const nextAction = preparedSendAction({ ownerAddress: nextAddress });
+    view.rerender(
+      <TransferActionsForWallet
+        wallet={{
+          ...verifiedWallet(),
+          ownerKey: "owner-b",
+          session: {
+            user: { subject: "subject-b" },
+            smartAccount: { address: nextAddress, chainId: 8453 },
+            accountProvider: "cdp-embedded",
+          },
+          fetchAccountResource: async () => unresolvedSendResponse(),
+          prepareMoneyAction: async () => nextAction,
+          executeMoneyAction: async () => ({ id: nextAction.id, status: "unknown" }),
+        }}
+      />,
+    );
+    expect(page().queryByRole("dialog", { name: "Send" })).toBeNull();
+    fireEvent.click(page().getByRole("button", { name: "Send" }));
+    await page().findByRole("button", { name: "Continue" });
+
+    await act(async () => {
+      oldHistory.resolve(unresolvedSendResponse([{ action: oldAction, status: "submitting" }]));
+      await oldHistory.promise;
+    });
+    expect(page().queryByRole("button", { name: "Check status" })).toBeNull();
+    expect(page().getByRole("button", { name: "Continue" })).toBeTruthy();
+  });
+
+  test("reports preparation failure without claiming the wallet was opened", async () => {
+    const action = preparedSendAction();
+    let walletExecutions = 0;
+    render(
+      <TransferActionsForWallet
+        wallet={{
+          ...verifiedWallet(),
+          fetchAccountResource: async () => unresolvedSendResponse(),
+          prepareMoneyAction: async () => { throw new Error("server unavailable"); },
+          executeMoneyAction: async () => {
+            walletExecutions += 1;
+            return { id: action.id, status: "unknown" };
+          },
+        }}
+      />,
+    );
+
+    await composeDurableSend({ amount: "1" });
+    expect((await page().findByRole("alert")).textContent).toMatch(/couldn’t prepare.*wallet was not asked/i);
+    expect(page().getByLabelText("To")).toBeTruthy();
+    expect(walletExecutions).toBe(0);
+  });
+
+  test("rechecks prepared expiry synchronously before dispatch", async () => {
+    const originalNow = Date.now;
+    let now = Date.parse("2026-09-09T12:00:00.000Z");
+    Date.now = () => now;
+    try {
+      const action = preparedSendAction({ expiresAt: "2026-09-09T12:00:01.000Z" });
+      let executions = 0;
+      render(
+        <TransferActionsForWallet
+          wallet={{
+            ...verifiedWallet(),
+            fetchAccountResource: async () => unresolvedSendResponse(),
+            prepareMoneyAction: async () => action,
+            executeMoneyAction: async () => {
+              executions += 1;
+              return { id: action.id, status: "unknown" };
+            },
+          }}
+        />,
+      );
+
+      await composeDurableSend({ amount: "0.1" });
+      await page().findByRole("button", { name: "Send $0.10" });
+      now = Date.parse("2026-09-09T12:00:02.000Z");
+      fireEvent.click(page().getByRole("button", { name: "Send $0.10" }));
+      expect(executions).toBe(0);
+      expect(page().getByRole("button", { name: "Check send status" })).toBeTruthy();
+      expect(page().getAllByRole("alert").some((alert) => /expired/.test(alert.textContent ?? ""))).toBe(true);
+    } finally {
+      Date.now = originalNow;
+    }
   });
 
   test("closes Send from step 1 with × and keeps Back off that step", () => {
