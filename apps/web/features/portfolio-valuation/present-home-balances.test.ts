@@ -136,30 +136,52 @@ describe("presentPortfolioValuation", () => {
     expect(serialized).not.toContain("Unavailable");
   });
 
-  test("keeps unpriced cash visibly unpriced instead of treating token units as fiat", () => {
+  test("shows known unpriced cash quantities as tokens, not fiat", () => {
     const presented = presentPortfolioValuation({
       status: "ready",
       snapshot: snapshot({
         cashBuckets: [
           {
-            id: "cash:usd",
-            roles: ["canonical-usd"],
-            assetKey: "eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-            symbol: "USDC",
-            denominationCurrency: "USD",
-            tokenAmountBaseUnits: "100000000",
-            tokenDecimals: 6,
+            id: "cash:idrx",
+            roles: ["selected-local"],
+            assetKey: verifiedLocalCashAssets.IDR.assetKey,
+            symbol: "IDRX",
+            denominationCurrency: "IDR",
+            tokenAmountBaseUnits: "250000",
+            tokenDecimals: 2,
             indicativeValue: null,
             valuationStatus: "unpriced",
           },
           {
-            id: "cash:eur",
+            id: "cash:idrx-zero",
             roles: ["selected-local"],
-            assetKey: "eip155:8453/erc20:0x60a3e35cc302bfa44cb288bc5a4f316e2f531371",
-            symbol: "EURC",
-            denominationCurrency: "EUR",
-            tokenAmountBaseUnits: "25000000",
-            tokenDecimals: 6,
+            assetKey: verifiedLocalCashAssets.IDR.assetKey,
+            symbol: "IDRX",
+            denominationCurrency: "IDR",
+            tokenAmountBaseUnits: "0",
+            tokenDecimals: 2,
+            indicativeValue: null,
+            valuationStatus: "unpriced",
+          },
+          {
+            id: "cash:idrx-unknown-amount",
+            roles: ["selected-local"],
+            assetKey: verifiedLocalCashAssets.IDR.assetKey,
+            symbol: "IDRX",
+            denominationCurrency: "IDR",
+            tokenAmountBaseUnits: null,
+            tokenDecimals: 2,
+            indicativeValue: null,
+            valuationStatus: "unpriced",
+          },
+          {
+            id: "cash:idrx-unknown-decimals",
+            roles: ["selected-local"],
+            assetKey: verifiedLocalCashAssets.IDR.assetKey,
+            symbol: "IDRX",
+            denominationCurrency: "IDR",
+            tokenAmountBaseUnits: "250000",
+            tokenDecimals: null,
             indicativeValue: null,
             valuationStatus: "unpriced",
           },
@@ -169,15 +191,20 @@ describe("presentPortfolioValuation", () => {
     });
 
     expect(presented.items.map((item) => item.displayBalance)).toEqual([
+      "2,500.00 IDRX",
+      "0.00 IDRX",
       "—",
       "—",
     ]);
-    expect(presented.items.every((item) => item.tone === "muted")).toBe(true);
+    expect(presented.items.map((item) => item.tone)).toEqual([
+      undefined,
+      undefined,
+      "muted",
+      "muted",
+    ]);
     const serialized = JSON.stringify(presented);
-    expect(serialized).not.toContain("$100");
-    expect(serialized).not.toContain("€25");
-    expect(serialized).not.toContain("100.00");
-    expect(serialized).not.toContain("25.00");
+    expect(serialized).not.toContain("Rp 2,500");
+    expect(serialized).not.toContain("indicativeValue");
   });
 
   test("marks a failed cash read as unavailable without inventing a fiat amount", () => {
@@ -191,7 +218,7 @@ describe("presentPortfolioValuation", () => {
             assetKey: "eip155:8453/erc20:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
             symbol: "USDC",
             denominationCurrency: "USD",
-            tokenAmountBaseUnits: null,
+            tokenAmountBaseUnits: "100000000",
             tokenDecimals: 6,
             indicativeValue: null,
             valuationStatus: "read-unavailable",
@@ -569,6 +596,74 @@ describe("presentPortfolioValuation", () => {
     expect(presented.items.map((item) => [item.group, item.name, item.displayBalance])).toEqual([
       ["cash", "US dollar", "$10.00"],
       ["asset", "Indonesian rupiah", "100.00 IDRX"],
+    ]);
+  });
+
+  test("emits only transient membership hints for unread eligible asset rows", () => {
+    const presented = presentPortfolioValuation({
+      status: "ready",
+      snapshot: snapshot({
+        selectedRegion: "US",
+        quoteCurrency: "USD",
+        inventory: {
+          scope: "configured-base-assets-v1",
+          walletDiscoveryComplete: false,
+          holdings: [
+            directHolding({
+              id: nativeEthAsset.id,
+              assetKey: PORTFOLIO_NATIVE_ASSET_KEY,
+              name: nativeEthAsset.name,
+              symbol: nativeEthAsset.symbol,
+              balanceBaseUnits: null,
+              readStatus: "unavailable",
+            }),
+            directHolding({
+              id: verifiedLocalCashAssets.EUR.id,
+              assetKey: verifiedLocalCashAssets.EUR.assetKey,
+              name: verifiedLocalCashAssets.EUR.name,
+              symbol: verifiedLocalCashAssets.EUR.symbol,
+              decimals: verifiedLocalCashAssets.EUR.decimals,
+              assetKind: "erc20",
+              contractAddress: verifiedLocalCashAssets.EUR.contractAddress,
+              cashCurrency: "EUR",
+              balanceBaseUnits: null,
+              readStatus: "unavailable",
+            }),
+            directHolding({
+              id: verifiedLocalCashAssets.IDR.id,
+              assetKey: verifiedLocalCashAssets.IDR.assetKey,
+              name: verifiedLocalCashAssets.IDR.name,
+              symbol: verifiedLocalCashAssets.IDR.symbol,
+              decimals: verifiedLocalCashAssets.IDR.decimals,
+              assetKind: "erc20",
+              contractAddress: verifiedLocalCashAssets.IDR.contractAddress,
+              cashCurrency: "IDR",
+              balanceBaseUnits: "0",
+            }),
+          ],
+          omissions: [],
+        },
+        cashBuckets: [
+          {
+            id: "cash:usd",
+            roles: ["canonical-usd", "selected-local"],
+            assetKey: PORTFOLIO_USDC_ASSET_KEY,
+            symbol: "USDC",
+            denominationCurrency: "USD",
+            tokenAmountBaseUnits: "10000000",
+            tokenDecimals: 6,
+            indicativeValue: { atoms: "10000000", scale: 6 },
+            valuationStatus: "priced",
+          },
+        ],
+      }),
+      error: null,
+    });
+
+    expect(presented.items).toHaveLength(1);
+    expect(presented.unavailableItemIds).toEqual([
+      `asset:${PORTFOLIO_NATIVE_ASSET_KEY}`,
+      `asset:${verifiedLocalCashAssets.EUR.assetKey}`,
     ]);
   });
 

@@ -28,6 +28,8 @@ export type HomeAssetBalancesPresentation = {
   statusLabel?: string;
   items: readonly HomeAssetBalanceItem[];
   revalidating?: true;
+  /** Current-snapshot membership hints; never written to the presentation cache. */
+  unavailableItemIds?: readonly string[];
 };
 
 export function presentPortfolioValuation(
@@ -69,6 +71,7 @@ export function presentPortfolioValuation(
       ...snapshot.cashBuckets.map(presentCashBucket),
       ...presentAssetRows(snapshot),
     ],
+    ...presentUnavailableAssetRowIds(snapshot),
   };
 }
 
@@ -87,6 +90,17 @@ function presentCashBucket(bucket: CashBucket): HomeAssetBalanceItem {
     };
   }
 
+  if (bucket.valuationStatus === "read-unavailable") {
+    return {
+      id: bucket.id,
+      group: "cash",
+      name,
+      displayBalance: "Unavailable",
+      currencyCode: bucket.denominationCurrency,
+      tone: "error",
+    };
+  }
+
   if (bucket.indicativeValue) {
     return {
       id: bucket.id,
@@ -100,26 +114,42 @@ function presentCashBucket(bucket: CashBucket): HomeAssetBalanceItem {
     };
   }
 
-  const readFailed = bucket.valuationStatus === "read-unavailable";
+  const tokenAmount = unpricedCashTokenAmount(bucket);
   return {
     id: bucket.id,
     group: "cash",
     name,
-    displayBalance: readFailed ? "Unavailable" : "—",
+    displayBalance: tokenAmount ?? "—",
     currencyCode: bucket.denominationCurrency,
-    tone: readFailed ? "error" : "muted",
+    ...(tokenAmount ? {} : { tone: "muted" as const }),
   };
+}
+
+function unpricedCashTokenAmount(bucket: CashBucket): string | null {
+  if (
+    bucket.valuationStatus !== "unpriced" ||
+    bucket.tokenAmountBaseUnits === null ||
+    bucket.tokenDecimals === null ||
+    !/^(?:0|[1-9]\d*)$/.test(bucket.tokenAmountBaseUnits) ||
+    !Number.isSafeInteger(bucket.tokenDecimals) ||
+    bucket.tokenDecimals < 0 ||
+    bucket.tokenDecimals > 255
+  ) {
+    return null;
+  }
+
+  return formatPresentationTokenAmount(
+    bucket.tokenAmountBaseUnits,
+    bucket.tokenDecimals,
+    bucket.symbol,
+    { cashCurrency: bucket.denominationCurrency },
+  );
 }
 
 function presentAssetRows(
   snapshot: PortfolioValuationSnapshot,
 ): HomeAssetBalanceItem[] {
-  const cashAssetKeys = new Set<string>(
-    snapshot.cashBuckets.flatMap((bucket) =>
-      bucket.assetKey ? [bucket.assetKey] : [],
-    ),
-  );
-
+  const cashAssetKeys = selectedCashAssetKeys(snapshot);
   const items: HomeAssetBalanceItem[] = [];
   for (const holding of snapshot.inventory.holdings) {
     if (holding.kind !== "direct") continue;
@@ -159,6 +189,32 @@ function presentAssetRows(
     });
   }
   return items;
+}
+
+function presentUnavailableAssetRowIds(
+  snapshot: PortfolioValuationSnapshot,
+): Pick<HomeAssetBalancesPresentation, "unavailableItemIds"> {
+  const cashAssetKeys = selectedCashAssetKeys(snapshot);
+  const unavailableItemIds = snapshot.inventory.holdings.flatMap((holding) => {
+    if (holding.kind !== "direct") return [];
+    const isNative = holding.assetKind === "native";
+    const isNonselectedLocalCash =
+      holding.cashCurrency !== null && !cashAssetKeys.has(holding.assetKey);
+    if (!isNative && !isNonselectedLocalCash) return [];
+    if (holding.readStatus === "ready" && holding.balanceBaseUnits !== null) {
+      return [];
+    }
+    return [`asset:${holding.assetKey}`];
+  });
+  return unavailableItemIds.length > 0 ? { unavailableItemIds } : {};
+}
+
+function selectedCashAssetKeys(snapshot: PortfolioValuationSnapshot): Set<string> {
+  return new Set(
+    snapshot.cashBuckets.flatMap((bucket) =>
+      bucket.assetKey ? [bucket.assetKey] : [],
+    ),
+  );
 }
 
 function pricedDisplayFiat(
