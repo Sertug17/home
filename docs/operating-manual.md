@@ -103,6 +103,17 @@ Then leave only the single current `status:*`.
 
 Stay in your lane. Shared files are listed in the [architecture review](architecture-review-2026-09.md#appendix--merge-hotspots-coordinate-dont-both-edit); do not both edit a hotspot.
 
+### Board is source of truth
+
+Jesse-locked with Hannah, September 9, 2026. Issues and PR labels (`owner:*` / one `status:*` / `lane:*`) are the board.
+
+- Soft merge order, Design HOLD, smoke fails, and blockers land on the issue or PR (comment + label flip) before or instead of crew DMs. DMs, 1:1s, and babysitter are coordination, not source of truth.
+- Every PR that maps to an issue — including drafts — carries the triad the same day, matching the related issue. Drafts stay `status:working` only — never `ready-for-review` or `needs-jesse` while still draft. #78 / #60 were unlabeled drafts; that is now the rule.
+- On close or merge, scrub all `status:*` via REST `issues/{n}/labels`. Leave `owner:*` and `lane:*`. `gh pr edit` labels often no-ops.
+- `status:in-progress` is deleted. Use `status:working` only.
+- Dual `owner:*` labels are OK for FE+BE slices only when the issue comment names who owns which slice. Otherwise split issues.
+- Land path is unchanged: `working` → `ready-for-review` → `needs-jesse`. Jesse-only merge. Hannah may merge docs-only when Jesse hands it.
+
 ## Drive order
 
 - Hunter sets what the crew works on and in what product order.
@@ -170,6 +181,14 @@ Crew may review. Hannah's eng review can proceed. Hannah never merges.
 **Only Jesse (`jessepollak`) gives the final +1 and merges.** Merge waits on Jesse even when Hannah has reviewed. Third-party PRs already required Jesse +1; crew PRs use the same bar.
 
 When a PR is ready for Jesse, swap the issue to `status:needs-jesse` (and say so on the PR). See [status label hygiene](#status-label-hygiene). Do not merge your own work. Do not treat a crew +1 as merge permission.
+
+### CloudAgent / Auto-review
+
+Jesse-locked, September 8, 2026 (~9:14pm PT); launch path confirmed September 9, 2026 (~9:52pm PT). Global approval: crew **self-launches** CloudAgents. Do not wait on Hannah to proxy-launch.
+
+- If Auto-review still blocks a launch, ping Hannah once — she greenlights immediately. No per-run Jesse card. Do not ping Jesse for CloudAgent greenlights.
+- Hannah still owns eng review (COMMENT LGTM on jessepollak-authored PRs).
+- Jesse remains final +1 and merge.
 
 ## Daily domain quality reviews
 
