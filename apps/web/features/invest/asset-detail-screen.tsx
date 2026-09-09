@@ -49,7 +49,9 @@ export function AssetDetailScreen({
       </header>
 
       <div className={styles.priceHeader}>
-        <strong>{price.value}</strong>
+        <strong data-tone={price.tone}>
+          {price.tone === "ready" ? price.value : price.detail}
+        </strong>
         {change !== "—" ? (
           <small className={`${styles.change} ${changeTone}`}>{change}</small>
         ) : null}
