@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AddressField, AddressText } from "@/components/address";
 import type { AccountWalletClient } from "@/features/account/cdp-client";
 import {
@@ -14,7 +14,11 @@ import {
   useMoneyAssetPricing,
 } from "@/features/money-modal";
 import { useReactiveExpiry } from "@/features/money-actions/expiry";
-import type { MoneyActionKind, PreparedMoneyAction } from "@/features/money-actions/types";
+import type {
+  MoneyActionKind,
+  MoneyActionOperationStatus,
+  PreparedMoneyAction,
+} from "@/features/money-actions/types";
 import {
   TRANSFER_ASSETS,
   assertTransferRequest,
@@ -40,6 +44,12 @@ type TransferWallet = Pick<
 > & Partial<Pick<AccountWalletClient, "prepareMoneyAction" | "checkMoneyAction" | "executeMoneyAction">>;
 
 type FetchUnresolvedSends = (signal?: AbortSignal) => Promise<unknown>;
+type ReleaseAdmission = (id: string) => Promise<unknown>;
+type ReleaseState = "idle" | "confirming" | "pending";
+type AdmissionReleaseStatus = Extract<
+  MoneyActionOperationStatus,
+  "submitting" | "submitted" | "included" | "unknown"
+>;
 
 type ComposeStep = "amount" | "address";
 type SendStep = ComposeStep | "confirm" | "pending" | "recovery" | "failed" | "error";
@@ -66,6 +76,8 @@ export function SendDialog({
   checkMoneyAction,
   executeMoneyAction,
   fetchUnresolvedSends,
+  releaseAdmission,
+  ownerBoundary,
   onTransferConfirmed,
   onClose,
 }: {
@@ -80,6 +92,8 @@ export function SendDialog({
   checkMoneyAction?: AccountWalletClient["checkMoneyAction"];
   executeMoneyAction?: AccountWalletClient["executeMoneyAction"];
   fetchUnresolvedSends?: FetchUnresolvedSends;
+  releaseAdmission?: ReleaseAdmission;
+  ownerBoundary: string | null;
   onTransferConfirmed?: (transfer: ConfirmedTransfer) => void;
   onClose: () => void;
 }) {
@@ -89,10 +103,18 @@ export function SendDialog({
   const [request, setRequest] = useState<TransferRequest | null>(null);
   const [intentId, setIntentId] = useState<string | null>(null);
   const [preparedAction, setPreparedAction] = useState<PreparedMoneyAction | null>(null);
+  const [operationStatus, setOperationStatus] = useState<MoneyActionOperationStatus | null>(null);
   const [recoveringAction, setRecoveringAction] = useState(false);
   const [step, setStep] = useState<SendStep>("amount");
   const [error, setError] = useState<string | null>(null);
   const [historyAttempt, setHistoryAttempt] = useState(0);
+  const [releaseState, setReleaseState] = useState<ReleaseState>("idle");
+  const [releaseNotice, setReleaseNotice] = useState<string | null>(null);
+  const releaseConfirmationRef = useRef<HTMLHeadingElement>(null);
+  const releaseFenceRef = useRef({ open, ownerBoundary, actionId: preparedAction?.id ?? null });
+  const releaseInFlightRef = useRef<string | null>(null);
+  const lifecycleGenerationRef = useRef(0);
+  const lifecycleStateRef = useRef({ open, ownerBoundary });
   const [historyAdmission, setHistoryAdmission] = useState<HistoryAdmission>(() =>
     fetchUnresolvedSends ? { status: "checking" } : prepareMoneyAction
       ? { status: "unavailable", reason: "failed" }
@@ -111,7 +133,24 @@ export function SendDialog({
     preparedAction?.expiresAt ?? null,
   );
   const checkOnly = recoveringAction || expiredPrepared || displayStep === "recovery";
+  const releaseEligible = Boolean(
+    preparedAction && displayRequest && isAdmissionReleaseStatus(operationStatus),
+  );
+  const releasePending = releaseState === "pending";
   const historyReady = historyAdmission.status === "ready" || historyAdmission.status === "fallback";
+
+  useLayoutEffect(() => {
+    const previous = lifecycleStateRef.current;
+    if (previous.open !== open || previous.ownerBoundary !== ownerBoundary) {
+      lifecycleGenerationRef.current += 1;
+      lifecycleStateRef.current = { open, ownerBoundary };
+    }
+    releaseFenceRef.current = { open, ownerBoundary, actionId: preparedAction?.id ?? null };
+  }, [open, ownerBoundary, preparedAction?.id]);
+
+  useLayoutEffect(() => {
+    if (releaseState === "confirming") releaseConfirmationRef.current?.focus();
+  }, [releaseState]);
 
   useEffect(() => {
     if (open) return;
@@ -123,9 +162,12 @@ export function SendDialog({
     setRequest(null);
     setIntentId(null);
     setPreparedAction(null);
+    setOperationStatus(null);
     setRecoveringAction(false);
     setStep("amount");
     setError(null);
+    setReleaseState("idle");
+    setReleaseNotice(null);
     setHistoryAdmission(fetchUnresolvedSends ? { status: "checking" } : prepareMoneyAction
       ? { status: "unavailable", reason: "failed" }
       : { status: "fallback" });
@@ -143,8 +185,9 @@ export function SendDialog({
         return;
       }
       setHistoryAdmission({ status: "ready" });
-      if (parsed.action && parsed.request) {
+      if (parsed.action && parsed.request && parsed.operationStatus) {
         setPreparedAction(parsed.action);
+        setOperationStatus(parsed.operationStatus);
         setRequest(parsed.request);
         setAssetId(parsed.request.assetId);
         setRecipient(parsed.request.recipient);
@@ -160,16 +203,22 @@ export function SendDialog({
     return () => controller.abort();
   }, [address, fetchUnresolvedSends, historyAttempt, open, prepareMoneyAction]);
 
-  function reset() {
+  function reset(options: { admissionReleased?: boolean } = {}) {
+    lifecycleGenerationRef.current += 1;
     setAssetId("usdc");
     setRecipient("");
     setAmount("");
     setRequest(null);
     setIntentId(null);
     setPreparedAction(null);
+    setOperationStatus(null);
     setRecoveringAction(false);
     setStep("amount");
     setError(null);
+    setReleaseState("idle");
+    setReleaseNotice(options.admissionReleased
+      ? "Home can now start another send. The existing send may still confirm."
+      : null);
     setHistoryAdmission(fetchUnresolvedSends ? { status: "checking" } : prepareMoneyAction
       ? { status: "unavailable", reason: "failed" }
       : { status: "fallback" });
@@ -177,13 +226,17 @@ export function SendDialog({
   }
 
   function closeIfAllowed() {
-    if (step !== "pending" || pendingTransfer) {
-      reset();
-      onClose();
-    }
+    if (step === "pending" && !pendingTransfer) return;
+    releaseFenceRef.current = { open: false, ownerBoundary, actionId: null };
+    reset();
+    onClose();
   }
 
   function goBack() {
+    if (releaseState === "confirming") {
+      setReleaseState("idle");
+      return;
+    }
     if (recoveringAction) {
       reset();
       onClose();
@@ -196,6 +249,7 @@ export function SendDialog({
     }
     if (displayStep === "confirm" || displayStep === "error" || displayStep === "failed") {
       setPreparedAction(null);
+      setOperationStatus(null);
       setRecoveringAction(false);
       setError(null);
       setStep("address");
@@ -236,9 +290,12 @@ export function SendDialog({
     if (prepareMoneyAction) {
       setStep("pending");
       try {
-        setPreparedAction(await prepareMoneyAction("/api/actions/send/prepare", nextRequest));
+        const nextAction = await prepareMoneyAction("/api/actions/send/prepare", nextRequest);
+        setPreparedAction(nextAction);
+        setOperationStatus("prepared");
       } catch {
         setPreparedAction(null);
+        setOperationStatus(null);
         setError("Home couldn’t prepare this send. Your wallet was not asked to submit it. Try again.");
         setStep("address");
         return;
@@ -263,6 +320,7 @@ export function SendDialog({
       }
       if (preparedAction && executeMoneyAction) {
         const result = await executeMoneyAction(preparedAction);
+        setOperationStatus(result.status);
         if (result.status === "confirmed") {
           if (!result.transactionHash) {
             setError("The send is confirmed but its transaction hash is unavailable.");
@@ -296,7 +354,7 @@ export function SendDialog({
   }
 
   async function checkStatus() {
-    if (step === "pending") return;
+    if (step === "pending" || releasePending) return;
     setError(null);
     setStep("pending");
     try {
@@ -307,6 +365,7 @@ export function SendDialog({
       }
       if (preparedAction && checkMoneyAction) {
         const result = await checkMoneyAction(preparedAction);
+        setOperationStatus(result.status);
         if (result.status === "confirmed" && result.transactionHash && request) {
           complete({ ...request, transactionHash: result.transactionHash });
           return;
@@ -320,6 +379,44 @@ export function SendDialog({
     } catch (caught) {
       setError(messageForTransferError(caught, true));
       setStep("recovery");
+    }
+  }
+
+  async function releaseCurrentAdmission() {
+    if (
+      releaseState !== "confirming" || !releaseAdmission || !ownerBoundary ||
+      !preparedAction || !displayRequest || !isAdmissionReleaseStatus(operationStatus)
+    ) return;
+    const actionId = preparedAction.id;
+    const requestKey = `${ownerBoundary}\u0000${actionId}`;
+    if (releaseInFlightRef.current === requestKey) return;
+    releaseInFlightRef.current = requestKey;
+    const fence = {
+      ownerBoundary,
+      actionId,
+      generation: lifecycleGenerationRef.current,
+    };
+    setError(null);
+    setReleaseState("pending");
+    try {
+      await releaseAdmission(actionId);
+      const current = releaseFenceRef.current;
+      if (
+        lifecycleGenerationRef.current !== fence.generation || !current.open ||
+        current.ownerBoundary !== fence.ownerBoundary || current.actionId !== fence.actionId
+      ) return;
+      startNewTransfer();
+      reset({ admissionReleased: true });
+    } catch {
+      const current = releaseFenceRef.current;
+      if (
+        lifecycleGenerationRef.current !== fence.generation || !current.open ||
+        current.ownerBoundary !== fence.ownerBoundary || current.actionId !== fence.actionId
+      ) return;
+      setError("Home couldn’t allow another send. Check status or try again.");
+      setReleaseState("idle");
+    } finally {
+      if (releaseInFlightRef.current === requestKey) releaseInFlightRef.current = null;
     }
   }
 
@@ -346,7 +443,11 @@ export function SendDialog({
     <MoneyModal
       open={open}
       labelledBy="send-title"
-      describedBy={displayStep === "pending" ? "send-pending" : undefined}
+      describedBy={displayStep === "pending"
+        ? "send-pending"
+        : releasePending
+          ? "send-release-pending"
+          : undefined}
       onCancel={closeIfAllowed}
       onClose={() => {
         reset();
@@ -357,7 +458,7 @@ export function SendDialog({
         title={title}
         titleId="send-title"
         onBack={
-          displayStep === "amount" || displayStep === "pending" || displayStep === "recovery"
+          releasePending || displayStep === "amount" || displayStep === "pending" || displayStep === "recovery"
             ? undefined
             : goBack
         }
@@ -394,6 +495,9 @@ export function SendDialog({
               maxDecimals={TRANSFER_ASSETS[assetId].decimals}
               onChange={setAmount}
             />
+            {releaseNotice ? (
+              <p className={modal.status} role="status">{releaseNotice}</p>
+            ) : null}
             {historyAdmission.status === "checking" ? (
               <p className={modal.fieldHint} role="status">Checking recent sends…</p>
             ) : historyAdmission.status === "unavailable" ? (
@@ -440,6 +544,28 @@ export function SendDialog({
             {expiredPrepared && displayStep !== "pending" ? (
               <p className={modal.error} role="alert">This send expired. Go back and continue again.</p>
             ) : null}
+            {releaseEligible && (releaseState === "confirming" || releasePending) ? (
+              <section className={modal.fieldBlock} aria-labelledby="send-release-confirmation-title">
+                <h3
+                  ref={releaseConfirmationRef}
+                  id="send-release-confirmation-title"
+                  className={modal.fieldLabel}
+                  tabIndex={-1}
+                  aria-describedby="send-release-warning"
+                >
+                  Allow another send?
+                </h3>
+                <p id="send-release-warning" className={modal.fieldHint}>
+                  Home will allow another send while the existing send may still submit or later confirm.
+                </p>
+                {releasePending ? (
+                  <div id="send-release-pending" className={modal.pending} role="status">
+                    <span className={modal.spinner} aria-hidden="true" />
+                    Allowing another send…
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
           </>
         ) : null}
 
@@ -482,7 +608,28 @@ export function SendDialog({
         />
       ) : null}
 
-      {displayStep === "confirm" ? (
+      {displayStep === "confirm" && releaseEligible && releaseAdmission && ownerBoundary ? (
+        releaseState === "confirming" || releasePending ? (
+          <MoneyModalFooter
+            primaryLabel={releasePending ? "Allowing another send…" : "Allow another send"}
+            primaryDisabled={releasePending}
+            onPrimary={() => void releaseCurrentAdmission()}
+            secondaryLabel="Keep checking this send"
+            secondaryDisabled={releasePending}
+            onSecondary={() => setReleaseState("idle")}
+          />
+        ) : (
+          <MoneyModalFooter
+            primaryLabel="Check status"
+            onPrimary={() => void checkStatus()}
+            secondaryLabel="Allow another send"
+            onSecondary={() => {
+              setError(null);
+              setReleaseState("confirming");
+            }}
+          />
+        )
+      ) : displayStep === "confirm" ? (
         <MoneyModalFooter
           primaryLabel={checkOnly ? (expiredPrepared && !recoveringAction ? "Check send status" : "Check status") : `Send ${confirmAmount}`}
           primaryDisabled={false}
@@ -548,7 +695,12 @@ const OPERATION_STATUSES = new Set([
   "failed",
   "unknown",
 ]);
-const UNRESOLVED_OPERATION_STATUSES = new Set(["submitting", "submitted", "included", "unknown"]);
+const ADMISSION_RELEASE_OPERATION_STATUSES = new Set<MoneyActionOperationStatus>([
+  "submitting",
+  "submitted",
+  "included",
+  "unknown",
+]);
 const MONEY_ACTION_KINDS = new Set<MoneyActionKind>([
   "send",
   "save-deposit",
@@ -563,12 +715,21 @@ const MONEY_ACTION_KINDS = new Set<MoneyActionKind>([
 function parseSendHistory(
   value: unknown,
   address: `0x${string}` | null,
-): { status: "ready"; action: PreparedMoneyAction | null; request: TransferRequest | null } | { status: "malformed" } {
+): {
+  status: "ready";
+  action: PreparedMoneyAction | null;
+  request: TransferRequest | null;
+  operationStatus: AdmissionReleaseStatus | null;
+} | { status: "malformed" } {
   if (
     !isRecord(value) || value.scope !== "unresolved-send" ||
     !Array.isArray(value.operations)
   ) return { status: "malformed" };
-  let recovered: { action: PreparedMoneyAction; request: TransferRequest } | null = null;
+  let recovered: {
+    action: PreparedMoneyAction;
+    request: TransferRequest;
+    operationStatus: AdmissionReleaseStatus;
+  } | null = null;
   for (const candidate of value.operations) {
     if (!isRecord(candidate) || typeof candidate.status !== "string" || !OPERATION_STATUSES.has(candidate.status) ||
       typeof candidate.attemptCount !== "number" || !Number.isSafeInteger(candidate.attemptCount) ||
@@ -578,18 +739,26 @@ function parseSendHistory(
       typeof candidate.action.kind !== "string" || !MONEY_ACTION_KINDS.has(candidate.action.kind as MoneyActionKind)) {
       return { status: "malformed" };
     }
-    if (!UNRESOLVED_OPERATION_STATUSES.has(candidate.status) || candidate.action.kind !== "send") {
+    if (!isAdmissionReleaseStatus(candidate.status) || candidate.action.kind !== "send") {
       return { status: "malformed" };
     }
     if (!address || !isPreparedSendAction(candidate.action, address)) return { status: "malformed" };
     const action = candidate.action as unknown as PreparedMoneyAction;
     const request = requestFromSendAction(action);
     if (!request) return { status: "malformed" };
-    recovered ??= { action, request };
+    recovered ??= { action, request, operationStatus: candidate.status };
   }
   return recovered
     ? { status: "ready", ...recovered }
-    : { status: "ready", action: null, request: null };
+    : { status: "ready", action: null, request: null, operationStatus: null };
+}
+
+function isAdmissionReleaseStatus(
+  status: MoneyActionOperationStatus | string | null,
+): status is AdmissionReleaseStatus {
+  return status !== null && ADMISSION_RELEASE_OPERATION_STATUSES.has(
+    status as MoneyActionOperationStatus,
+  );
 }
 
 function isPreparedSendAction(value: Record<string, unknown>, address: `0x${string}`): boolean {
