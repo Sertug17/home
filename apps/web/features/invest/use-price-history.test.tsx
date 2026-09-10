@@ -183,3 +183,58 @@ describe("point value validation", () => {
     expect(page().getByTestId("count").textContent).toBe("0");
   });
 });
+
+describe("point value validation", () => {
+  function singlePointFetch(value) {
+    window.fetch = async () =>
+      Response.json(
+        historyPayload("cbbtc", "1W", [
+          { time: "2026-09-01T00:00:00.000Z", value },
+        ]),
+      );
+  }
+
+  test("rejects '0.0e+1' — zero mantissa, exponent digit fools old check", async () => {
+    // Old code: !/[1-9]/.test("0.0e+1") is false (1 in exponent) -> point kept, status ready
+    // New code: mantissa "0.0" has no [1-9] -> return null -> status error
+    singlePointFetch("0.0e+1");
+    render(<HookProbe assetId="cbbtc" range="1W" />);
+    await waitFor(() =>
+      expect(page().getByTestId("status").textContent).not.toBe("loading"),
+    );
+    expect(page().getByTestId("status").textContent).toBe("error");
+    expect(page().getByTestId("count").textContent).toBe("0");
+  });
+
+  test("rejects '0.0e+5' — exponent digit 5 fools old full-string check", async () => {
+    // Old code: !/[1-9]/.test("0.0e+5") is false (5 in exponent) -> point kept, status ready
+    // New code: mantissa "0.0" has no [1-9] -> return null -> status error
+    singlePointFetch("0.0e+5");
+    render(<HookProbe assetId="cbbtc" range="1W" />);
+    await waitFor(() =>
+      expect(page().getByTestId("status").textContent).not.toBe("loading"),
+    );
+    expect(page().getByTestId("status").textContent).toBe("error");
+    expect(page().getByTestId("count").textContent).toBe("0");
+  });
+
+  test("accepts '1.23e-4' — non-zero mantissa, correctly kept", async () => {
+    singlePointFetch("1.23e-4");
+    render(<HookProbe assetId="cbbtc" range="1W" />);
+    await waitFor(() =>
+      expect(page().getByTestId("status").textContent).toBe("ready"),
+    );
+    expect(page().getByTestId("count").textContent).toBe("1");
+    expect(page().getByTestId("first").textContent).toBe("1.23e-4");
+  });
+
+  test("rejects '0e0' — zero with zero exponent, no [1-9] anywhere", async () => {
+    singlePointFetch("0e0");
+    render(<HookProbe assetId="cbbtc" range="1W" />);
+    await waitFor(() =>
+      expect(page().getByTestId("status").textContent).not.toBe("loading"),
+    );
+    expect(page().getByTestId("status").textContent).toBe("error");
+    expect(page().getByTestId("count").textContent).toBe("0");
+  });
+});
