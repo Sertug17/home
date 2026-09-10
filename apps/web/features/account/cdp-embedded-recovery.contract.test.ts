@@ -173,11 +173,21 @@ describe("CDP embedded recovery contract (pinned SDK, unfunded)", () => {
       "const submission = await sdkSendUserOperation({",
     );
     const embeddedSendEnd = client.indexOf(
-      "await recordMoneyActionSubmission(fetchMoneyActionApi, canonicalAction.id, { userOperationHash });",
+      "const retained = providerHandleJournal.retain(providerHandleBinding, {",
       embeddedSendStart,
+    );
+    const embeddedPersist = client.indexOf(
+      "await providerHandleJournal.persist(retained.entry!);",
+      embeddedSendEnd,
+    );
+    const embeddedUpload = client.indexOf(
+      "const journaled = await recoverJournaledProviderHandle({",
+      embeddedPersist,
     );
     expect(embeddedSendStart).toBeGreaterThanOrEqual(0);
     expect(embeddedSendEnd).toBeGreaterThan(embeddedSendStart);
+    expect(embeddedPersist).toBeGreaterThan(embeddedSendEnd);
+    expect(embeddedUpload).toBeGreaterThan(embeddedPersist);
 
     const embeddedSend = client.slice(embeddedSendStart, embeddedSendEnd);
     expect(embeddedSend).toContain("idempotencyKey: canonicalAction.id");
