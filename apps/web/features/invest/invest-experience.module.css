@@ -24,10 +24,15 @@
   line-height: 1.05;
 }
 
-.header p {
+.header p,
+.hubLead {
   margin: 0;
   color: var(--home-muted);
   font-size: 0.92rem;
+}
+
+.hubLead {
+  padding: 2px 2px 12px;
 }
 
 .screenHeader {
@@ -410,11 +415,11 @@
 
 @media (max-width: 719px) {
   .detailExperience {
-    min-height: calc(100svh - 11.25rem - env(safe-area-inset-bottom));
+    min-height: calc(100% - 1rem);
   }
 
   .cta {
-    bottom: calc(70px + env(safe-area-inset-bottom));
+    bottom: 0;
   }
 }
 
