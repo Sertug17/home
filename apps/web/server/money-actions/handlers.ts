@@ -145,6 +145,38 @@ export function createMoneyActionStatusHandler(dependencies: {
   };
 }
 
+export function createMoneyActionAdmissionReleaseHandler(dependencies: {
+  authorize: SessionAuthorizer;
+  store?: MoneyActionStore;
+  now?: () => Date;
+}) {
+  return async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+    const owner = await authorizeOwner(request, dependencies.authorize);
+    if (owner instanceof Response) return owner;
+    const { id } = await context.params;
+    const body = await readJson(request);
+    if (
+      !idPattern.test(id) ||
+      (body != null && (
+        !isRecord(body) ||
+        Object.keys(body).some((key) => key !== "reason") ||
+        (body.reason !== undefined && body.reason !== "owner-request")
+      ))
+    ) {
+      return error("INVALID_ADMISSION_RELEASE", "Only the owner can release Home admission for this action.", 400);
+    }
+    const store = dependencies.store ?? await getMoneyActionStore();
+    const record = await store.releaseAdmission(
+      owner,
+      id,
+      (dependencies.now ?? (() => new Date()))().toISOString(),
+    );
+    return record
+      ? json({ operation: record }, 200)
+      : error("ACTION_NOT_FOUND", "The action was not found or cannot release admission.", 404);
+  };
+}
+
 export function createMoneyActionReadHandler(dependencies: {
   authorize: SessionAuthorizer;
   readReceipt: MoneyActionReceiptReader;

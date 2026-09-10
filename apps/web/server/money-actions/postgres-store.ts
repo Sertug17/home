@@ -212,6 +212,25 @@ export class PostgresMoneyActionStore implements MoneyActionStore {
     }
   }
 
+  async releaseAdmission(
+    owner: MoneyActionOwner,
+    id: string,
+    now: string,
+  ): Promise<StoredMoneyActionOperation | null> {
+    await this.ensureSchema();
+    return this.executor.transaction(async (tx) => {
+      const changed = await tx.query(moneyActionQueries.releaseAdmission, [
+        now,
+        now,
+        id,
+        ...ownerParameters(owner),
+      ]);
+      if (changed.rowCount !== 1) return null;
+      const updated = await this.getRow(tx, owner, id);
+      return updated ? fromRow(updated) : null;
+    });
+  }
+
   private installSensitiveAction(id: string, options: MoneyActionIssueStoreOptions): void {
     this.sensitiveActions.set(id, {
       action: structuredClone(options.sensitiveAction),
@@ -310,6 +329,7 @@ function normalizeRow(row: OperationRow): OperationRow {
     transaction_hash: row.transaction_hash ?? null,
     user_operation_hash: row.user_operation_hash ?? null,
     verified_execution_key: row.verified_execution_key ?? null,
+    abandoned_at: row.abandoned_at ?? null,
   };
 }
 
@@ -325,6 +345,7 @@ function fromRow(
     submissionId: row.submission_id ?? undefined,
     transactionHash: row.transaction_hash as `0x${string}` | null ?? undefined,
     userOperationHash: row.user_operation_hash as `0x${string}` | null ?? undefined,
+    abandonedAt: row.abandoned_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
