@@ -80,4 +80,88 @@ describe("CurrencyMark", () => {
     expect(ticker.container.querySelector("img")).toBeNull();
     expect(ticker.container.textContent).toBe("ETH");
   });
+
+  test("holds the 32px slot on shimmer while an asset image is pending or loading", () => {
+    const pending = render(
+      <CurrencyMark
+        pending
+        src="https://icons.example.test/amzn.png"
+        symbol="AM"
+      />,
+    );
+    expect(pending.container.querySelector("[data-mark='shimmer']")).toBeTruthy();
+    expect(pending.container.querySelector("img")).toBeNull();
+    expect(pending.container.textContent).toBe("");
+    pending.unmount();
+
+    const loading = render(
+      <CurrencyMark src="https://icons.example.test/amzn.png" symbol="AM" />,
+    );
+    const image = loading.container.querySelector("img");
+    expect(loading.container.querySelector("[data-mark='shimmer']")).toBeTruthy();
+    expect(image?.getAttribute("src")).toBe("https://icons.example.test/amzn.png");
+    expect(image?.hasAttribute("hidden")).toBe(true);
+    expect(loading.container.textContent).toBe("");
+    fireEvent.load(image!);
+    expect(loading.container.querySelector("[data-mark='image']")).toBeTruthy();
+    expect(image?.hasAttribute("hidden")).toBe(false);
+    expect(loading.container.textContent).toBe("");
+  });
+
+  test("reveals an already-decoded asset image without waiting for a late onLoad", () => {
+    const proto = HTMLImageElement.prototype;
+    const complete = Object.getOwnPropertyDescriptor(proto, "complete");
+    const naturalWidth = Object.getOwnPropertyDescriptor(proto, "naturalWidth");
+    Object.defineProperty(proto, "complete", {
+      configurable: true,
+      get() {
+        return true;
+      },
+    });
+    Object.defineProperty(proto, "naturalWidth", {
+      configurable: true,
+      get() {
+        return 32;
+      },
+    });
+    try {
+      const view = render(
+        <CurrencyMark src="https://icons.example.test/amzn.png" symbol="AM" />,
+      );
+      const image = view.container.querySelector("img");
+      expect(view.container.querySelector("[data-mark='image']")).toBeTruthy();
+      expect(image?.hasAttribute("hidden")).toBe(false);
+    } finally {
+      if (complete) Object.defineProperty(proto, "complete", complete);
+      else delete (proto as { complete?: unknown }).complete;
+      if (naturalWidth) Object.defineProperty(proto, "naturalWidth", naturalWidth);
+      else delete (proto as { naturalWidth?: unknown }).naturalWidth;
+    }
+  });
+
+  test("fails an asset image open to the glyph without a blank hole", () => {
+    const broken = render(
+      <CurrencyMark src="https://icons.example.test/missing.png" symbol="AM" />,
+    );
+    fireEvent.error(broken.container.querySelector("img")!);
+    expect(broken.container.querySelector("[data-mark='symbol']")).toBeTruthy();
+    expect(broken.container.querySelector("img")).toBeNull();
+    expect(broken.container.textContent).toBe("AM");
+  });
+
+  test("lets a resolved asset image win over a cash flag", () => {
+    const mark = render(
+      <CurrencyMark
+        currency="USD"
+        symbol="$"
+        src="https://icons.example.test/amzn.png"
+      />,
+    );
+    expect(mark.container.querySelector("img")?.getAttribute("src")).toBe(
+      "https://icons.example.test/amzn.png",
+    );
+    expect(mark.container.querySelector("img")?.getAttribute("src")).not.toBe(
+      "/currency-flags/us.svg",
+    );
+  });
 });
