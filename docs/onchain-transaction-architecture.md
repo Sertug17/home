@@ -1,6 +1,8 @@
 # Attempt-aware onchain transactions
 
-Status: **approved direction and bounded Phase 1 implementation**. This document is specific to Home's current MoneyAction flow in `apps/web`; it is not a proposal for a general event-sourcing platform.
+Status: **approved direction, Phase 1 in tree, Phase 2 §3 command contracts locked**. This document is specific to Home's current MoneyAction flow in `apps/web`; it is not a proposal for a general event-sourcing platform.
+
+Phase 2 §3 TypeScript commands live in [`apps/web/server/money-actions/attempt-commands.ts`](../apps/web/server/money-actions/attempt-commands.ts) (`ATTEMPT_COMMAND_CONTRACT_VERSION = 1`). Soft Pass inputs: [#175](https://github.com/jessepollak/home/issues/175) (CDP) and [#176](https://github.com/jessepollak/home/issues/176) (EIP-5792). Contract issue: [#181](https://github.com/jessepollak/home/issues/181). No additive attempt schema in this slice.
 
 ## Decision
 
@@ -87,11 +89,11 @@ Evidence is append-only, typed, provenance-bearing data:
 - provider status observation tied to one of those references;
 - verified receipt/call match, block data, success, and confirmation policy result.
 
-Evidence recording is idempotent. Repeating the same fact succeeds; a conflicting transaction hash or handle for the same evidence slot fails closed. Client reports are leads until the server verifies owner, chain, sender, calls/effects, and provider relationship.
+Evidence recording is idempotent. Repeating the same fact succeeds; a conflicting transaction hash or handle for the same evidence slot fails closed. Provider-status payloads are observations of an immutable handle, so the same handle may advance monotonically (for example `pending` → `confirmed`) without changing its identity. Opaque provider submission IDs compare exactly and case-sensitively; chain hashes use their canonical hexadecimal comparison. Client reports are leads until the server verifies owner, chain, sender, calls/effects, and provider relationship.
 
 ### Reconciliation
 
-Reconciliation reads only existing attempt evidence or a provider-supported stable request key. It does not claim and cannot invoke a wallet submission API. It may append stronger evidence and advance the projected result monotonically. Weak or out-of-order observations cannot overwrite stronger verified facts.
+Reconciliation reads only existing attempt evidence or a provider-supported stable request key. It does not claim and cannot invoke a wallet submission API. It may append stronger evidence and advance the projected result monotonically. Weak or out-of-order observations cannot overwrite stronger verified facts. When several recorded references are available, a transaction hash is preferred over a user-operation hash or provider submission handle.
 
 ### Owner abandonment and admission release
 
@@ -113,49 +115,16 @@ Late evidence remains attachable after abandonment or admission release. If it p
 
 ## Typed command and API direction
 
-Keep feature-specific prepare endpoints. Do not add a generic browser-authored calls endpoint. The kernel should expose a small set of typed commands with atomic store implementations:
+Keep feature-specific prepare endpoints. Do not add a generic browser-authored calls endpoint. The kernel exposes versioned commands in `attempt-commands.ts` (`ClaimDispatch`, `RecordProviderEvidence`, `ReconcileAttempt`, `ReleaseAdmission`). Phase 3 persists them; this slice only locks the types.
 
-```ts
-type ClaimDispatch = {
-  owner: MoneyActionOwner;
-  actionId: string;
-  reviewHash: string;
-  expectedActionRevision: number;
-  provider: "cdp-embedded" | "base-account";
-  providerRequestKey: string;
-};
+Locked answers that the types encode:
 
-type ClaimDispatchResult =
-  | { disposition: "dispatch"; action: PreparedActionRevision; attempt: ExecutionAttempt; dispatchVersion: number }
-  | { disposition: "recover"; action: PreparedActionRevision; attempt: ExecutionAttempt }
-  | { disposition: "terminal"; action: PreparedActionRevision; attempt?: ExecutionAttempt; result: ReconciliationResult };
-
-type RecordProviderEvidence = {
-  owner: MoneyActionOwner;
-  actionId: string;
-  attemptId: string;
-  dispatchVersion: number;
-  evidence:
-    | { kind: "submission-id"; provider: "base-account"; value: string }
-    | { kind: "user-operation-hash"; provider: "cdp-embedded"; value: `0x${string}` }
-    | { kind: "transaction-hash"; chainId: 8453; value: `0x${string}` };
-};
-
-type ReconcileAttempt = {
-  owner: MoneyActionOwner;
-  actionId: string;
-  attemptId: string;
-  expectedAttemptVersion: number;
-};
-
-type ReleaseAdmission = {
-  owner: MoneyActionOwner;
-  actionId: string;
-  attemptId: string;
-  policyVersion: string;
-  reason: "owner-request" | "policy-timeout";
-};
-```
+- `providerRequestKey` is Home correlation (`action.id` as CDP idempotency header or EIP-5792 request `id`). It is not a GET locator and not provider evidence.
+- Only `ClaimDispatch` with `disposition: "dispatch"` grants first wallet send. Recover / reconcile / admission-release never do.
+- Provider evidence starts at provider return (or a later status lookup that actually finds a handle). No preallocated `submissionId`.
+- `ReconcileAttempt` is read-only. Missing evidence after invoke-then-throw is `ambiguous`, not `not-submitted`.
+- `ReleaseAdmission` is independent of execution. Ordinary recover must not write `unknown → expired` (#110 / #134).
+- Same provider key + different payload fails closed where the provider reports it (`idempotency_error`, `5720`). Untested live replay stays `unknown`. Never invent recovery.
 
 Likely HTTP projection, retaining current routes during migration:
 
@@ -242,14 +211,13 @@ Current code facts:
 - Home compares returned provider calls to the reviewed calls and verifies the resulting transaction receipt with the expected sender/user-operation relationship.
 - Once a user-operation hash is durable, status checks can reconcile without calling `sendUserOperation` again.
 
-Unknowns to verify before allowing replay of an ambiguous request:
+Soft Pass (#175), locked into `attempt-commands.ts`:
 
-- whether the idempotency key guarantees the same execution identity after every client transport failure and for how long;
-- whether an operation can be looked up by idempotency key when the original response hash was lost;
-- retention and consistency guarantees for pending/dropped operation lookup;
-- whether all SDK error classes distinguish definitive pre-acceptance rejection from post-acceptance ambiguity.
-
-Until those are verified, an exception from `sendUserOperation` after invocation begins is ambiguous and must not authorize a new send.
+- Do not authorize a new send after `sendUserOperation` has been invoked and thrown.
+- Do not implement GET-by-idempotency-key recovery. Official GET is by `userOpHash` only; live unfunded GETs by key were 404.
+- Same-key replay returning the original hash is a **docs claim**, not a tested recovery API. `walletSecretId` in the body is an untested fingerprint risk.
+- `idempotency_error` / `already_exists` do not grant a new execution identity and do not prove non-submission of the first attempt.
+- Passing `X-Idempotency-Key` is wiring, not recovery proof.
 
 ### Base Account
 
@@ -260,13 +228,14 @@ Current code facts:
 - Home requires matching submission ID, Base chain, atomic execution, and a single consistent receipt transaction hash.
 - Phase 1 preserves the returned ID before any post-request account-state recheck. Pre-dispatch account/chain checks remain in place.
 
-Unknowns to verify:
+Soft Pass (#176), locked into `attempt-commands.ts`:
 
-- whether the request `id` is an idempotency key, correlation key, or both;
-- whether a lost submission ID can be recovered by request ID/account;
-- provider retention and cross-device/session availability of call status;
-- which error/status codes prove no call was accepted versus only report a failed or unavailable lookup;
-- behavior if the provider accepted the bundle but the page lost the response before Home recorded it.
+- Home request `id` is correlation / uniqueness, not CDP-style idempotent replay. Do not treat the action UUID as a replay key.
+- Action UUID ≠ provider evidence. Do not persist it as `submissionId` before `wallet_sendCalls` returns.
+- Lost return is reference-free `unknown`. Home never looks up `getCallsStatus(actionId)`. Coinbase status RPC rejected Home UUIDs (`-32602`).
+- Definitive `not-submitted` on this invocation: pre-dispatch throw, or provider `4001` user reject. After `wallet_sendCalls` is entered, the outcome is `ambiguous` unless a later handle/receipt is verified.
+- `5720` is prior-submission / fail-closed, not `rejected`. `5730` / `4200` / `-32602` are lookup failure, not non-submission.
+- Live Base popup `5720` / `4001` / retention remain **unknown**. Do not invent them.
 
 `atomicRequired` describes atomicity of the call bundle as executed by the wallet; it does not make the database claim and wallet request atomic.
 
@@ -336,10 +305,9 @@ Use temporary real SQLite files and the repository's real Postgres contract harn
 
 ### Phase 2 — provider contract spikes and command types
 
-- Verify CDP idempotency-key lookup/replay semantics and Base request-ID/submission-ID recovery semantics.
-- Define versioned TypeScript command/result schemas and normalized evidence certainty.
-- Decide which provider outcomes are definitive non-submission versus ambiguous. Do not infer this from generic error strings.
-- Split follow-up tickets by provider and kernel ownership.
+- CDP and Base matrices: [#175](https://github.com/jessepollak/home/issues/175), [#176](https://github.com/jessepollak/home/issues/176). Soft Pass locked; draft fixtures #178 / #179 stay draft until scoped.
+- Versioned commands: `attempt-commands.ts` v1 (#181). `not-submitted` vs `ambiguous` is typed; do not infer from generic error strings.
+- Implementation tickets are enumerated on the module as `ATTEMPT_IMPLEMENTATION_TICKETS` for the #159 §4 split. Coord #110 / #134.
 
 ### Phase 3 — additive attempt persistence
 
