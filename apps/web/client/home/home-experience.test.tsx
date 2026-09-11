@@ -903,7 +903,7 @@ describe("login-state home experience", () => {
   test("keeps cached partial-total truth visible while the account revalidates", async () => {
     seedBalancesCache({
       totalStatus: "partial",
-      statusLabel: "Partial balance",
+      statusLabel: "Unavailable",
     });
     const pendingSession = deferred<Response>();
     render(
@@ -913,12 +913,12 @@ describe("login-state home experience", () => {
       />,
     );
 
-    const status = await page().findByText("Partial balance");
+    const status = await page().findByText("Unavailable");
     expect(status.getAttribute("data-total-status")).toBe("partial");
     expect(page().getByText("US dollar")).toBeTruthy();
     expect(document.querySelector("[data-shimmer='hero']")).toBeNull();
     fireEvent.click(page().getByRole("button", { name: "Balances" }));
-    expect(page().getByText("Partial balance")).toBeTruthy();
+    expect(page().getByText("Unavailable")).toBeTruthy();
 
     await act(async () => {
       pendingSession.resolve(Response.json(session()));
@@ -1076,7 +1076,7 @@ describe("login-state home experience", () => {
           status: "ready",
           displayTotal: "$12.34",
           totalStatus: "partial",
-          statusLabel: "Partial balance",
+          statusLabel: "Unavailable",
           items: [
             {
               id: "usdc",
@@ -1091,6 +1091,7 @@ describe("login-state home experience", () => {
               name: "Ethereum",
               detail: "ETH",
               displayBalance: "0.0500 ETH",
+              displayContext: "Updating…",
             },
             {
               id: "asset:nvidia",
@@ -1106,16 +1107,30 @@ describe("login-state home experience", () => {
     );
 
     await enabledAccountButton();
-    expect(page().getByText("Partial balance").getAttribute("data-total-status")).toBe(
-      "partial",
-    );
-    expect(page().getByText("0.0500 ETH")).toBeTruthy();
-    expect(page().getByText("Unavailable")).toBeTruthy();
+    expect(
+      document.querySelector(".balance-status")?.getAttribute("data-total-status"),
+    ).toBe("partial");
+    expect(page().getAllByText("Unavailable")).toHaveLength(2);
+    expect(page().queryByText("0.0500 ETH")).toBeNull();
+    expect(page().queryByText("Ethereum")).toBeNull();
+    const updatingRow = document.querySelector("[data-shimmer='row']");
+    expect(updatingRow).toBeTruthy();
+    expect(updatingRow?.querySelector("[data-shimmer='mark']")).toBeTruthy();
+    expect(
+      updatingRow?.querySelector(".shimmer-identity .shimmer-line-wide"),
+    ).toBeTruthy();
+    expect(
+      updatingRow?.querySelector(".shimmer-identity .shimmer-line-narrow"),
+    ).toBeTruthy();
+    expect(updatingRow?.querySelector(".shimmer-pill")).toBeTruthy();
+    expect(page().getByText("Updating…").classList.contains("sr-status")).toBe(true);
 
     fireEvent.click(page().getByRole("button", { name: "Balances" }));
-    expect(page().getByText("Partial balance")).toBeTruthy();
-    expect(page().getByText("Ethereum")).toBeTruthy();
+    expect(page().getAllByText("Unavailable")).toHaveLength(2);
+    expect(page().queryByText("0.0500 ETH")).toBeNull();
+    expect(page().queryByText("Ethereum")).toBeNull();
     expect(page().getByText("NVIDIA")).toBeTruthy();
+    expect(document.querySelector("[data-shimmer='row']")).toBeTruthy();
   });
 
   test("never substitutes funded non-USD cash for unavailable USDC send availability", async () => {
@@ -1126,7 +1141,7 @@ describe("login-state home experience", () => {
           status: "ready",
           displayTotal: "€2,234.56",
           totalStatus: "partial",
-          statusLabel: "Partial balance",
+          statusLabel: "Unavailable",
           items: [
             {
               id: "cash:usd",
@@ -2477,7 +2492,7 @@ describe("balances incremental rendering", () => {
           status: "ready",
           displayTotal: "$99.99",
           totalStatus: "partial",
-          statusLabel: "Partial balance",
+          statusLabel: "Unavailable",
           items: manyBalances(25),
         }}
       />,
@@ -2488,7 +2503,7 @@ describe("balances incremental rendering", () => {
     expect(page().getByRole("heading", { name: "Balances" })).toBeTruthy();
 
     // The authoritative total/status stays independent of the rendered batch.
-    expect(page().getByText("Partial balance")).toBeTruthy();
+    expect(page().getByText("Unavailable")).toBeTruthy();
     expect(page().getByText("Holding 0")).toBeTruthy();
     expect(page().getByText("Holding 9")).toBeTruthy();
     expect(page().queryByText("Holding 10")).toBeNull();
