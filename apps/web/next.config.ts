@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const hostedMoneyActionStore = Boolean(process.env.VERCEL || process.env.DATABASE_URL?.trim());
 
 const nextConfig: NextConfig = {
+  transpilePackages: ["@home/ui"],
   serverExternalPackages: [
     "@coinbase/cdp-sdk",
     "@neondatabase/serverless",
