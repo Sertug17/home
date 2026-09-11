@@ -1556,14 +1556,16 @@ describe("login-state home experience", () => {
           ownerKey: OWNER,
           sendUserOperation: async () => ({ userOperationHash }),
           getUserOperation: async () => ({
+            network: "base",
+            userOpHash: userOperationHash,
             status: "complete",
             transactionHash,
             calls: [{
               to: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
               data: `0xa9059cbb${ADDRESS_B.slice(2).padStart(64, "0")}${BigInt(1000001).toString(16).padStart(64, "0")}`,
-              value: BigInt(0),
+              value: "0",
             }],
-          }) as never,
+          }),
         })}
         sessionFetch={sessionFetch}
       />,
