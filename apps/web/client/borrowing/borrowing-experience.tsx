@@ -444,7 +444,6 @@ function usePersistedPresentationRegion(): RegionId {
 
 function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
-function isAbortError(error: unknown) { return error instanceof DOMException && error.name === "AbortError"; }
 function readableResourceError(error: unknown) {
   if (error instanceof Error && error.message && error.message !== "Authenticated resource is unavailable.") return error.message;
   return "The current limit or RPC simulation could not be verified. Refresh and try again.";

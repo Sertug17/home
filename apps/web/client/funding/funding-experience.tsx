@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RegionId } from "@/config/regions";
 import { useAccountWallet, type AccountWalletClient } from "@/client/account/cdp-client";
 import { activityOwnerKey } from "@/client/activity/use-activity";
@@ -74,7 +74,6 @@ function FundingExperienceBoundary({
   const [step, setStep] = useState<AddMoneyStep>(startStep);
   const [openingOnramp, setOpeningOnramp] = useState(false);
   const [onrampError, setOnrampError] = useState<string | null>(null);
-  const [providerBindings, setProviderBindings] = useState<ReadonlyArray<FundingBinding>>([]);
   const [selectedBinding, setSelectedBinding] = useState<FundingBinding | null>(null);
   const [initialOrder, setInitialOrder] = useState<FundingOrderSummary | null>(null);
   const stepRef = useRef<AddMoneyStep>(startStep);
@@ -98,22 +97,32 @@ function FundingExperienceBoundary({
     ]),
   });
 
+  const providerBindings = useMemo(
+    () => fundingQuery.data ? readProviderBindings(fundingQuery.data[0]) : [],
+    [fundingQuery.data],
+  );
+
   useEffect(() => {
     const values = fundingQuery.data;
-    if (!values) {
-      if (fundingQuery.isError) setProviderBindings([]);
-      return;
-    }
-    const [providerValue, orderValue] = values;
+    if (!values) return;
+    const [, orderValue] = values;
     const navigationEpoch = navigationEpochRef.current;
-    const bindings = readProviderBindings(providerValue);
-    setProviderBindings(bindings);
     const resumed = readFundingOrder(orderValue);
-    if (resumed && navigationEpochRef.current === navigationEpoch && stepRef.current === "method") {
-      const binding = bindings.find((candidate) => candidate.providerId === readProviderId(orderValue));
-      if (binding) { setSelectedBinding(binding); setInitialOrder(resumed); navigateTo("order", false); }
-    }
-  }, [fundingQuery.data, fundingQuery.isError]);
+    if (!resumed || stepRef.current !== "method") return;
+    const binding = providerBindings.find(
+      (candidate) => candidate.providerId === readProviderId(orderValue),
+    );
+    if (!binding) return;
+    queueMicrotask(() => {
+      if (
+        navigationEpochRef.current !== navigationEpoch ||
+        stepRef.current !== "method"
+      ) return;
+      setSelectedBinding(binding);
+      setInitialOrder(resumed);
+      navigateTo("order", false);
+    });
+  }, [fundingQuery.data, providerBindings]);
 
   useEffect(() => {
     openRef.current = open;

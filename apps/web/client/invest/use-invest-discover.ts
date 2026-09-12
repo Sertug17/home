@@ -48,12 +48,6 @@ export type UseInvestDiscoverOptions = {
   refreshCooldownMs?: number;
 };
 
-type LoadMoreRequest = {
-  sequence: number;
-  offset: number;
-  controller: AbortController;
-};
-
 const emptyIcons = {} as const;
 
 const emptyPagination: MemePagination = {
@@ -401,18 +395,6 @@ function parseIconMap(value: unknown): Record<string, string | null> | null {
     icons[id] = imageUrl;
   }
   return icons;
-}
-
-function isCurrentLoadMoreRequest(
-  current: LoadMoreRequest | null,
-  expected: LoadMoreRequest,
-  sequence: number,
-): boolean {
-  return (
-    current === expected &&
-    !expected.controller.signal.aborted &&
-    expected.sequence === sequence
-  );
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {

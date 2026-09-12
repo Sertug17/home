@@ -34,17 +34,21 @@ export function useActivity(
 ): UseActivityResult {
   const validSession = isVerifiedActivitySession(session) ? session : null;
   const ownerKey = validSession ? activityOwnerKey(validSession) : null;
-  const windowEndRef = useRef(new Map<string, string>());
   const requestedCursorsRef = useRef(new Map<string, Set<string>>());
   const loadMoreInFlightRef = useRef(false);
   const [autoLoadPaused, setAutoLoadPaused] = useState(false);
+  const [refreshedWindow, setRefreshedWindow] = useState<{
+    ownerKey: string;
+    windowEnd: string;
+  } | null>(null);
   const expectedSession = validSession;
-  const windowEnd = ownerKey
-    ? windowEndRef.current.get(ownerKey) ?? new Date().toISOString()
-    : "";
-  if (ownerKey && !windowEndRef.current.has(ownerKey)) {
-    windowEndRef.current.set(ownerKey, windowEnd);
-  }
+  const ownerWindowEnd = useMemo(
+    () => ownerKey ? new Date().toISOString() : "",
+    [ownerKey],
+  );
+  const windowEnd = ownerKey && refreshedWindow?.ownerKey === ownerKey
+    ? refreshedWindow.windowEnd
+    : ownerWindowEnd;
 
   const query = useHomeInfiniteQuery({
     queryKey: ownerKey
@@ -88,10 +92,11 @@ export function useActivity(
 
   const retry = useCallback(() => { void query.refetch(); }, [query]);
   const refresh = useCallback(() => {
-    if (ownerKey) windowEndRef.current.set(ownerKey, new Date().toISOString());
+    if (ownerKey) {
+      setRefreshedWindow({ ownerKey, windowEnd: new Date().toISOString() });
+    }
     setAutoLoadPaused(false);
-    void query.refetch();
-  }, [ownerKey, query]);
+  }, [ownerKey, setAutoLoadPaused, setRefreshedWindow]);
   const requestMore = useCallback(async () => {
     if (!query.hasNextPage || query.isFetchingNextPage || loadMoreInFlightRef.current || autoLoadPaused) return;
     loadMoreInFlightRef.current = true;
@@ -113,7 +118,7 @@ export function useActivity(
     void query.fetchNextPage({ cancelRefetch: false }).finally(() => {
       loadMoreInFlightRef.current = false;
     });
-  }, [query]);
+  }, [query, setAutoLoadPaused]);
 
   if (!ownerKey) {
     return {

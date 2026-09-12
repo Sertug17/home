@@ -142,11 +142,11 @@ export function SavingsExperience({
       return data;
     },
   });
-  const loadState: LoadState = metadataQuery.data
+  const loadState = useMemo<LoadState>(() => metadataQuery.data
     ? { status: "ready", data: metadataQuery.data }
     : metadataQuery.isError
       ? { status: "error", data: null }
-      : { status: "loading", data: null };
+      : { status: "loading", data: null }, [metadataQuery.data, metadataQuery.isError]);
   const positionsQuery = useHomeQuery({
     queryKey: sessionKey
       ? ownerQueryKey(sessionKey, "savings-positions")
@@ -157,6 +157,7 @@ export function SavingsExperience({
     refetchOnWindowFocus: false,
     meta: sessionKey ? ownerQueryMeta(sessionKey, "owner") : undefined,
     queryFn: ({ signal }) => {
+      setRateNowMs(now());
       if (!fetchPositions) throw new Error("Savings positions are unavailable.");
       return fetchPositions(signal);
     },
@@ -167,9 +168,6 @@ export function SavingsExperience({
       return data;
     },
   });
-  useEffect(() => {
-    if (positionsQuery.data && positionsQuery.isFetching) setRateNowMs(now());
-  }, [now, positionsQuery.data, positionsQuery.isFetching]);
 
   useEffect(() => {
     if (loadState.status !== "ready") return;
@@ -616,23 +614,6 @@ function isUsablePositionResult(data: PositionResult): boolean {
   );
 }
 
-function retainVerifiedPositionOrError(
-  current: { key: string; state: PositionState } | null,
-  sessionKey: string,
-): { key: string; state: PositionState } {
-  if (current?.key === sessionKey && current.state.status === "ready") {
-    return {
-      key: sessionKey,
-      state: {
-        ...current.state,
-        refreshing: false,
-        refreshError: true,
-      },
-    };
-  }
-  return { key: sessionKey, state: { status: "error" } };
-}
-
 async function fetchSavingsVaults(signal?: AbortSignal): Promise<unknown> {
   const response = await fetch("/api/savings/vaults", {
     headers: { accept: "application/json" },
@@ -692,10 +673,6 @@ function isMorphoSource(value: unknown, query: "vaults" | "vaultPosition"): bool
     value.query === query &&
     typeof value.fetchedAt === "string" &&
     Number.isFinite(Date.parse(value.fetchedAt));
-}
-
-function isAbortError(error: unknown) {
-  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
