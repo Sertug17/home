@@ -66,6 +66,11 @@ body {
 .catalog-number-probe { display: grid; justify-items: start; min-inline-size: 0; }
 .catalog-number-probe > * { max-inline-size: 100%; }
 .catalog-buttons { display: flex; flex-wrap: wrap; align-items: start; gap: var(--home-ui-space-3); }
+.catalog-layout-frame { border: 1px solid var(--home-ui-color-border); }
+.catalog-layout-bleed { background: var(--home-ui-color-canvas); }
+.catalog-surfaces { align-items: stretch; }
+.catalog-surface { flex: 1 1 180px; border: 1px solid var(--separator); border-radius: var(--home-ui-radius-surface); }
+.catalog-separator { display: block; block-size: 1px; background: var(--separator); }
 .catalog-section > .home-ui-button { justify-self: start; }
 .catalog-motion-reduced { display: none; }
 @media (max-width: 480px) {

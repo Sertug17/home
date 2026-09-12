@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ComponentProps } from "react";
-import { IconButton, Heading } from "@home/ui";
+import { IconButton, Heading, Stack } from "@home/ui";
 import { PlusIcon } from "@home/ui/icons";
 
 // These expressions are typechecked but never rendered. Public API regressions
@@ -14,7 +14,14 @@ const titleOnly: ComponentProps<typeof IconButton> = { icon: PlusIcon, title: "A
 const oversized: ComponentProps<typeof IconButton> = { ...iconProps, iconSize: 44 };
 // @ts-expect-error Semantic heading level must be explicit.
 const heading: ComponentProps<typeof Heading> = { children: "Heading" };
+const customStack: ComponentProps<typeof Stack> = { space: { custom: "3.25rem" } };
+// @ts-expect-error Spacing must come from the shared scale or the custom escape hatch.
+const unknownSpace: ComponentProps<typeof Stack> = { space: "5" };
+// @ts-expect-error Custom spacing is a CSS value, not a number.
+const numericCustomSpace: ComponentProps<typeof Stack> = { space: { custom: 12 } };
+// @ts-expect-error Icon buttons cannot opt every utility action into haptics.
+const hapticIcon: ComponentProps<typeof IconButton> = { ...iconProps, hapticFeedback: "selection" };
 
 test("type-level accessibility contracts are included in validation", () => {
-  expect([iconProps, unnamed, titleOnly, oversized, heading]).toHaveLength(5);
+  expect([iconProps, unnamed, titleOnly, oversized, heading, customStack, unknownSpace, numericCustomSpace, hapticIcon]).toHaveLength(9);
 });
