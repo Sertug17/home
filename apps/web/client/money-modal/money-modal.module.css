@@ -219,7 +219,7 @@
   align-items: center;
   gap: 8px;
   border: 1px solid var(--home-hairline);
-  border-radius: 999px;
+  border-radius: var(--home-ui-radius-control);
   background: var(--home-white);
   color: var(--home-ink);
   font-size: 0.82rem;
@@ -252,7 +252,7 @@
 .chip {
   min-height: 36px;
   border: 1px solid var(--home-hairline);
-  border-radius: 999px;
+  border-radius: var(--home-ui-radius-control);
   background: var(--home-white);
   color: var(--home-ink);
   cursor: pointer;
@@ -338,7 +338,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--home-ui-radius-control);
   background: var(--home-canvas);
   color: var(--home-ink);
   cursor: pointer;

@@ -25,7 +25,7 @@
   --line: var(--home-hairline);
   --surface: var(--home-canvas);
   --base-blue: var(--home-blue);
-  --control-radius: 8px;
+  --control-radius: var(--home-ui-radius-control);
   --panel-radius: 12px;
   --motion-tab: 180ms;
   --motion-chip: 120ms;

@@ -184,6 +184,39 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    files: ["**/*.test.{ts,tsx}"],
+    ignores: ["**/migrations/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "fs",
+              message: "tests must not read source files; assert behavior instead",
+            },
+            {
+              name: "node:fs",
+              message: "tests must not read source files; assert behavior instead",
+            },
+          ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.name=/^set(?:Timeout|Interval)$/][arguments.1.type='Literal'][arguments.1.value>50]",
+          message: "tests must use fake timers instead of real delays over 50ms",
+        },
+        {
+          selector: "CallExpression[callee.object.name='Bun'][callee.property.name='file']",
+          message: "tests must not read source files; assert behavior instead",
+        },
+      ],
+    },
+  },
+  {
     files: ["server/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
     rules: {
       "no-restricted-imports": [

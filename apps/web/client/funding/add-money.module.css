@@ -18,7 +18,7 @@
   width: 100%;
   min-height: 76px;
   border: 1px solid var(--home-hairline);
-  border-radius: 12px;
+  border-radius: var(--home-ui-radius-control);
   background: var(--home-white);
   color: var(--home-ink);
   cursor: pointer;
@@ -137,7 +137,7 @@
 
 .network {
   margin: 0;
-  border-radius: 999px;
+  border-radius: var(--home-ui-radius-control);
   background: rgba(0, 82, 255, 0.08);
   color: var(--home-blue);
   font-size: 0.78rem;
