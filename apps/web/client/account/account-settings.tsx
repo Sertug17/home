@@ -1,11 +1,19 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Button, Heading, Text } from "@home/ui";
 import { ArrowRightIcon } from "@home/ui/icons";
 import { CopyableValue } from "@/components/copyable-value";
 import { CountrySelect } from "@/components/country-select";
 import { CurrencyMark } from "@/components/currency-mark";
 import { formatAddress } from "@/shared/formatting";
+import {
+  BORROW_COLLATERAL_TOKEN,
+  BORROW_LOAN_TOKEN,
+  BORROW_MARKET_ID,
+  BORROW_ORACLE_ADDRESS,
+  MORPHO_BLUE_ADDRESS,
+} from "@/shared/borrowing/config";
 import {
   presentationRegions,
   type RegionId,
@@ -125,6 +133,108 @@ export function AccountSettings({
           </Button>
         </div>
       </section>
+
+      <section className={styles.section} aria-labelledby="disclosures-heading">
+        <Heading id="disclosures-heading" level={2} textStyle="section-title">
+          Disclosures &amp; terms
+        </Heading>
+        <div className={styles.card}>
+          <DisclosureRow title="Availability">
+            Features and providers vary by country. Tokenized stock trading
+            requires issuer and provider eligibility verification.
+          </DisclosureRow>
+          <DisclosureRow title="Providers and issuers">
+            Home shows assets and services from third-party providers and
+            issuers, including Coinbase, Ripio, Morpho, and Circle. A listing
+            is not an endorsement.
+          </DisclosureRow>
+          <DisclosureRow title="Data sources">
+            Market prices come from Codex. Savings rates and vault data come
+            from Morpho. Borrow market data comes from Base RPC.
+          </DisclosureRow>
+          <DisclosureRow title="Borrow market">
+            <span className={styles.contracts}>
+              Morpho Blue market{" "}
+              <CopyableValue
+                value={BORROW_MARKET_ID}
+                display={formatAddress(BORROW_MARKET_ID)}
+                valueKind="market ID"
+              />{" "}
+              on Base: Morpho{" "}
+              <CopyableValue
+                value={MORPHO_BLUE_ADDRESS}
+                display={formatAddress(MORPHO_BLUE_ADDRESS)}
+                valueKind="address"
+              />
+              , cbBTC{" "}
+              <CopyableValue
+                value={BORROW_COLLATERAL_TOKEN.address}
+                display={formatAddress(BORROW_COLLATERAL_TOKEN.address)}
+                valueKind="address"
+              />
+              , USDC{" "}
+              <CopyableValue
+                value={BORROW_LOAN_TOKEN.address}
+                display={formatAddress(BORROW_LOAN_TOKEN.address)}
+                valueKind="address"
+              />
+              , oracle{" "}
+              <CopyableValue
+                value={BORROW_ORACLE_ADDRESS}
+                display={formatAddress(BORROW_ORACLE_ADDRESS)}
+                valueKind="address"
+              />
+              .
+            </span>
+          </DisclosureRow>
+          <DisclosureRow title="Terms">
+            <span className={styles.termLinks}>
+              <a
+                href="https://www.coinbase.com/legal"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Coinbase legal
+              </a>
+              <a
+                href="https://terms.ripio.com/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ripio terms
+              </a>
+              <a
+                href="https://morpho.org/terms-of-use/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Morpho terms
+              </a>
+            </span>
+          </DisclosureRow>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DisclosureRow({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`${styles.row} ${styles.disclosureRow}`}>
+      <div>
+        <Text as="strong" textStyle="row-label">
+          {title}
+        </Text>
+        <Text as="div" textStyle="metadata" tone="muted">
+          {children}
+        </Text>
+      </div>
     </div>
   );
 }

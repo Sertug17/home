@@ -70,6 +70,27 @@
   font-family: var(--home-ui-font-numeric);
 }
 
+.disclosureRow {
+  min-height: 0;
+}
+
+.contracts button {
+  display: inline-flex;
+  min-height: var(--home-ui-target-min);
+  align-items: center;
+}
+
+.termLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--home-ui-space-2) var(--home-ui-space-3);
+}
+
+.termLinks a {
+  color: var(--home-ui-color-action);
+  font-weight: var(--home-ui-type-weight-medium);
+}
+
 .rowButton {
   display: block;
   border-radius: 0;
