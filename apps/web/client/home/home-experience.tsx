@@ -251,6 +251,9 @@ function HomeExperienceView({
     useState<ShellPanelId>(initialPanel);
   const [navigationRequest, setNavigationRequest] = useState(0);
   const [balancesRevealReset, setBalancesRevealReset] = useState(0);
+  const [balancesMounted, setBalancesMounted] = useState(
+    initialPanel === balancesPanelId,
+  );
   const [forwardRequest, setForwardRequest] = useState(0);
   // Tracks whether the panel change that just happened was a history pop
   // (browser/app Back) or an explicit forward push. The ref is written from
@@ -259,6 +262,7 @@ function HomeExperienceView({
   // A pop captures the restore entitlement before React/App Router work can
   // mutate provenance. Balances consumes this marker exactly once.
   const pendingBalancesRestoreRef = useRef(false);
+  const balancesReturnScrollRef = useRef(0);
   // Account may paint before App Router commits its history entry. A Done click
   // in that window is queued until useSearchParams observes the committed URL;
   // only the ensuing pop is allowed to close the overlay.
@@ -277,23 +281,11 @@ function HomeExperienceView({
   );
   const [settingsOpenedInApp, setSettingsOpenedInApp] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
-  const panelScrollRef = useRef<
-    Partial<
-      Record<
-        ShellPanelId | "account",
-        { top: number; identity: string | null }
-      >
-    >
-  >({});
   const shellPath = routeMode === "landing" ? "/" : "/dashboard";
   const investChrome = useOptionalAppChrome();
-  const panelKey: ShellPanelId | "account" = isAccountSettingsOpen
-    ? "account"
-    : activeNavigation;
-  // Ephemeral identity for the current owner/provider/region. It fences any
-  // saved scroll offset so a different account or presentation scope never
-  // restores someone else's position. The Balances panel additionally fences
-  // by the current list identity below. No raw account or private data is stored.
+  // Ephemeral identity for the current owner/provider/region. A scope change
+  // explicitly resets the shared shell scroller; panel content itself stays
+  // mounted across navigation.
   const scrollContextId =
     account.ownerKey && account.session?.user.subject
       ? [
@@ -308,7 +300,7 @@ function HomeExperienceView({
   useEffect(() => {
     if (previousScrollContextRef.current === scrollContextId) return;
     previousScrollContextRef.current = scrollContextId;
-    panelScrollRef.current = {};
+    mainRef.current?.scrollTo({ top: 0, behavior: "auto" });
   }, [scrollContextId]);
 
   const closeAccount = useCallback(() => {
@@ -332,11 +324,11 @@ function HomeExperienceView({
       pendingAccountCloseRef.current = false;
       accountCloseInFlightRef.current = false;
       setActiveNavigation(location.panel);
+      if (location.panel === balancesPanelId) setBalancesMounted(true);
       setIsAccountSettingsOpen(location.account === "settings");
       if (location.account !== "settings") setSettingsOpenedInApp(false);
       setIsAccountOpen(location.account === "signin");
       if (location.panel === balancesPanelId && !restoresBalances) {
-        delete panelScrollRef.current[balancesPanelId];
         setBalancesRevealReset((resetSignal) => resetSignal + 1);
       }
     };
@@ -412,15 +404,12 @@ function HomeExperienceView({
     balancesRevealReset,
   );
   const balancesListId = balancesListKey(paintedAssetBalances.items);
-  const panelScrollIdentity =
-    panelKey === balancesPanelId && scrollContextId
-      ? `${scrollContextId}\u0000${balancesListId}`
-      : scrollContextId;
   const previousBalancesListIdRef = useRef(balancesListId);
+  const previousNavigationRef = useRef(activeNavigation);
   useEffect(() => {
     if (previousBalancesListIdRef.current === balancesListId) return;
     previousBalancesListIdRef.current = balancesListId;
-    delete panelScrollRef.current[balancesPanelId];
+    mainRef.current?.scrollTo({ top: 0, behavior: "auto" });
   }, [balancesListId]);
 
   useEffect(() => {
@@ -430,33 +419,38 @@ function HomeExperienceView({
     if (!panelStage) return;
 
     panelStage.focus({ preventScroll: true });
-    const saved = panelScrollRef.current[panelKey];
-    const isBalances = panelKey === balancesPanelId;
-    const shouldRestore = isBalances
-      ? pendingBalancesRestoreRef.current
-      : navigationIntentRef.current === "pop";
-    const preservedTop =
-      shouldRestore && saved?.identity === panelScrollIdentity
-        ? saved.top
-        : 0;
-    if (!shouldRestore) {
-      panelScrollRef.current[panelKey] = undefined;
-    }
+    const isBalances = activeNavigation === balancesPanelId;
+    const shouldPreserveBalances =
+      isBalances && pendingBalancesRestoreRef.current;
     if (isBalances) {
       pendingBalancesRestoreRef.current = false;
+      if (shouldPreserveBalances) {
+        mainRef.current?.scrollTo({
+          top: clampHomeScrollTop(
+            mainRef.current,
+            balancesReturnScrollRef.current,
+          ),
+          behavior: "auto",
+        });
+      }
       disarmBalancesRestore();
     }
-    const reducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    mainRef.current?.scrollTo({
-      top: clampHomeScrollTop(mainRef.current, preservedTop),
-      behavior: reducedMotion || preservedTop > 0 ? "auto" : "smooth",
-    });
+    const preservesPossibleAssetReturn =
+      activeNavigation === "invest" &&
+      previousNavigationRef.current === balancesPanelId;
+    previousNavigationRef.current = activeNavigation;
+    if (!shouldPreserveBalances && !preservesPossibleAssetReturn) {
+      const reducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      mainRef.current?.scrollTo({
+        top: 0,
+        behavior: reducedMotion ? "auto" : "smooth",
+      });
+    }
   }, [
+    activeNavigation,
     disarmBalancesRestore,
-    panelKey,
-    panelScrollIdentity,
     navigationRequest,
   ]);
 
@@ -499,18 +493,17 @@ function HomeExperienceView({
       const mayOpenAssetDetail =
         activeNavigation === balancesPanelId && nextNavigation === "invest";
       if (mayOpenAssetDetail) {
+        balancesReturnScrollRef.current = mainRef.current?.scrollTop ?? 0;
         awaitBalancesAssetDetail();
       } else {
         disarmBalancesRestore();
-      }
-      if (!mayOpenAssetDetail) {
-        delete panelScrollRef.current[balancesPanelId];
       }
       if (nextNavigation === balancesPanelId || !mayOpenAssetDetail) {
         setBalancesRevealReset((resetSignal) => resetSignal + 1);
       }
     }
     setActiveNavigation(nextNavigation);
+    if (nextNavigation === balancesPanelId) setBalancesMounted(true);
     setNavigationRequest((request) => request + 1);
     if (skipHistory) return;
     router.push(shellHref(shellPath, { panel: nextNavigation }), {
@@ -523,10 +516,10 @@ function HomeExperienceView({
     accountCloseInFlightRef.current = false;
     setForwardRequest((request) => request + 1);
     if (activeNavigation === balancesPanelId && !isAccountSettingsOpen) {
+      balancesReturnScrollRef.current = mainRef.current?.scrollTop ?? 0;
       armBalancesAccountOverlay();
     } else {
       disarmBalancesRestore();
-      delete panelScrollRef.current[balancesPanelId];
       setBalancesRevealReset((resetSignal) => resetSignal + 1);
     }
     setIsAccountSettingsOpen(true);
@@ -577,7 +570,6 @@ function HomeExperienceView({
     setIsAccountSettingsOpen(false);
     setForwardRequest((request) => request + 1);
     disarmBalancesRestore();
-    delete panelScrollRef.current[balancesPanelId];
     setBalancesRevealReset((resetSignal) => resetSignal + 1);
     const current = parseShellLocation(
       new URLSearchParams(window.location.search),
@@ -598,7 +590,6 @@ function HomeExperienceView({
     setIsAccountSettingsOpen(false);
     setForwardRequest((request) => request + 1);
     disarmBalancesRestore();
-    delete panelScrollRef.current[balancesPanelId];
     setBalancesRevealReset((resetSignal) => resetSignal + 1);
     if (routeMode === "dashboard") {
       explicitLogoutRef.current = true;
@@ -677,12 +668,6 @@ function HomeExperienceView({
           <main
             ref={mainRef}
             className="app-main app-main-authenticated"
-            onScroll={(event) => {
-              panelScrollRef.current[panelKey] = {
-                top: event.currentTarget.scrollTop,
-                identity: panelScrollIdentity,
-              };
-            }}
           >
             {isUnavailable ? (
               <div className="dashboard-notice" role="alert">
@@ -694,7 +679,7 @@ function HomeExperienceView({
             ) : null}
 
             {isAccountSettingsOpen ? (
-              <div className="panel-fade" key={panelKey}>
+              <div className="panel-fade">
                 <AccountSettings
                   regionId={regionId}
                   onRegionChange={selectRegion}
@@ -733,7 +718,7 @@ function HomeExperienceView({
                 }
                 aria-busy={isChecking}
               >
-                <div className="panel-fade" key={panelKey}>
+                <div className="panel-fade">
                   {activeNavigation === "home" ? (
                     <HomePanel
                       assetBalances={paintedAssetBalances}
@@ -750,14 +735,16 @@ function HomeExperienceView({
                       regionId={regionId}
                     />
                   ) : null}
-                  {activeNavigation === balancesPanelId ? (
-                    <BalancesPage
+                  {balancesMounted ? (
+                    <MountedShellPanel active={activeNavigation === balancesPanelId}>
+                      <BalancesPage
                       assetBalances={paintedAssetBalances}
                       assetMarkResolution={assetMarkResolution}
                       isChecking={isChecking}
                       revealedCount={balancesReveal.count}
-                      onRevealMore={balancesReveal.extend}
-                    />
+                        onRevealMore={balancesReveal.extend}
+                      />
+                    </MountedShellPanel>
                   ) : null}
                   {activeNavigation === activityPanelId ? (
                     <ActivityPage
@@ -815,6 +802,25 @@ function HomeExperienceView({
         onClose={closeAccount}
         onVerified={() => router.replace("/dashboard")}
       />
+    </div>
+  );
+}
+
+function MountedShellPanel({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-shell-panel=""
+      hidden={!active}
+      inert={active ? undefined : true}
+      aria-hidden={active ? undefined : true}
+    >
+      {children}
     </div>
   );
 }

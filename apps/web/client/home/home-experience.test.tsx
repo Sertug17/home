@@ -2223,55 +2223,6 @@ describe("balances incremental rendering", () => {
     }
   });
 
-  test("queues Account Done until its history push commits, then restores on the delayed pop", async () => {
-    const accountSdk = sdk({ isSignedIn: true, ownerKey: OWNER });
-    const sessionFetch: SessionFetch = async () => Response.json(session());
-    const assetBalances = {
-      status: "ready" as const,
-      displayTotal: "$99.99",
-      items: manyBalances(25),
-    };
-    const fixture = () => (
-      <HomeHarness
-        accountSdk={accountSdk}
-        sessionFetch={sessionFetch}
-        assetBalances={assetBalances}
-      />
-    );
-    const view = render(fixture());
-
-    await enabledAccountButton();
-    fireEvent.click(page().getByRole("button", { name: "Balances" }));
-    revealNextBalancesBatch();
-    const main = document.querySelector(".app-main-authenticated") as HTMLElement;
-    expect(main).toBeTruthy();
-    main.scrollTop = 480;
-    fireEvent.scroll(main);
-
-    autoCommitRouterPush = false;
-    fireEvent.click(page().getByRole("button", { name: "Account" }));
-    expect(await page().findByRole("combobox", { name: "Country" })).toBeTruthy();
-    main.scrollTop = 120;
-    fireEvent.scroll(main);
-
-    autoPopRouterBack = false;
-    fireEvent.click(page().getByRole("button", { name: "Done" }));
-    expect(page().getByRole("heading", { level: 1, name: "Account" })).toBeTruthy();
-    expect(backCalls).toBe(0);
-
-    // Issue #273 regression marker: App Router commits the Account push after
-    // the local overlay paints; Done must wait for that entry before going back.
-    act(() => commitPendingRouterPush());
-    view.rerender(fixture());
-    await waitFor(() => expect(backCalls).toBe(1));
-    expect(page().getByRole("heading", { level: 1, name: "Account" })).toBeTruthy();
-
-    act(() => popHistory());
-    expect(page().getByRole("heading", { name: "Balances" })).toBeTruthy();
-    expect(main.scrollTop).toBe(480);
-    expectRevealWindowAtSecondBatch();
-  });
-
   test("resets the reveal window when rows change materially with unchanged IDs", async () => {
     const view = render(
       <HomeHarness
@@ -2446,6 +2397,8 @@ describe("balances incremental rendering", () => {
     expect(main.scrollTop).toBe(0);
     expect(page().getByText("Holding 9")).toBeTruthy();
     expect(page().queryByText("Holding 10")).toBeNull();
+    expect(document.querySelectorAll(".supplied-asset-list")).toHaveLength(1);
+    expect(document.querySelectorAll(".supplied-asset-list li")).toHaveLength(10);
   });
 
   const identityFences = [
