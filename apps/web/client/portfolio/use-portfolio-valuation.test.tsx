@@ -1,6 +1,10 @@
 import "@/client/account/dom-test-harness";
 
-import { getHomeQueryClient } from "@/client/query/query-client";
+import {
+  getHomeQueryClient,
+  ownerQueryKey,
+  shouldPersistOwnerQuery,
+} from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { usePortfolioValuation } from "./use-portfolio-valuation";
@@ -156,6 +160,19 @@ afterEach(() => {
 });
 
 describe("portfolio valuation ownership", () => {
+  test("marks valuation responses memory-only so recognized rows cannot enter the owner persister", async () => {
+    const fetchValuation: FetchPortfolioValuation = async () => snapshot("US");
+    render(<Harness region="US" fetchValuation={fetchValuation} />);
+    await waitFor(() => expect(document.body.textContent).toBe("US:USD"));
+
+    const ownerKey = `${session.subject}\u0000${ADDRESS}\u00008453`;
+    const query = getHomeQueryClient().getQueryCache().find({
+      queryKey: ownerQueryKey(ownerKey, "valuation", "US"),
+    });
+    expect(query?.meta).toEqual({ persistence: "memory", ownerKey });
+    expect(query && shouldPersistOwnerQuery(query, ownerKey)).toBe(false);
+  });
+
   test("keeps previous owner data during a region update and replaces it when fresh data arrives", async () => {
     const us = deferred<unknown>();
     const de = deferred<unknown>();

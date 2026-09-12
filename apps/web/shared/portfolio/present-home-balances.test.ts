@@ -1141,6 +1141,65 @@ describe("presentPortfolioValuation", () => {
     expect(presented.unavailableItemIds).toEqual([`asset:${nvidia.assetKey}`]);
   });
 
+  test("appends recognized quantities after configured rows and excludes them from the Home preview", () => {
+    const configured = directHolding({
+      id: "eth",
+      assetKey: PORTFOLIO_NATIVE_ASSET_KEY,
+      name: "Ethereum",
+      symbol: "ETH",
+      decimals: 18,
+      balanceBaseUnits: "1000000000000000000",
+      readStatus: "ready",
+    });
+    const presented = presentPortfolioValuation({
+      status: "ready",
+      snapshot: snapshot({
+        selectedRegion: "US",
+        quoteCurrency: "USD",
+        inventory: {
+          scope: "configured-base-assets-v1",
+          walletDiscoveryComplete: false,
+          holdings: [configured],
+          omissions: [],
+        },
+        recognized: {
+          status: "complete",
+          holdings: [{
+            id: "recognized:0x9999999999999999999999999999999999999999",
+            assetKey: "eip155:8453/erc20:0x9999999999999999999999999999999999999999",
+            name: "Recognized",
+            symbol: "RCG",
+            decimals: 18,
+            contractAddress: "0x9999999999999999999999999999999999999999",
+            balanceBaseUnits: "1230000000000000000",
+            liquidityUsd: { atoms: "100000", scale: 0 },
+            volume24Usd: { atoms: "10000", scale: 0 },
+            valueCurrency: "USD",
+            value: null,
+            valuationStatus: "unpriced",
+          }],
+        },
+      }),
+      error: null,
+    });
+
+    expect(presented.items.map(({ name }) => name)).toEqual([
+      "US dollar",
+      "Brazilian real",
+      "Ethereum",
+      "Recognized",
+    ]);
+    expect(presented.items.at(-1)).toMatchObject({
+      displayBalance: "1.2300 RCG",
+      recognized: true,
+    });
+    expect(previewHomeBalanceItems(presented.items).map(({ name }) => name)).toEqual([
+      "US dollar",
+      "Brazilian real",
+      "Ethereum",
+    ]);
+  });
+
   test("caps only the Home hub preview, not the full Balances list", () => {
     const items = Array.from({ length: HOME_BALANCES_HUB_PREVIEW_COUNT + 3 }, (_, index) => ({
       id: `row-${index}`,

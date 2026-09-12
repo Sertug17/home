@@ -51,6 +51,30 @@ function valuation() {
   };
 }
 
+function recognizedValuation() {
+  const base = valuation();
+  return {
+    ...base,
+    recognized: {
+      status: "complete",
+      holdings: [{
+        id: "recognized:0x9999999999999999999999999999999999999999",
+        assetKey: "eip155:8453/erc20:0x9999999999999999999999999999999999999999",
+        name: "Recognized Coin",
+        symbol: "RCG",
+        decimals: 18,
+        contractAddress: "0x9999999999999999999999999999999999999999",
+        balanceBaseUnits: "1230000000000000000",
+        liquidityUsd: { atoms: "100000", scale: 0 },
+        volume24Usd: { atoms: "10000", scale: 0 },
+        valueCurrency: "USD",
+        value: null,
+        valuationStatus: "unpriced",
+      }],
+    },
+  };
+}
+
 function scrollableValuation() {
   const base = valuation();
   const extras = Array.from({ length: 24 }, (_, index) => ({
@@ -81,7 +105,10 @@ async function json(route: Route, body: unknown) {
   await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function installApiFixtures(page: Page) {
+async function installApiFixtures(
+  page: Page,
+  options: { portfolioValuation?: ReturnType<typeof valuation> } = {},
+) {
   let status: ActionStatus = "unconfirmed";
   let handleRecorded = false;
   let failHandleResponseOnce = true;
@@ -91,7 +118,7 @@ async function installApiFixtures(page: Page) {
     const url = new URL(request.url());
     const path = url.pathname;
     if (path === "/api/session") return json(route, { user: { subject: "playwright-smoke-subject" }, smartAccount: { address: OWNER, chainId: 8453 }, accountProvider: "cdp-embedded" });
-    if (path === "/api/portfolio/valuation") return json(route, valuation());
+    if (path === "/api/portfolio/valuation") return json(route, options.portfolioValuation ?? valuation());
     if (path === "/api/portfolio") return json(route, { walletAddress: OWNER, chainId: 8453, blockNumber: "16", blockHash: `0x${"cd".repeat(32)}`, blockTimestamp: "100", fetchedAt: new Date().toISOString(), assets: [{ id: "usdc", symbol: "USDC", decimals: 6, kind: "erc20", tokenAddress: USDC, balanceBaseUnits: "12340000" }, { id: "eth", symbol: "ETH", decimals: 18, kind: "native", balanceBaseUnits: "0" }] });
     if (path === "/api/actions/prepare" && request.method() === "POST") { status = "unconfirmed"; return json(route, action()); }
     if (path === `/api/actions/${ACTION_ID}/confirm`) { status = "pending"; return json(route, { id: ACTION_ID, calls: action().calls, summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, expiresAt: EXPIRES_AT }); }
@@ -155,6 +182,31 @@ async function amountMetrics(page: Page) {
     };
   });
 }
+
+test("recognized token is nested-Balances-only and never enters Send availability", async ({ page }) => {
+  const fixture = recognizedValuation();
+  parsePortfolioValuationSnapshot(fixture, {
+    subject: "playwright-smoke-subject",
+    smartAccountAddress: OWNER,
+    chainId: 8453,
+  }, "US");
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page, { portfolioValuation: fixture });
+  await signIn(page);
+
+  await expect(page.getByText("Recognized Coin", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Balances" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Balances" })).toBeVisible();
+  await expect(page.getByText("Recognized Coin", { exact: true })).toBeVisible();
+  await expect(page.getByText("1.2300 RCG", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
+  const send = page.getByRole("dialog", { name: "Send" });
+  await expect(send.getByText("Recognized Coin", { exact: true })).toHaveCount(0);
+  await expect(send.getByText("RCG", { exact: true })).toHaveCount(0);
+  await expect(send.getByText(/12\.34 available/)).toBeVisible();
+});
 
 test("ambiguous handle response retries without a second wallet dispatch", async ({ page }) => {
   parsePortfolioValuationSnapshot(valuation(), {
