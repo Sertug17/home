@@ -31,7 +31,7 @@
 }
 
 .method:focus-visible {
-  outline: 3px solid rgba(0, 82, 255, 0.18);
+  outline: 3px solid var(--home-ui-color-focus-halo);
   outline-offset: 2px;
 }
 
@@ -86,7 +86,7 @@
 
 .anotherOnramp:focus-visible,
 .searchInput:focus-visible {
-  outline: 3px solid rgba(0, 82, 255, 0.18);
+  outline: 3px solid var(--home-ui-color-focus-halo);
   outline-offset: 2px;
 }
 
@@ -166,7 +166,7 @@
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: 12px;
+  border-radius: var(--home-ui-radius-surface);
 }
 
 .addressBlock {
@@ -229,14 +229,14 @@
 }
 
 .fullAddress:focus-visible {
-  outline: 3px solid rgba(0, 82, 255, 0.18);
+  outline: 3px solid var(--home-ui-color-focus-halo);
   outline-offset: 2px;
 }
 
 .addressShimmer {
   width: 148px;
   height: 18px;
-  border-radius: 6px;
+  border-radius: var(--home-ui-radius-control);
 }
 
 .supported {
@@ -339,7 +339,7 @@
   display: grid;
   gap: 0;
   border: 1px solid var(--separator);
-  border-radius: 12px;
+  border-radius: var(--home-ui-radius-surface);
   background: var(--home-white);
   padding: 14px 16px;
 }
@@ -374,7 +374,7 @@
 }
 
 .previewError {
-  color: var(--home-danger, #b42318);
+  color: var(--home-danger, var(--home-ui-color-error));
   padding-top: 8px;
 }
 

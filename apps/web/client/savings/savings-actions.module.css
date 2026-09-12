@@ -24,7 +24,7 @@
   place-items: center;
   border-radius: 50%;
   background: var(--home-blue);
-  color: #fff;
+  color: var(--home-ui-color-on-action);
   font-size: 0.95rem;
   font-weight: 700;
 }

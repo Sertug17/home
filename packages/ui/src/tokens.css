@@ -16,12 +16,27 @@
   --home-ui-color-accent-tint-muted: #355789;
   --home-ui-color-accent-tint-separator: #b9ccff;
   --home-ui-color-focus: #0052ff;
+  /* Focus halo: apps/web/client/funding/add-money.module.css. */
+  --home-ui-color-focus-halo: rgba(0, 82, 255, 0.18);
+  /* Dialog backdrop: apps/web/client/account/account.module.css. */
+  --home-ui-color-overlay: rgba(10, 11, 13, 0.48);
   --home-ui-color-subtle-hover: #eef0f4;
   --home-ui-color-subtle-pressed: #e6e8ec;
   --home-ui-color-disabled-text: #5b6270;
   --home-ui-color-disabled-surface: #e6e8ec;
   --home-ui-color-success: #137333;
   --home-ui-color-error: #b42318;
+  /* Status palettes: finance-rows.module.css (success), review.module.css
+     (warning), and account.module.css/review.module.css (error). */
+  --home-ui-color-status-success-text: #137333;
+  --home-ui-color-status-success-background: #eaf8ef;
+  --home-ui-color-status-success-border: #c6ead2;
+  --home-ui-color-status-warning-text: #5b6270;
+  --home-ui-color-status-warning-background: #f7f8fa;
+  --home-ui-color-status-warning-border: #0052ff;
+  --home-ui-color-status-error-text: #8d211a;
+  --home-ui-color-status-error-background: #fff1f0;
+  --home-ui-color-status-error-border: #b42318;
   /* Domain consumers choose these explicitly; outgoing money is not an error. */
   --home-ui-color-market-gain: #137333;
   --home-ui-color-market-loss: #b42318;
@@ -69,6 +84,18 @@
   --home-ui-inset-row: var(--home-ui-space-3);
   --home-ui-radius-control: 6px;
   --home-ui-radius-surface: 12px;
+  /* Elevated surfaces: apps/web/client/account/account.module.css. */
+  --home-ui-shadow-popover: 0 14px 44px rgba(10, 11, 13, 0.18);
+  --home-ui-shadow-sheet: 0 24px 80px rgba(10, 11, 13, 0.24);
+  /* Existing fixed UI uses layer 20; action toasts use 21. Native dialogs
+     still participate in the browser top layer rather than these values. */
+  --home-ui-layer-sheet: 20;
+  --home-ui-layer-popover: 20;
+  --home-ui-layer-toast: 21;
+  /* Motion curves: money-modal.module.css enter/exit and shared controls. */
+  --home-ui-easing-standard: ease;
+  --home-ui-easing-enter: ease-out;
+  --home-ui-easing-exit: ease-in;
   /* Artwork is fixed optical size; interactive targets grow with text. */
   --home-ui-icon-size: 20px;
   --home-ui-icon-size-large: 24px;

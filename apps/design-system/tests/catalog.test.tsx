@@ -25,6 +25,11 @@ test("catalog renders real package exports and deterministic specimen controls",
   expect(container.querySelector("[data-layout='custom']")?.getAttribute("data-space")).toBe("custom");
   expect(container.querySelectorAll("[data-surface]")).toHaveLength(4);
   expect(container.querySelector("[data-surface='tinted-accent']")?.classList.contains("surface-tinted")).toBe(true);
+  expect(container.querySelectorAll("[data-token]")).toHaveLength(19);
+  expect(container.querySelectorAll("[data-token-kind='color']")).toHaveLength(11);
+  expect(container.querySelectorAll("[data-token-kind='shadow']")).toHaveLength(2);
+  expect(container.querySelectorAll("[data-token-kind='layer']")).toHaveLength(3);
+  expect(container.querySelectorAll("[data-token-kind='easing']")).toHaveLength(3);
   const ticker = container.querySelector<HTMLElement>("[data-ticker-specimen]");
   expect(ticker?.getAttribute("aria-label")).toBe("$1,234.56");
   fireEvent.click(page.getByRole("button", { name: "Update balance ticker" }));

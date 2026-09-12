@@ -153,7 +153,7 @@
 .quiet:focus-visible,
 .key:focus-visible,
 .assetPill:focus-within {
-  outline: 3px solid rgba(0, 82, 255, 0.18);
+  outline: 3px solid var(--home-ui-color-focus-halo);
   outline-offset: 2px;
 }
 
@@ -275,7 +275,7 @@
 
 .chip:focus-visible,
 .unitToggle:focus-visible {
-  outline: 3px solid rgba(0, 82, 255, 0.18);
+  outline: 3px solid var(--home-ui-color-focus-halo);
   outline-offset: 2px;
 }
 
@@ -434,8 +434,8 @@
 
 .error {
   border-radius: var(--control-radius);
-  background: #fff1f0;
-  color: #8d211a;
+  background: var(--home-ui-color-status-error-background);
+  color: var(--home-ui-color-status-error-text);
   padding: 11px 13px;
 }
 

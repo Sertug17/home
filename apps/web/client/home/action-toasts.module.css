@@ -1,6 +1,6 @@
 .region {
   position: fixed;
-  z-index: 21;
+  z-index: var(--home-ui-layer-toast);
   left: 50%;
   bottom: calc(82px + env(safe-area-inset-bottom, 0px));
   display: grid;
