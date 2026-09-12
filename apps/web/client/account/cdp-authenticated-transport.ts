@@ -10,6 +10,7 @@ import type { SessionFetch, VerifiedAccountSession } from "./session-client";
 import { ACCOUNT_PROVIDER_HEADER } from "@/shared/account/session-types";
 import { TransferExecutionError } from "@/shared/transfers/types";
 import { browserHomeQueryClient, useHomeQueryClient, ownerQueryKey, ownerQueryMeta } from "@/client/query/query-client";
+import type { QueryClient } from "@tanstack/react-query";
 import { freshUntilMoved, type BalanceSnapshot } from "@/client/query/fresh-until-moved";
 import { parsePortfolioValuationSnapshot } from "@/shared/portfolio/parse-valuation";
 import type { PortfolioValuationSnapshot } from "@/shared/portfolio/valuation-types";
@@ -102,9 +103,13 @@ export function useAuthenticatedTransport({
 }) {
   const queryClient = useHomeQueryClient(browserHomeQueryClient());
   const freshnessRuns = useRef(new Map<string, () => void>());
+  const freshnessMoved = useRef(new Set<string>());
+  const freshnessStarts = useRef(new Map<string, number>());
   const reset = useCallback(() => {
     for (const cancel of freshnessRuns.current.values()) cancel();
     freshnessRuns.current.clear();
+    freshnessMoved.current.clear();
+    freshnessStarts.current.clear();
   }, []);
   useEffect(() => reset, [reset]);
 
@@ -168,7 +173,10 @@ export function useAuthenticatedTransport({
   );
 
   const startBalanceFreshness = useCallback(async (actionId: string) => {
-    if (!session?.smartAccount || !ownerKey) return;
+    if (!session?.smartAccount || !ownerKey || freshnessMoved.current.has(actionId)) return;
+    const start = (freshnessStarts.current.get(actionId) ?? 0) + 1;
+    freshnessStarts.current.set(actionId, start);
+    const isLatestStart = () => freshnessStarts.current.get(actionId) === start && !freshnessMoved.current.has(actionId);
     const dataOwnerKey = `${session.user.subject}\u0000${session.smartAccount.address.toLowerCase()}\u00008453\u0000${session.accountProvider}`;
     const portfolioOwner = dataOwnerKey;
     let actionsValue: unknown;
@@ -177,6 +185,7 @@ export function useAuthenticatedTransport({
     } catch {
       return;
     }
+    if (!isLatestStart()) return;
     const assetIds = affectedAssetIds(actionsValue, actionId);
     if (assetIds.length === 0) return;
     const valuationQueries = queryClient.getQueryCache().findAll({
@@ -186,6 +195,7 @@ export function useAuthenticatedTransport({
       .map((query) => query.state.data)
       .find(isPortfolioValuationSnapshot);
     if (!firstSnapshot) return;
+    if (!isLatestStart()) return;
     const initial = selectAffectedBalances(firstSnapshot, assetIds);
     const run = freshUntilMoved({
       initial,
@@ -222,7 +232,9 @@ export function useAuthenticatedTransport({
     });
     freshnessRuns.current.get(actionId)?.();
     freshnessRuns.current.set(actionId, run.cancel);
-    void run.result.finally(() => {
+    void run.result.then((result) => {
+      if (result === "moved") freshnessMoved.current.add(actionId);
+    }).finally(() => {
       if (freshnessRuns.current.get(actionId) === run.cancel) freshnessRuns.current.delete(actionId);
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ownerQueryKey(dataOwnerKey, "activity") }),
@@ -294,11 +306,13 @@ export function useAuthenticatedTransport({
         assertActive();
         if (/^\/api\/actions\/[^/]+\/handle$/.test(new URL(safePath, "https://home.invalid").pathname)) {
           const dataOwnerKey = `${session.user.subject}\u0000${session.smartAccount.address.toLowerCase()}\u00008453\u0000${session.accountProvider}`;
-          void queryClient.invalidateQueries({ queryKey: ownerQueryKey(dataOwnerKey, "actions") });
-          if (isRecord(options.body) && typeof options.body.transactionHash === "string") {
-            const actionId = new URL(safePath, "https://home.invalid").pathname.split("/")[3];
-            if (actionId) void startBalanceFreshness(actionId);
-          }
+          applyActionHandleEffects({
+            path: safePath,
+            body: options.body,
+            dataOwnerKey,
+            queryClient,
+            startBalanceFreshness,
+          });
         }
         return value;
       } catch (error) {
@@ -352,6 +366,30 @@ export function useAuthenticatedTransport({
     fetchMoneyActionApi,
     reset,
   };
+}
+
+export function applyActionHandleEffects(input: {
+  path: string;
+  body: unknown;
+  dataOwnerKey: string;
+  queryClient: Pick<QueryClient, "invalidateQueries">;
+  startBalanceFreshness: (actionId: string) => void | Promise<void>;
+}): void {
+  const actionId = new URL(input.path, "https://home.invalid").pathname.split("/")[3];
+  if (!actionId) return;
+  const body = isRecord(input.body) ? input.body : {};
+  if (typeof body.transactionHash === "string") {
+    void Promise.all([
+      input.queryClient.invalidateQueries({ queryKey: ownerQueryKey(input.dataOwnerKey, "actions") }),
+      input.queryClient.invalidateQueries({ queryKey: ownerQueryKey(input.dataOwnerKey, "activity") }),
+      input.queryClient.invalidateQueries({ queryKey: ownerQueryKey(input.dataOwnerKey, "savings-positions") }),
+      input.queryClient.invalidateQueries({ queryKey: ownerQueryKey(input.dataOwnerKey, "borrow") }),
+    ]);
+    void input.startBalanceFreshness(actionId);
+    return;
+  }
+  void input.queryClient.invalidateQueries({ queryKey: ownerQueryKey(input.dataOwnerKey, "actions") });
+  if (typeof body.providerHandle === "string") void input.startBalanceFreshness(actionId);
 }
 
 function affectedAssetIds(value: unknown, actionId: string): string[] {

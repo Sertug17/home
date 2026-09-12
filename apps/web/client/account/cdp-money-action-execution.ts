@@ -1,7 +1,7 @@
 "use client";
 
 import { MfaError } from "@coinbase/cdp-core";
-import { useCallback, useRef, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import type { AccountSessionStatus, AccountWalletSdkBoundary } from "./cdp-client";
 import type { OwnerGenerationFence } from "./cdp-session-lifecycle";
 import type { AuthenticatedTransport } from "./cdp-authenticated-transport";
@@ -9,14 +9,110 @@ import type { SessionFetch, VerifiedAccountSession } from "./session-client";
 import { BaseAccountConnectorError, type ConnectedBaseAccount } from "./base-account-connector";
 import type { OperationResult, PreparedMoneyAction } from "@/shared/money-actions/types";
 import { TransferExecutionError } from "@/shared/transfers/types";
+import { announceActionFailure } from "@/client/home/action-toast-events";
 
 const hashPattern = /^0x[0-9a-fA-F]{64}$/;
+const resolutionInitialDelayMs = 1_500;
+const resolutionPollIntervalMs = 2_500;
+const resolutionTimeoutMs = 3 * 60_000;
 
 type ConfirmedPlan = {
   calls: Array<{ to: `0x${string}`; data: `0x${string}`; value: string }>;
 };
 
 type GenerationGuard = Pick<OwnerGenerationFence, "assertCurrent">;
+
+type ResolutionState = {
+  status: "pending" | "complete" | "failed";
+  transactionHash?: string;
+  reason?: string;
+};
+
+export type ResolutionClock = {
+  now: () => number;
+  setTimer: (callback: () => void, delayMs: number) => unknown;
+  clearTimer: (timer: unknown) => void;
+};
+
+const browserResolutionClock: ResolutionClock = {
+  now: Date.now,
+  setTimer: (callback, delayMs) => setTimeout(callback, delayMs),
+  clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+};
+
+export function pollTransactionResolution(input: {
+  generation: number;
+  fence: GenerationGuard;
+  check: () => Promise<ResolutionState>;
+  recordTransactionHash: (transactionHash: string) => Promise<void>;
+  onFailedWithoutHash: (reason: string) => void;
+  clock?: ResolutionClock;
+  initialDelayMs?: number;
+  intervalMs?: number;
+  timeoutMs?: number;
+}): { result: Promise<void>; cancel: () => void } {
+  const clock = input.clock ?? browserResolutionClock;
+  const startedAt = clock.now();
+  const intervalMs = input.intervalMs ?? resolutionPollIntervalMs;
+  const timeoutMs = input.timeoutMs ?? resolutionTimeoutMs;
+  let timer: unknown;
+  let settled = false;
+  let resolveResult!: () => void;
+  const result = new Promise<void>((resolve) => { resolveResult = resolve; });
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    if (timer !== undefined) clock.clearTimer(timer);
+    resolveResult();
+  };
+  const schedule = (delayMs: number) => {
+    if (!settled) timer = clock.setTimer(() => void poll(), delayMs);
+  };
+  const poll = async () => {
+    if (settled || clock.now() - startedAt >= timeoutMs) {
+      finish();
+      return;
+    }
+    try {
+      input.fence.assertCurrent(input.generation);
+    } catch {
+      finish();
+      return;
+    }
+    let state: ResolutionState;
+    try {
+      state = await input.check();
+    } catch {
+      schedule(intervalMs);
+      return;
+    }
+    if (settled) return;
+    try {
+      input.fence.assertCurrent(input.generation);
+    } catch {
+      finish();
+      return;
+    }
+    if ((state.status === "complete" || state.status === "failed") && state.transactionHash) {
+      try {
+        await input.recordTransactionHash(state.transactionHash);
+      } catch {
+        schedule(intervalMs);
+        return;
+      }
+      finish();
+      return;
+    }
+    if (state.status === "failed") {
+      input.onFailedWithoutHash(state.reason ?? "The wallet operation failed.");
+      finish();
+      return;
+    }
+    schedule(intervalMs);
+  };
+  schedule(input.initialDelayMs ?? resolutionInitialDelayMs);
+  return { result, cancel: finish };
+}
 
 function isUserRejectedDispatch(error: unknown): boolean {
   return (
@@ -104,6 +200,7 @@ export function useMoneyActionExecution({
   const preparedGeneration = useRef(new Map<string, number>());
   const confirmedPlans = useRef(new Map<string, ConfirmedPlan>());
   const providerDispatches = useRef(new Map<string, Promise<string>>());
+  const resolutionRuns = useRef(new Map<string, () => void>());
   const { fetchAccountResource } = transport;
 
   const assertReady = useCallback(() => {
@@ -179,41 +276,44 @@ export function useMoneyActionExecution({
     ownerFence.assertCurrent(generation);
   }, [fetchAccountResource, ownerFence]);
 
-  const resolveTransaction = useCallback(async (
+  const resolveTransaction = useCallback((
     action: PreparedMoneyAction,
     generation: number,
     providerHandle: string,
   ) => {
-    try {
-      if (action.owner.accountProvider === "cdp-embedded" && sdkGetUserOperation && hashPattern.test(providerHandle)) {
-        ownerFence.assertCurrent(generation);
-        const result = await sdkGetUserOperation({
-          userOperationHash: providerHandle as `0x${string}`,
-          evmSmartAccount: action.owner.address,
-          network: "base",
-        });
-        ownerFence.assertCurrent(generation);
-        if (
-          result.status === "complete" &&
-          typeof result.transactionHash === "string" &&
-          hashPattern.test(result.transactionHash)
-        ) {
-          await postHandle(action.id, generation, { transactionHash: result.transactionHash });
+    const run = pollTransactionResolution({
+      generation,
+      fence: ownerFence,
+      check: async () => {
+        if (action.owner.accountProvider === "cdp-embedded") {
+          if (!sdkGetUserOperation || !hashPattern.test(providerHandle)) {
+            return { status: "failed", reason: "Operation status is unavailable." };
+          }
+          const result = await sdkGetUserOperation({
+            userOperationHash: providerHandle as `0x${string}`,
+            evmSmartAccount: action.owner.address,
+            network: "base",
+          });
+          return normalizeResolutionState(result);
         }
-      }
-      if (action.owner.accountProvider === "base-account") {
         const connection = baseConnection.current;
-        if (!connection?.getCallsStatus) return;
-        ownerFence.assertCurrent(generation);
-        const result = await connection.getCallsStatus(action.id);
-        ownerFence.assertCurrent(generation);
-        if (result.status === "complete") {
-          await postHandle(action.id, generation, { transactionHash: result.transactionHash });
+        if (!connection?.getCallsStatus) {
+          return { status: "failed", reason: "Operation status is unavailable." };
         }
-      }
-    } catch {
-      // The confirmed row remains pending/unknown and Activity will eventually win.
-    }
+        return normalizeResolutionState(await connection.getCallsStatus(action.id));
+      },
+      recordTransactionHash: async (transactionHash) => {
+        if (hashPattern.test(transactionHash)) {
+          await postHandle(action.id, generation, { transactionHash });
+        }
+      },
+      onFailedWithoutHash: (reason) => announceActionFailure(action.kind, shortFailureReason(reason)),
+    });
+    resolutionRuns.current.get(action.id)?.();
+    resolutionRuns.current.set(action.id, run.cancel);
+    void run.result.finally(() => {
+      if (resolutionRuns.current.get(action.id) === run.cancel) resolutionRuns.current.delete(action.id);
+    });
   }, [baseConnection, ownerFence, postHandle, sdkGetUserOperation]);
 
   const executeMoneyAction = useCallback(async (action: PreparedMoneyAction): Promise<OperationResult> => {
@@ -267,7 +367,7 @@ export function useMoneyActionExecution({
       }
       throw new TransferExecutionError("submission-unknown", error);
     }
-    void resolveTransaction(action, generation, providerHandle);
+    resolveTransaction(action, generation, providerHandle);
     return {
       id: action.id,
       status: "submitted",
@@ -279,10 +379,13 @@ export function useMoneyActionExecution({
     fetchAccountResource("/api/actions", { signal }), [fetchAccountResource]);
 
   const reset = useCallback(() => {
+    for (const cancel of resolutionRuns.current.values()) cancel();
+    resolutionRuns.current.clear();
     preparedGeneration.current.clear();
     confirmedPlans.current.clear();
     providerDispatches.current.clear();
   }, []);
+  useEffect(() => reset, [reset]);
 
   return {
     fetchOperations,
@@ -292,6 +395,35 @@ export function useMoneyActionExecution({
     pendingTransfer: null,
     reset,
   };
+}
+
+function normalizeResolutionState(value: unknown): ResolutionState {
+  if (!isRecord(value) || !["pending", "complete", "failed"].includes(String(value.status))) {
+    throw new Error("Invalid operation status.");
+  }
+  return {
+    status: value.status as ResolutionState["status"],
+    ...(typeof value.transactionHash === "string" && hashPattern.test(value.transactionHash)
+      ? { transactionHash: value.transactionHash }
+      : {}),
+    ...(failureReason(value) ? { reason: failureReason(value)! } : {}),
+  };
+}
+
+function failureReason(value: Record<string, unknown>): string | null {
+  for (const key of ["failureReason", "error", "message"]) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    if (isRecord(candidate) && typeof candidate.message === "string" && candidate.message.trim()) {
+      return candidate.message.trim();
+    }
+  }
+  return null;
+}
+
+function shortFailureReason(reason: string): string {
+  const singleLine = reason.replace(/\s+/g, " ").trim();
+  return singleLine.length <= 96 ? singleLine : `${singleLine.slice(0, 93)}…`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

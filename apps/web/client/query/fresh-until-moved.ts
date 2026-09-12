@@ -9,7 +9,7 @@ export type FreshUntilMovedClock = {
 };
 
 export const balanceFreshPollIntervalMs = 3_000;
-export const balanceFreshTimeoutMs = 30_000;
+export const balanceFreshTimeoutMs = 60_000;
 
 export function balancesMoved(
   initial: BalanceSnapshot,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AccountWalletSessionOwner,
   type AccountWalletSdkBoundary,
@@ -9,11 +9,13 @@ import {
 const SIGNED_IN_KEY = "home:playwright-smoke:signed-in";
 const DISPATCH_COUNT_KEY = "home:playwright-smoke:dispatch-count";
 const USER_OPERATION_HASH = `0x${"ab".repeat(32)}` as const;
+const TRANSACTION_HASH = `0x${"cd".repeat(32)}` as const;
 const RECIPIENT = "0x2222222222222222222222222222222222222222";
 const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const CALL_DATA = `0xa9059cbb${RECIPIENT.slice(2).padStart(64, "0")}${BigInt(1_000_000).toString(16).padStart(64, "0")}` as const;
 
 export function SmokeFixtureAccountProvider({ children }: { children: ReactNode }) {
+  const resolutionReads = useRef(0);
   const [ownerKey, setOwnerKey] = useState<string | null>(() =>
     typeof window !== "undefined" && window.sessionStorage.getItem(SIGNED_IN_KEY) === "1"
       ? "playwright-smoke-owner"
@@ -48,12 +50,16 @@ export function SmokeFixtureAccountProvider({ children }: { children: ReactNode 
       }
       return Promise.resolve({ userOperationHash: USER_OPERATION_HASH });
     },
-    getUserOperation: async () => ({
-      network: "base",
-      userOpHash: USER_OPERATION_HASH,
-      status: "pending",
-      calls: [{ to: USDC, data: CALL_DATA, value: "0" }],
-    }),
+    getUserOperation: async () => {
+      resolutionReads.current += 1;
+      return {
+        network: "base",
+        userOpHash: USER_OPERATION_HASH,
+        status: resolutionReads.current === 1 ? "pending" : "complete",
+        calls: [{ to: USDC, data: CALL_DATA, value: "0" }],
+        ...(resolutionReads.current === 1 ? {} : { transactionHash: TRANSACTION_HASH }),
+      };
+    },
     signOut: async () => {
       window.sessionStorage.removeItem(SIGNED_IN_KEY);
       setOwnerKey(null);

@@ -55,7 +55,7 @@ describe("fresh-until-moved scheduler", () => {
     expect(fake.pending()).toBe(0);
   });
 
-  test("stops at thirty seconds when balances do not move", async () => {
+  test("stops at sixty seconds when balances do not move", async () => {
     const fake = fakeClock();
     let reads = 0;
     const run = freshUntilMoved({
@@ -64,10 +64,10 @@ describe("fresh-until-moved scheduler", () => {
       clock: fake.clock,
     });
 
-    await fake.advance(30_000);
+    await fake.advance(60_000);
 
     expect(await run.result).toBe("timed-out");
-    expect(reads).toBe(9);
+    expect(reads).toBe(19);
     expect(fake.pending()).toBe(0);
   });
 });

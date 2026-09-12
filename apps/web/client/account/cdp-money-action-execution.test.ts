@@ -1,11 +1,51 @@
 import { describe, expect, test } from "bun:test";
 import { MfaError } from "@coinbase/cdp-core";
-import { executeActionOnce } from "./cdp-money-action-execution";
+import {
+  executeActionOnce,
+  pollTransactionResolution,
+  type ResolutionClock,
+} from "./cdp-money-action-execution";
 import { BaseAccountConnectorError } from "./base-account-connector";
 import { TransferExecutionError } from "@/shared/transfers/types";
 
 const id = "11111111-1111-4111-8111-111111111111";
 const plan = { calls: [{ to: "0x1111111111111111111111111111111111111111" as const, data: "0x1234" as const, value: "0" }] };
+const transactionHash = `0x${"cd".repeat(32)}`;
+
+function fakeClock() {
+  let now = 0;
+  let id = 0;
+  const timers = new Map<number, { at: number; callback: () => void }>();
+  const clock: ResolutionClock = {
+    now: () => now,
+    setTimer: (callback, delayMs) => {
+      const timerId = ++id;
+      timers.set(timerId, { at: now + delayMs, callback });
+      return timerId;
+    },
+    clearTimer: (timer) => { timers.delete(timer as number); },
+  };
+  return {
+    clock,
+    async advance(ms: number) {
+      const target = now + ms;
+      while (true) {
+        const next = [...timers.entries()]
+          .filter(([, timer]) => timer.at <= target)
+          .sort((left, right) => left[1].at - right[1].at)[0];
+        if (!next) break;
+        timers.delete(next[0]);
+        now = next[1].at;
+        next[1].callback();
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+      now = target;
+      await Promise.resolve();
+    },
+    pending: () => timers.size,
+  };
+}
 
 describe("thin action dispatch", () => {
   test("does not confirm or call a provider when the prepared generation is stale", async () => {
@@ -71,6 +111,95 @@ describe("thin action dispatch", () => {
     await expect(executeAmbiguous()).rejects.toBe(ambiguous);
     await expect(executeAmbiguous()).rejects.toBe(ambiguous);
     expect(ambiguousDispatches).toBe(1);
+  });
+
+  test("polls pending CDP operations to completion and records the transaction hash once", async () => {
+    const fake = fakeClock();
+    const states = [
+      { status: "pending" as const },
+      { status: "pending" as const },
+      { status: "complete" as const, transactionHash },
+    ];
+    const posts: string[] = [];
+    const run = pollTransactionResolution({
+      generation: 4,
+      fence: { assertCurrent: (generation) => { expect(generation).toBe(4); } },
+      check: async () => states.shift() ?? { status: "pending" },
+      recordTransactionHash: async (hash) => { posts.push(hash); },
+      onFailedWithoutHash: () => { throw new Error("unexpected failure"); },
+      clock: fake.clock,
+    });
+
+    await fake.advance(6_500);
+    await run.result;
+
+    expect(posts).toEqual([transactionHash]);
+    expect(fake.pending()).toBe(0);
+  });
+
+  test("stops a failed operation without a hash and does not post a transaction handle", async () => {
+    const fake = fakeClock();
+    const posts: string[] = [];
+    const failures: string[] = [];
+    const run = pollTransactionResolution({
+      generation: 2,
+      fence: { assertCurrent: () => {} },
+      check: async () => ({ status: "failed", reason: "Bundler rejected the operation." }),
+      recordTransactionHash: async (hash) => { posts.push(hash); },
+      onFailedWithoutHash: (reason) => { failures.push(reason); },
+      clock: fake.clock,
+    });
+
+    await fake.advance(1_500);
+    await run.result;
+
+    expect(posts).toEqual([]);
+    expect(failures).toEqual(["Bundler rejected the operation."]);
+    expect(fake.pending()).toBe(0);
+  });
+
+  test("stops resolution after an owner switch without posting", async () => {
+    const fake = fakeClock();
+    let currentGeneration = 7;
+    const posts: string[] = [];
+    const run = pollTransactionResolution({
+      generation: 7,
+      fence: { assertCurrent: (generation) => {
+        if (generation !== currentGeneration) throw new TransferExecutionError("stale-session");
+      } },
+      check: async () => ({ status: "pending" }),
+      recordTransactionHash: async (hash) => { posts.push(hash); },
+      onFailedWithoutHash: () => {},
+      clock: fake.clock,
+    });
+
+    await fake.advance(1_500);
+    currentGeneration = 8;
+    await fake.advance(2_500);
+    await run.result;
+
+    expect(posts).toEqual([]);
+    expect(fake.pending()).toBe(0);
+  });
+
+  test("canceling on unmount stops resolution", async () => {
+    const fake = fakeClock();
+    let checks = 0;
+    const run = pollTransactionResolution({
+      generation: 1,
+      fence: { assertCurrent: () => {} },
+      check: async () => { checks += 1; return { status: "pending" }; },
+      recordTransactionHash: async () => {},
+      onFailedWithoutHash: () => {},
+      clock: fake.clock,
+    });
+
+    run.cancel();
+    await fake.advance(10_000);
+    await run.result;
+
+    expect(checks).toBe(0);
+    expect(fake.pending()).toBe(0);
   });
 
   test("reuses one idempotent CDP dispatch when handle recording resolves remotely then throws locally", async () => {
