@@ -165,3 +165,9 @@ Each lane is independently mergeable once its listed dependency has landed. Foun
 ## Method and limits
 
 Read-only inspection with census commands over production TSX/CSS; CSS-collapse percentages are code-reading estimates. Builds and tests were not run for the audit. Behavior and visual equivalence are proven per adoption lane by the design-system browser suite and the web smoke, not by this document.
+
+## Baseline — September 12, 2026
+
+`bun run ds:audit` scans production TSX plus web CSS modules and `app/globals.css`. The committed regression ceilings are 59 raw buttons, 25 raw headings, 104 raw prose elements, 68 non-artwork color literals, and 22 non-artwork pixel radius declarations. The informational adoption counts are 15 shared buttons, 8 shared headings, 38 shared prose elements, and 13 files importing `@home/ui`.
+
+The CSS artwork exceptions are file-specific: `client/invest/asset-icon.module.css`, `client/landing/supported-globe.module.css`, `components/currency-mark.module.css`, and `components/home-mark.module.css`. Asset-mark colors rendered in `currency-mark.tsx` and the chart series color in `price-chart.tsx` are outside the CSS scan. Guarded counts may fall below this baseline; CI fails only when one rises above it.

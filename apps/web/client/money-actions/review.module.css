@@ -3,11 +3,11 @@
   width: min(100%, 760px);
   gap: 16px;
   margin: 18px auto 0;
-  border: 1px solid var(--line, #e6e8ec);
-  border-top: 3px solid var(--base-blue, #0052ff);
-  border-radius: 12px;
-  background: #ffffff;
-  color: var(--foreground, #0a0b0d);
+  border: 1px solid var(--line, var(--home-ui-color-border));
+  border-top: 3px solid var(--base-blue, var(--home-ui-color-action));
+  border-radius: var(--home-ui-radius-surface);
+  background: var(--home-ui-color-surface);
+  color: var(--foreground, var(--home-ui-color-text));
   padding: clamp(18px, 4vw, 26px);
 }
 
@@ -21,7 +21,7 @@
 .rows {
   display: grid;
   margin: 0;
-  border-top: 1px solid var(--foreground, #0a0b0d);
+  border-top: 1px solid var(--foreground, var(--home-ui-color-text));
 }
 
 .row {
@@ -30,13 +30,13 @@
   grid-template-columns: minmax(7rem, 0.65fr) minmax(0, 1.35fr);
   align-items: start;
   gap: 12px;
-  border-bottom: 1px solid var(--line, #e6e8ec);
+  border-bottom: 1px solid var(--line, var(--home-ui-color-border));
   padding: 10px 0;
   font-size: 0.76rem;
 }
 
 .row dt {
-  color: var(--muted, #5b6270);
+  color: var(--muted, var(--home-ui-color-muted));
 }
 
 .row dd {
@@ -49,18 +49,18 @@
 .warning,
 .error {
   margin: 0;
-  border-left: 3px solid var(--base-blue, #0052ff);
-  background: var(--surface, #f7f8fa);
+  border-left: 3px solid var(--base-blue, var(--home-ui-color-status-warning-border));
+  background: var(--surface, var(--home-ui-color-status-warning-background));
   padding: 10px 12px;
-  color: var(--muted, #5b6270);
+  color: var(--muted, var(--home-ui-color-status-warning-text));
   font-size: 0.74rem;
   line-height: 1.45;
 }
 
 .error {
-  border-left-color: #b42318;
-  background: #fff1f0;
-  color: #8d211a;
+  border-left-color: var(--home-ui-color-status-error-border);
+  background: var(--home-ui-color-status-error-background);
+  color: var(--home-ui-color-status-error-text);
 }
 
 .actions {
@@ -71,10 +71,10 @@
 
 .actions button {
   min-height: 46px;
-  border: 1px solid var(--line, #e6e8ec);
+  border: 1px solid var(--line, var(--home-ui-color-border));
   border-radius: 8px;
-  background: #ffffff;
-  color: var(--foreground, #0a0b0d);
+  background: var(--home-ui-color-surface);
+  color: var(--foreground, var(--home-ui-color-text));
   cursor: pointer;
   font: inherit;
   font-size: 0.78rem;
@@ -82,9 +82,9 @@
 }
 
 .actions button:last-child {
-  border-color: var(--base-blue, #0052ff);
-  background: var(--base-blue, #0052ff);
-  color: #ffffff;
+  border-color: var(--base-blue, var(--home-ui-color-action));
+  background: var(--base-blue, var(--home-ui-color-action));
+  color: var(--home-ui-color-on-action);
 }
 
 .actions button:disabled {

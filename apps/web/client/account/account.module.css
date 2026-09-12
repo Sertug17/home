@@ -10,7 +10,7 @@
   border-top: 3px solid var(--home-ui-color-action);
   border-radius: var(--home-ui-radius-surface) var(--home-ui-radius-surface) var(--home-ui-radius-control) var(--home-ui-radius-control);
   background: var(--home-ui-color-surface);
-  box-shadow: 0 24px 80px rgba(10, 11, 13, 0.24);
+  box-shadow: var(--home-ui-shadow-sheet);
   color: var(--home-ui-color-text);
   font-family: var(--home-ui-font-family);
   overflow-wrap: anywhere;
@@ -18,7 +18,7 @@
 }
 
 .sheet::backdrop {
-  background: rgba(10, 11, 13, 0.48);
+  background: var(--home-ui-color-overlay);
 }
 
 .sheetHeader,
@@ -133,8 +133,8 @@
 }
 
 .error {
-  background: #fff1f0;
-  color: #8d211a;
+  background: var(--home-ui-color-status-error-background);
+  color: var(--home-ui-color-status-error-text);
 }
 
 .pendingPanel {
@@ -181,7 +181,7 @@
 
 .providerHandoff {
   position: fixed;
-  z-index: 20;
+  z-index: var(--home-ui-layer-popover);
   right: 16px;
   bottom: 16px;
   left: 16px;
@@ -194,7 +194,7 @@
   border: 1px solid var(--home-ui-color-border);
   border-radius: var(--home-ui-radius-control);
   background: var(--home-ui-color-surface);
-  box-shadow: 0 14px 44px rgba(10, 11, 13, 0.18);
+  box-shadow: var(--home-ui-shadow-popover);
   color: var(--home-ui-color-text);
   font-family: var(--home-ui-font-family);
   overflow-wrap: anywhere;

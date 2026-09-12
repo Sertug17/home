@@ -1,0 +1,15 @@
+{
+  "maximums": {
+    "rawButtons": 59,
+    "rawHeadings": 25,
+    "rawProse": 104,
+    "colorLiterals": 68,
+    "radiusLiterals": 22
+  },
+  "informational": {
+    "sharedButtons": 15,
+    "sharedHeadings": 8,
+    "sharedProse": 38,
+    "homeUiImports": 13
+  }
+}

@@ -171,6 +171,27 @@ test("shared radii, press motion, layout spacing, and surface colors render from
   await expectNoOverflow(page);
 });
 
+test("semantic token catalog renders every new token without overflow at 320px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto("/");
+  const tokens = page.locator("[data-token]");
+  await expect(tokens).toHaveCount(19);
+  await expect(tokens.locator(".catalog-token-swatch")).toHaveCount(19);
+  const unresolved = await tokens.evaluateAll((elements) => elements.flatMap((element) => {
+    const swatch = element.querySelector<HTMLElement>(".catalog-token-swatch");
+    if (!swatch) return [element.getAttribute("data-token")];
+    const style = getComputedStyle(swatch);
+    const kind = element.getAttribute("data-token-kind");
+    if (kind === "color" && style.backgroundColor === "rgba(0, 0, 0, 0)") return [element.getAttribute("data-token")];
+    if (kind === "shadow" && style.boxShadow === "none") return [element.getAttribute("data-token")];
+    if (kind === "layer" && style.zIndex === "auto") return [element.getAttribute("data-token")];
+    if (kind === "easing" && !style.transitionTimingFunction) return [element.getAttribute("data-token")];
+    return [];
+  }));
+  expect(unresolved).toEqual([]);
+  await expectNoOverflow(page);
+});
+
 test("native keyboard activation, focus, pressed presentation, and disabled/loading safety", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

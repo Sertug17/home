@@ -16,6 +16,28 @@ const amounts = [
   "₹12,34,56,789.00", "₦1,234,567.89", "R$ 1.234.567,89", "₩123,456,789",
 ];
 
+const tokenSpecimens = [
+  { name: "--home-ui-color-focus-halo", kind: "color" },
+  { name: "--home-ui-color-overlay", kind: "color" },
+  { name: "--home-ui-color-status-success-text", kind: "color" },
+  { name: "--home-ui-color-status-success-background", kind: "color" },
+  { name: "--home-ui-color-status-success-border", kind: "color" },
+  { name: "--home-ui-color-status-warning-text", kind: "color" },
+  { name: "--home-ui-color-status-warning-background", kind: "color" },
+  { name: "--home-ui-color-status-warning-border", kind: "color" },
+  { name: "--home-ui-color-status-error-text", kind: "color" },
+  { name: "--home-ui-color-status-error-background", kind: "color" },
+  { name: "--home-ui-color-status-error-border", kind: "color" },
+  { name: "--home-ui-shadow-popover", kind: "shadow" },
+  { name: "--home-ui-shadow-sheet", kind: "shadow" },
+  { name: "--home-ui-layer-sheet", kind: "layer" },
+  { name: "--home-ui-layer-popover", kind: "layer" },
+  { name: "--home-ui-layer-toast", kind: "layer" },
+  { name: "--home-ui-easing-standard", kind: "easing" },
+  { name: "--home-ui-easing-enter", kind: "easing" },
+  { name: "--home-ui-easing-exit", kind: "easing" },
+] as const;
+
 export function FoundationCatalog() {
   const [disabled, setDisabled] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -155,6 +177,29 @@ export function FoundationCatalog() {
               </Inset>
             ))}
           </Inline>
+        </section>
+
+        <section className="catalog-section bg-home-ui-surface" aria-labelledby="tokens-title">
+          <Heading id="tokens-title" level={2} textStyle="section-title">Semantic tokens</Heading>
+          <Text textStyle="secondary" tone="muted">Demonstrated focus, overlay, status, elevation, layer, and easing roles.</Text>
+          <div className="catalog-token-grid">
+            {tokenSpecimens.map(({ name, kind }) => (
+              <div className="catalog-token" data-token={name} data-token-kind={kind} key={name}>
+                <span
+                  aria-hidden="true"
+                  className="catalog-token-swatch"
+                  style={kind === "color"
+                    ? { background: `var(${name})` }
+                    : kind === "shadow"
+                      ? { boxShadow: `var(${name})` }
+                      : kind === "layer"
+                        ? { zIndex: `var(${name})` }
+                        : { transitionTimingFunction: `var(${name})` }}
+                />
+                <Text as="span" className="catalog-token-name" textStyle="metadata">{name}</Text>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="catalog-section bg-home-ui-surface" aria-labelledby="ticker-title">
