@@ -1361,9 +1361,9 @@ describe("login-state home experience", () => {
     expect(page().getByText("US dollar")).toBeTruthy();
     expect(page().getByText("Brazilian real")).toBeTruthy();
     expect(page().getByText("Ethereum")).toBeTruthy();
-    expect(page().getByText("0.0500 ETH")).toBeTruthy();
-    expect(page().getByText("Indonesian rupiah")).toBeTruthy();
-    expect(page().getByText("Rp 100.00")).toBeTruthy();
+    expect(page().getByText("0,0500 ETH")).toBeTruthy();
+    const idrRow = page().getByText("Indonesian rupiah").closest("li");
+    expect(idrRow?.textContent).toContain("Rp 100,00");
     const ethRow = page().getByText("Ethereum").closest("li");
     const ethMark = ethRow?.querySelector("[data-mark='eth']");
     expect(ethMark).toBeTruthy();
@@ -1382,8 +1382,12 @@ describe("login-state home experience", () => {
     );
     expect(flagSources).not.toContain("/currency-flags/eth.svg");
     expect(page().queryByText("Euro")).toBeNull();
-    expect(page().getAllByText("$0.00").length).toBeGreaterThanOrEqual(1);
-    expect(page().getAllByText("R$ 0,00").length).toBeGreaterThanOrEqual(1);
+    expect(page().getByText("US dollar").closest("li")?.textContent).toContain(
+      "$ 0,00",
+    );
+    expect(page().getByText("Brazilian real").closest("li")?.textContent).toContain(
+      "R$ 0,00",
+    );
     expect(page().queryByText("USD / USDC")).toBeNull();
     expect(page().queryByText("BRL / BRZ")).toBeNull();
     expect(document.body.textContent).not.toContain("Not available yet");
@@ -1507,10 +1511,10 @@ describe("login-state home experience", () => {
     );
 
     await page().findByText("Indonesian rupiah");
-    expect(page().getByText("$4,343.85")).toBeTruthy();
-    expect(page().getByText("Rp 234,090.41")).toBeTruthy();
-    expect(page().getByText("€131.32")).toBeTruthy();
-    expect(document.body.textContent).not.toContain("Rp 131.32");
+    expect(page().getByText("$4.343,85")).toBeTruthy();
+    expect(page().getByText("Rp234.090,41")).toBeTruthy();
+    expect(page().getByText("€131,32")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("Rp131,32");
     const euroRow = page().getByText("Euro").closest("li");
     expect(euroRow?.querySelector("img")?.getAttribute("src")).toBe(
       "/currency-flags/eu.svg",

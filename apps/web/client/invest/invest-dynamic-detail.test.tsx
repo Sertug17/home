@@ -17,7 +17,10 @@ const {
   AccountWalletClientProvider,
   createBlockedAccountWalletClient,
 } = await import("@/client/account/cdp-client");
-const { PresentationQuoteProvider } = await import("./presentation-quote");
+const {
+  PresentationQuoteProvider,
+  PresentationRegionProvider,
+} = await import("./presentation-quote");
 const { InvestExperience } = await import("./invest-experience");
 
 const dynamicId = "base:0x1111111111111111111111111111111111111111";
@@ -111,31 +114,34 @@ describe("dynamic Invest detail", () => {
     );
 
     renderInvest(
-      <PresentationQuoteProvider
-        value={{
-          valueCurrency: "IDR",
-          quoteUnitsPerUsd: { atoms: "16425", scale: 0 },
-        }}
-      >
-        <InvestExperience
-          memeStatus="ready"
-          memeAssets={[dynamicAsset]}
-          memeMarket={{
-            status: "ready",
-            snapshots: [
-              {
-                assetId: dynamicId,
-                displayPrice: "$1",
-                asOf: "2026-09-09T12:00:00.000Z",
-                sourceLabel: "Codex",
-              },
-            ],
+      <PresentationRegionProvider regionId="ID">
+        <PresentationQuoteProvider
+          value={{
+            regionId: "ID",
+            valueCurrency: "IDR",
+            quoteUnitsPerUsd: { atoms: "16425", scale: 0 },
           }}
-        />
-      </PresentationQuoteProvider>,
+        >
+          <InvestExperience
+            memeStatus="ready"
+            memeAssets={[dynamicAsset]}
+            memeMarket={{
+              status: "ready",
+              snapshots: [
+                {
+                  assetId: dynamicId,
+                  displayPrice: "$1",
+                  asOf: "2026-09-09T12:00:00.000Z",
+                  sourceLabel: "Codex",
+                },
+              ],
+            }}
+          />
+        </PresentationQuoteProvider>
+      </PresentationRegionProvider>,
     );
 
-    expect(page().getByText("Rp 16,425.00")).toBeTruthy();
+    expect(page().getByText("Rp16.425,00")).toBeTruthy();
     expect(page().getByText("Price history")).toBeTruthy();
     expect(page().getByText("USD")).toBeTruthy();
     expect(page().queryByText("$1.00")).toBeNull();

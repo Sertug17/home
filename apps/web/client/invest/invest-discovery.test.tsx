@@ -327,7 +327,7 @@ describe("invest discovery flow", () => {
     const readyPrice = page().getByText("$64,210.00");
     expect(readyPrice).toBeTruthy();
     expect(readyPrice.getAttribute("data-tone")).toBe("ready");
-    expect(page().getByText("-0.67%")).toBeTruthy();
+    expect(page().getByText("−0.67%")).toBeTruthy();
     expect(page().getByText("cbBTC · Base")).toBeTruthy();
     expect(page().getByRole("group", { name: "Price range" }).textContent).toContain(
       "1D",
@@ -522,7 +522,7 @@ describe("invest discovery flow", () => {
       />,
     );
     expect(page().getByText("+5.00%")).toBeTruthy();
-    expect(page().getByText("-1.25%")).toBeTruthy();
+    expect(page().getByText("−1.25%")).toBeTruthy();
   });
 
   test("fail-closes the Memes shelf when trending is unavailable", () => {
