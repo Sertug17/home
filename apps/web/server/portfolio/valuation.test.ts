@@ -671,6 +671,58 @@ describe("supported portfolio valuation assembly", () => {
     }
   });
 
+  test("adds only fresh quality-gated recognized quotes to the aggregate while retaining quantity-only rows", async () => {
+    const recognizedAddress = "0x9999999999999999999999999999999999999999" as const;
+    const weakAddress = "0x8888888888888888888888888888888888888888" as const;
+    const read = createPortfolioValuationReader({
+      readInventory: async () => inventory(),
+      readPrices: async (inputs) => prices(inputs),
+      readExchangeRates: async () => exchangeRates(),
+      readRecognized: async () => ({
+        status: "complete",
+        holdings: [
+          {
+            address: recognizedAddress,
+            name: "Recognized",
+            symbol: "RCG",
+            decimals: 18,
+            balanceBaseUnits: "1000000000000000000",
+            liquidityUsd: { atoms: "100000", scale: 0 },
+            volume24Usd: { atoms: "10000", scale: 0 },
+            price: {
+              assetKey: `eip155:8453/erc20:${recognizedAddress}`,
+              contractAddress: recognizedAddress,
+              quoteCurrency: "USD",
+              unitPrice: { atoms: "2", scale: 0 },
+              sourceValue: "2",
+              status: "fresh",
+              source: source("Codex"),
+            },
+          },
+          {
+            address: weakAddress,
+            name: "Weak",
+            symbol: "WEAK",
+            decimals: 18,
+            balanceBaseUnits: "5000000000000000000",
+            liquidityUsd: { atoms: "99999", scale: 0 },
+            volume24Usd: { atoms: "10000", scale: 0 },
+            price: null,
+          },
+        ],
+      }),
+    });
+
+    const result = await read(account, "US");
+
+    expect(result.recognized?.holdings).toMatchObject([
+      { symbol: "RCG", valuationStatus: "priced", value: { atoms: "2000000000000000000", scale: 18 } },
+      { symbol: "WEAK", valuationStatus: "unpriced", value: null },
+    ]);
+    expect(result.total.value).toEqual({ atoms: "5000000000000000000", scale: 18 });
+    expect(result.total.unpricedAssetKeys).not.toContain(`eip155:8453/erc20:${weakAddress}`);
+  });
+
   test("keeps GLOBAL currencyless and exposes unsupported regional cash safely", async () => {
     const read = createPortfolioValuationReader({
       readInventory: async () => inventory(),
