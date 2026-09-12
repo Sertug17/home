@@ -39,11 +39,13 @@ These are working contracts. Document them; do not reinvent them when adding a f
 | Server | `apps/web/server/*` | Session validation, prepare/issue, stores, RPC/SQL, receipts |
 | Config | `apps/web/config/*` | Brand, regions, navigation, asset registries (no secrets) |
 
-Example route (claim): `apps/web/app/api/actions/[id]/claim/route.ts` exports `POST = createClaimMoneyActionHandler({ authorize, validateBeforeClaim })`. Logic lives in `apps/web/server/money-actions/handlers.ts`.
+Historical example: the retired per-action claim route exported `createClaimMoneyActionHandler({ authorize, validateBeforeClaim })`; its logic lived in `apps/web/server/money-actions/handlers.ts`.
 
 There is **no** `apps/web/lib/`. Cross-cutting auth is `apps/web/server/cdp/` plus `apps/web/server/money-actions/session.ts`.
 
 ### 2. Injectable `MoneyActionStore`
+
+> **Superseded by `docs/home-is-thin.md`.** The ledger/store contract below is historical.
 
 - Interface: `apps/web/server/money-actions/store.ts` (`issue`, `claim`, `get`, `list`, `recordSubmission`, `updateStatus`).
 - Test implementation: `MemoryMoneyActionStore` in the same file.
@@ -59,10 +61,10 @@ Prepare endpoints accept **intent fields only**:
 
 | Feature | Client body | Server output |
 |---|---|---|
-| Send | `assetId`, `recipient`, `amountBaseUnits` | `POST /api/actions/send/prepare` |
+| Send | `assetId`, `recipient`, `amountBaseUnits` | the retired send-specific prepare route |
 | Savings | `kind`, `vaultAddress`, `amountBaseUnits` | `POST /api/savings/actions` |
 | Borrow | `operation`, `amount`, `snapshotBlockHash` | `POST /api/borrow` |
-| Trades | quote request, then `{ intentHash, signature }` | `POST /api/trades` → `POST /api/trades/:id/finalize` |
+| Trades | quote request, then `{ intentHash, signature }` | `POST /api/trades` followed by the retired trade-finalize route |
 | Funding | `{ assetId: "usdc" }` | Onramp session — **not** a money action |
 
 `issueMoneyAction` (`apps/web/server/money-actions/issue.ts`) binds `owner` from the verified session, normalizes calls, enforces exact approval caps, caps lifetime at 30 minutes, and computes `reviewHash` as SHA-256 of canonical JSON. Claim body is **only** `{ reviewHash }` (`handlers.ts`).
@@ -70,6 +72,8 @@ Prepare endpoints accept **intent fields only**:
 Client execution (`client/account/cdp-client.tsx` `executeMoneyAction`) uses **server-returned** `claim.action.calls`, not a client-held plan.
 
 ### 4. Owner tuple on every durable operation
+
+> **Superseded by `docs/home-is-thin.md`.** The new action owner key is defined there.
 
 ```ts
 // apps/web/shared/money-actions/types.ts
@@ -87,12 +91,14 @@ Identity is **never** taken from `?wallet=` or a client `userId`. Portfolio and 
 
 ### 5. Atomic claim: one dispatch, every refresh recovers
 
+> **Superseded by `docs/home-is-thin.md`.** Direct fenced dispatch replaced claim/recovery.
+
 `store.claim`:
 
 - `prepared` + matching owner/hash + not expired → `submitting`, `attemptCount = 1`, disposition `dispatch`.
 - Any later claim → disposition `recover`, same attempt.
 - Recover / Check status never terminalizes claimed `unknown` or leftover `submitting`. Missing references are not proof of non-submission.
-- Owner-scoped `POST /api/actions/:id/admission-release` sets `abandonedAt` without changing execution status. That releases the `unresolved-send` admission gate. Late `recordSubmission` and verified reconciliation remain allowed. Abandonment is Home policy, not chain cancel.
+- Owner-scoped the retired admission-release route sets `abandonedAt` without changing execution status. That releases the `unresolved-send` admission gate. Late `recordSubmission` and verified reconciliation remain allowed. Abandonment is Home policy, not chain cancel.
 - SQLite uses `UPDATE ... WHERE status = 'prepared'` inside `BEGIN IMMEDIATE`.
 
 Client recover path (`cdp-client.tsx`): if `claim.disposition === "recover"`, poll existing refs and **do not** call `sendUserOperation` / `wallet_sendCalls` again. CDP embedded uses `idempotencyKey: canonicalAction.id`.
@@ -165,7 +171,7 @@ Priority: **P0** = money-safety or “#2 will do the wrong thing in week 1.” *
 |---|---|---|---|---|---|
 | R1 | P0 | ~~Technical design / product scope presented as live architecture.~~ **Addressed in docs:** target design is [target-architecture.md](target-architecture.md); the 2026-09-07 plan is [archived](archive/implementation-plan-2026-09-07.md); old paths are stubs. Residual risk is someone ignoring the current-tree path. | Engineer #2 scaffolds `packages/*` or Neon mid-feature if they skip [docs/README.md](README.md). | S (done) | eng |
 | R2 | P0 | Default persistence is a single-node SQLite file + **in-process** sensitive swap calldata (`SqliteMoneyActionStore` / `MemoryMoneyActionStore` `sensitiveActions` map). Unique indexes on raw submission columns were **dropped**; only `verified_execution_key` is unique. | Two instances (or a premature Vercel deploy) split-brain claims. A second engineer adding “just Postgres” beside SQLite can double-dispatch. | L (Postgres adapter + cutover) / S (write the “do not deploy money actions multi-instance” rule) | eng |
-| R3 | P0 | Shared money-action kernel is small and load-bearing: `store.ts`, `sqlite-store.node.ts`, `issue.ts`, `handlers.ts`, `status-transitions.js`, `app/api/actions/[id]/claim/route.ts`. Claim route always injects `validateTradeBeforeClaim`. | Two people editing claim/disposition/status in the same week can ship a second dispatch or block every feature. | S (ownership rule) | eng / TPM |
+| R3 | P0 | Shared money-action kernel is small and load-bearing: `store.ts`, `sqlite-store.node.ts`, `issue.ts`, `handlers.ts`, `status-transitions.js`, the retired per-action claim route. Claim route always injects `validateTradeBeforeClaim`. | Two people editing claim/disposition/status in the same week can ship a second dispatch or block every feature. | S (ownership rule) | eng / TPM |
 | R4 | P1 | `parseAuthorizedSession` (or equivalent) is copied in portfolio, valuation, activity, funding, trading, morpho positions, plus a stricter `readAuthorizedMoneyActionSession`. | One loosened copy becomes an auth bypass; easy to miss in review. | M | eng |
 | R5 | P1 | No import-boundary enforcement. `eslint.config.mjs` is default Next only. Features already import `@/server/*` (types, Morpho config constants, Codex public contract). | A `"use client"` file that imports `server/cdp/provider` or a SQL client pulls secrets into the browser. No CI guard. | S–M | eng |
 | R6 | P1 | `cdp-client.tsx` (~2202 lines) and `home-experience.tsx` (~839 lines) are merge magnets. Almost every finance UI change touches one of them. | Parallel PRs conflict; reviews become “did we regress sign-out / claim / refresh?” | M | eng |
@@ -214,6 +220,8 @@ Print this. Use it as the PR checklist.
 
 ### Required tests before a finance PR
 
+> **Superseded by `docs/home-is-thin.md`.** Use the reset gate and current operating manual.
+
 - [ ] `bun test` covers the new branch (handler + prepare/issue or parser).
 - [ ] If you touched `MoneyActionStore` or SQLite/Postgres schema: `store.test.ts` (Memory + SQLite + Postgres contract) **and** `scripts/probe-money-actions-sqlite.mjs`.
 - [ ] If you touched auth/session: a test that a client-supplied wallet/user id cannot change scope.
@@ -226,10 +234,12 @@ The browser smoke (`test:browser-smoke`) is required when you change sign-in, si
 
 ### Money-safety invariants (non-negotiable)
 
+> **Superseded by `docs/home-is-thin.md`.** Its five invariants replace this list.
+
 1. **Never double-dispatch.** Claim is the only grant of `dispatch`. Refresh/recover/read/status must not call wallet submit APIs again.
 2. **Never accept client-authored call plans.** No API takes `calls[]` or a `MoneyActionDraft` from the browser for execution.
 3. **Never authorize from a client user id or `?wallet=`.** Scope = verified CDP subject + smart-account address + chain `8453` + `X-Home-Account-Provider`.
-4. **Never confirm from the client.** `POST /api/actions/:id/status` may set `unknown | rejected | expired | failed` only. `expired` / `rejected` / `failed` stay `submitting` + reference-free. Owner abandonment is `POST /api/actions/:id/admission-release`, not a status write. Confirmation requires receipt + `verifiedExecution`.
+4. **Never confirm from the client.** the retired per-action status route may set `unknown | rejected | expired | failed` only. `expired` / `rejected` / `failed` stay `submitting` + reference-free. Owner abandonment is the retired admission-release route, not a status write. Confirmation requires receipt + `verifiedExecution`.
 5. **Never keep a SQL/SQLite transaction open across a provider call.**
 6. **Never treat an ambiguous broadcast as retryable with a new nonce.** Record `unknown`; reconcile from the stored reference.
 7. **Never use JS floats for token amounts, debt, or settlement.** Parse once at the boundary; reject excess precision.
@@ -328,7 +338,7 @@ Small, reviewable PRs that exercise good seams. None require a live funded trans
 1. `apps/web/client/account/cdp-client.tsx`
 2. `apps/web/client/home/home-experience.tsx`
 3. `apps/web/server/money-actions/{store,sqlite-store.node,issue,handlers}.ts`
-4. `apps/web/app/api/actions/[id]/claim/route.ts`
+4. the retired per-action claim route
 5. `apps/web/config/portfolio-assets.ts` + `apps/web/shared/savings/config.ts`
 6. `apps/web/config/invest-assets.ts`
 7. `apps/web/components/finance-rows.tsx` + `apps/web/app/globals.css`

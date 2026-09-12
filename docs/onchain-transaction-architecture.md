@@ -26,9 +26,9 @@ The compatibility implementation does not change the store schema. It adds a pur
 
 ## Current boundary and failure windows
 
-Today a `PreparedMoneyAction` binds the verified owner tuple, reviewed calls, amounts, warnings, expiry, and `reviewHash`. `POST /api/actions/:id/claim` atomically changes a prepared row to `submitting`; only the returned `dispatch` disposition permits the client to call a wallet. Submission evidence is then uploaded through the submission endpoint and verified receipts drive confirmation.
+> **Superseded by `docs/home-is-thin.md`.** The claim/evidence state machine described below was removed by the thin-actions reset.
 
-That prevents two tabs from both receiving first-dispatch permission, but one operation row still represents too many independent facts. In particular, `submitting` without a reference can mean either “the client never reached the wallet” or “the provider accepted a request and Home lost the response.” Persistence cannot infer which one occurred from status and time alone.
+A `PreparedMoneyAction` now binds the verified owner tuple and server-authored calls for review. Confirmation clears the pending plan, then the fenced browser dispatches directly through CDP or Base Account and records the provider handle. The server derives display status from confirmation age and any verified receipt rather than persisting an attempt state machine.
 
 ### Failure-window matrix
 

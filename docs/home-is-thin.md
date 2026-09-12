@@ -22,7 +22,7 @@ Nothing is live today. The database is disposable. We choose the smallest thing 
 
 - The money-action state machine: attempt states, claims and dispositions, admission-release, evidence and data-migration tables, `status-transitions`, the Postgres cutover flag, the SQLite spike, `runtime-store` selection, the localStorage provider-handle journal and cross-tab lock, 409 candidate races, and the "Check status" recovery flows.
 - The trading intent ledger: `intent-store`, `runtime-intent-store`, `preclaim`, and the intent half of `finalize`. The Permit2 signature append/verify half of `finalize.ts`, `permit2.ts`, `signer.ts`, and `balance.ts` stay.
-- Routes: `/api/actions/[id]/claim`, `/admission-release`, `/status`, `/submission`, `/api/actions/operations`, `/api/operations`, `/api/trades/[id]/finalize` (replaced below).
+- Routes: `the former per-action claim endpoint`, `/admission-release`, `/status`, `/submission`, `the former actions-operations endpoint`, `the former operations endpoint`, `the former trade-finalize endpoint` (replaced below).
 - Any test whose subject is one of the above, deleted in the same commit as the code.
 
 ## Data model
@@ -36,7 +36,7 @@ create table actions (
   provider           text not null,             -- 'cdp-embedded' | 'base-account'
   kind               text not null,             -- 'send' | 'savings-deposit' | 'savings-withdraw' | 'trade' | 'borrow' ...
   summary            jsonb not null,            -- what to render: amounts, asset, target, label
-  pending            jsonb,                     -- trades only: draft calls, permit hash, swapCallIndex, quote expiry
+  pending            jsonb,                     -- server-built calls and (trades) permit fields for unconfirmed actions; cleared on confirm
   created_at         timestamptz not null default now(),
   confirmed_at       timestamptz,               -- set by POST /confirm; unconfirmed rows are invisible
   provider_handle    text,                      -- CDP userOperationHash, or the EIP-5792 id (= id) for Base
@@ -62,8 +62,8 @@ create table user_settings (
 
 ## Flow
 
-1. `POST /api/actions/prepare` `{kind, params}` → server verifies scope, builds calldata, inserts an unconfirmed `actions` row, returns `{id, calls, summary, expiresAt}`. Trades return `{id, summary, permit2Typed, expiresAt}` and store the draft in `pending`.
-2. Client shows review. On confirm: `POST /api/actions/:id/confirm` (sets `confirmed_at`, returns the final `calls`; for trades the body carries the Permit2 `signature`, the server verifies the signer is the owner and splices it — this is the kept half of `finalize`). The client dispatches only on 2xx.
+1. `POST /api/actions/prepare` `{kind, params}` → server verifies scope, builds calldata, inserts an unconfirmed `actions` row, and stores the draft calls in `pending` for every kind. It returns `{id, calls, summary, expiresAt}`. Trades return `{id, summary, permit2Typed, expiresAt}` and additionally store the permit hash, swapCallIndex, and quote expiry in `pending`.
+2. Client shows review. `GET /api/actions/:id` is owner-scoped and returns the unconfirmed summary plus `pending.calls`, so a reload mid-review can resume. On confirm: `POST /api/actions/:id/confirm` (sets `confirmed_at`, returns the final `calls`, and clears `pending`; for trades the body carries the Permit2 `signature`, the server verifies the signer is the owner and splices it — this is the kept half of `finalize`). The client dispatches only on 2xx. Reload-resume is intended only before confirm; after confirm the tab owns dispatch and any live retry.
 3. Dispatch: CDP `sendUserOperation({ idempotencyKey: id, calls })` → `provider_handle = userOperationHash`. Base `wallet_sendCalls({ id, calls, atomicRequired: true })` → `provider_handle = id`, prefilled at confirm.
 4. `POST /api/actions/:id/handle` `{providerHandle}` and later `{transactionHash}` once the client resolves it from `getUserOperation` / `wallet_getCallsStatus`. Retried while the tab lives; late posts are accepted. Only the client can query provider status (end-user credentials); the server derives only from receipts.
 5. `GET /api/actions` returns the owner's confirmed rows (last 24h) with derived status; Activity = chain activity ∪ those rows, deduped by `transaction_hash`. `RecentMoneyActions` and `transfer-actions.tsx` read this route.
@@ -105,7 +105,7 @@ One `ownerGeneration` counter replaces the four-field fence in `cdp-session-life
 
 ## Deletion and edit list
 
-Server: `server/money-actions/{postgres-store,runtime-store,status-transitions,store-contract,store,provider-submission-contract,migrate}.ts`, `server/money-actions/migrations/*`, the claim/submission/status/admission-release/operations routes, `server/trading/{preclaim,intent-store,runtime-intent-store}.ts`, the intent half of `finalize.ts` and its route, `scripts/delivery/tests/postgres-money-action*.test.ts` (replaced by tests for the new schema), `money-actions:migrate` script, `MONEY_ACTION_POSTGRES_CUTOVER`. `app/api/activity/route.ts` stops probing the store and reads `GET /api/actions`' reader.
+Server: `server/money-actions/{postgres-store,runtime-store,status-transitions,store-contract,store,provider-submission-contract,migrate}.ts`, `server/money-actions/migrations/*`, the claim/submission/status/admission-release/operations routes, `server/trading/{preclaim,intent-store,runtime-intent-store}.ts`, the intent half of `finalize.ts` and its route, `scripts/delivery/tests/postgres-money-action*.test.ts` (replaced by tests for the new schema), `the former money-action migration command` script, `the former money-action cutover flag`. `app/api/activity/route.ts` stops probing the store and reads `GET /api/actions`' reader.
 
 Client: `client/money-actions/{provider-handle-journal,provider-handle-recovery}.ts`, `tests/provider-handle-recovery.test.ts`; the client-authored transfer fallback (above); `client/account/cdp-money-action-execution.ts` rewritten around the flow (target ≤ 300 LOC from 1,215); `client/account/cdp-session-lifecycle.tsx` reduced to sign-in/out/restore plus the fence (from 1,418); `base-account-connector.ts` keeps connect, sign, `wallet_sendCalls`, `wallet_getCallsStatus` and drops journal-driven recovery.
 
