@@ -9,6 +9,12 @@
   --home-ui-color-action-hover: #0047db;
   --home-ui-color-action-pressed: #003ab8;
   --home-ui-color-on-action: #ffffff;
+  --home-ui-color-accent-muted: #d9e5ff;
+  --home-ui-color-accent-separator: #709cff;
+  --home-ui-color-accent-tint: #e8f0ff;
+  --home-ui-color-accent-tint-text: #003ab8;
+  --home-ui-color-accent-tint-muted: #355789;
+  --home-ui-color-accent-tint-separator: #b9ccff;
   --home-ui-color-focus: #0052ff;
   --home-ui-color-subtle-hover: #eef0f4;
   --home-ui-color-subtle-pressed: #e6e8ec;
@@ -19,6 +25,12 @@
   /* Domain consumers choose these explicitly; outgoing money is not an error. */
   --home-ui-color-market-gain: #137333;
   --home-ui-color-market-loss: #b42318;
+
+  /* Descendant-facing aliases. Surface classes override these as a set. */
+  --fg: var(--home-ui-color-text);
+  --fg-muted: var(--home-ui-color-muted);
+  --separator: var(--home-ui-color-border);
+  --fg-on-accent: var(--home-ui-color-on-action);
 
   --home-ui-font-fallback: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --home-ui-font-family: var(--home-ui-font-dm-sans, var(--home-ui-font-fallback));

@@ -1,7 +1,40 @@
 /* Scoped component styles; usable without Tailwind or any global reset. */
+.surface-primary,
+.surface-secondary,
+.surface-accent {
+  color: var(--fg);
+}
+.surface-primary {
+  --fg: var(--home-ui-color-text);
+  --fg-muted: var(--home-ui-color-muted);
+  --separator: var(--home-ui-color-border);
+  --fg-on-accent: var(--home-ui-color-on-action);
+  background-color: var(--home-ui-color-surface);
+}
+.surface-secondary {
+  --fg: var(--home-ui-color-text);
+  --fg-muted: var(--home-ui-color-muted);
+  --separator: var(--home-ui-color-border);
+  --fg-on-accent: var(--home-ui-color-on-action);
+  background-color: var(--home-ui-color-canvas);
+}
+.surface-accent {
+  --fg: var(--home-ui-color-on-action);
+  --fg-muted: var(--home-ui-color-accent-muted);
+  --separator: var(--home-ui-color-accent-separator);
+  --fg-on-accent: var(--home-ui-color-on-action);
+  background-color: var(--home-ui-color-action);
+}
+.surface-accent.surface-tinted {
+  --fg: var(--home-ui-color-accent-tint-text);
+  --fg-muted: var(--home-ui-color-accent-tint-muted);
+  --separator: var(--home-ui-color-accent-tint-separator);
+  background-color: var(--home-ui-color-accent-tint);
+}
+
 .home-ui-text {
   margin: 0;
-  color: var(--home-ui-color-text);
+  color: var(--fg, var(--home-ui-color-text));
   font-family: var(--home-ui-font-family);
   font-size: var(--home-ui-type-body-size);
   font-weight: var(--home-ui-type-weight-regular);
@@ -10,7 +43,7 @@
   overflow-wrap: anywhere;
 }
 
-.home-ui-text[data-tone="muted"] { color: var(--home-ui-color-muted); }
+.home-ui-text[data-tone="muted"] { color: var(--fg-muted, var(--home-ui-color-muted)); }
 /* Equal-width ASCII digits come from DM Mono's metrics, not a DM Sans feature.
    Keep the numeric fallback monospaced when the opt-in font is unavailable. */
 .home-ui-text:is([data-text-style="amount"], [data-text-style="row-value"]) {
@@ -70,7 +103,7 @@
   border: 1px solid transparent;
   border-radius: var(--home-ui-radius-control);
   background: var(--home-ui-color-action);
-  color: var(--home-ui-color-on-action);
+  color: var(--fg-on-accent, var(--home-ui-color-on-action));
   font-family: var(--home-ui-font-family);
   font-size: var(--home-ui-type-control-size);
   font-weight: var(--home-ui-type-weight-strong);
@@ -90,8 +123,8 @@
 .home-ui-button__label { grid-area: 1 / 1; min-inline-size: 0; }
 .home-ui-button[data-variant="secondary"] {
   background: var(--home-ui-color-surface);
-  color: var(--home-ui-color-text);
-  border-color: var(--home-ui-color-border);
+  color: var(--fg, var(--home-ui-color-text));
+  border-color: var(--separator, var(--home-ui-color-border));
 }
 .home-ui-button[data-variant="quiet"] {
   background: transparent;
