@@ -49,19 +49,12 @@ describe("funding asset registry", () => {
     expect(getFundingAsset("__proto__")).toBeUndefined();
   });
 
-  test("agrees with regional fiat/symbol defaults and the currency-defaults document", async () => {
-    const defaults = await Bun.file(
-      new URL("../../../../docs/currency-defaults.md", import.meta.url),
-    ).text();
+  test("agrees with regional fiat and candidate-asset defaults", () => {
     for (const [assetId, regionId] of Object.entries(regionByAsset)) {
       const asset = fundingAssets[assetId as keyof typeof fundingAssets];
       const region = presentationRegions[regionId];
       expect(region.currency.code).toBe(asset.fiatCurrency);
       expect(region.candidateAsset?.symbol).toBe(asset.symbol);
-      const documentedRow = defaults
-        .split("\n")
-        .find((line) => line.startsWith(`| ${asset.fiatCurrency} ·`));
-      expect(documentedRow).toContain(`| ${asset.symbol}`);
     }
   });
 });

@@ -14,11 +14,24 @@ if (typeof window === "undefined") {
 
   GlobalRegistrator.register({
     url: "http://localhost:3111/",
+    settings: {
+      disableCSSFileLoading: true,
+      enableImageFileLoading: false,
+      disableJavaScriptFileLoading: true,
+    },
   });
 
   for (const [name, descriptor] of Object.entries(serverFetchDescriptors)) {
     if (descriptor) Object.defineProperty(globalThis, name, descriptor);
   }
+
+  // Fail closed: no unit test may reach the network. Tests that need a
+  // response stub `window.fetch` themselves.
+  globalThis.fetch = (async (input: RequestInfo | URL) =>
+    new Response(null, {
+      status: 503,
+      statusText: `Unit tests cannot reach the network: ${String(input)}`,
+    })) as unknown as typeof fetch;
 }
 
 if (!HTMLDialogElement.prototype.showModal) {
