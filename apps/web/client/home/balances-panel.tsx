@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MoneyTicker } from "@home/ui/money-ticker";
 import { CurrencyMark } from "@/components/currency-mark";
 import { BalanceRow } from "@/components/finance-rows";
 import {
@@ -264,11 +265,11 @@ function HomeBalanceRowView({
       label={asset.name}
       context={asset.displayContext}
       value={
-        row.accessibleBalance ? (
-          <span aria-label={row.accessibleBalance} title={row.accessibleBalance}>
-            {row.visualBalance}
-          </span>
-        ) : row.visualBalance
+        <MoneyTicker
+          value={row.visualBalance}
+          aria-label={row.accessibleBalance}
+          title={row.accessibleBalance}
+        />
       }
       valueTone={row.tone}
     />

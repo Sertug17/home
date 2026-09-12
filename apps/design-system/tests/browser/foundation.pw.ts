@@ -49,7 +49,7 @@ async function expectWholeAsciiWords(locator: Locator) {
 async function expectNoOverflow(page: Page) {
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  const clipped = await page.locator(".home-ui-text, .home-ui-button, .catalog-section, .catalog-controls, .catalog-control-grid, .catalog-control-grid label").evaluateAll((elements) =>
+  const clipped = await page.locator(".home-ui-text, .home-ui-money-ticker, .home-ui-button, .catalog-section, .catalog-controls, .catalog-control-grid, .catalog-control-grid label").evaluateAll((elements) =>
     elements.filter((element) => {
       // Tight display line boxes can have visible font ink outside their height;
       // that is not clipping. Still reject horizontal overflow and any vertical
@@ -70,6 +70,7 @@ for (const width of [320, 390, 1280]) {
       await page.getByRole("combobox", { name: "Text size" }).selectOption(scale);
       await expect(page.locator("html")).toHaveCSS("font-size", scale === "200" ? "32px" : "16px");
       await expect(page.getByText("₹12,34,56,789.00", { exact: true })).toBeVisible();
+      await expect(page.locator("[data-ticker-specimen]")).toHaveAttribute("aria-label", "$1,234.56");
       await expect(page.getByRole("button", { name: /^A long button label/ })).toBeVisible();
       await expectNoOverflow(page);
       for (const button of await page.locator(".home-ui-button").all()) {
@@ -340,6 +341,12 @@ test("reduced motion uses opacity-only press feedback and removes spinner animat
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.getByText("Motion: reduced", { exact: true })).toBeVisible();
+  const ticker = page.locator("[data-ticker-specimen]");
+  await page.getByRole("button", { name: "Update balance ticker" }).click();
+  await expect(ticker).toHaveAttribute("aria-label", "$9,876.54");
+  expect(await ticker.locator("number-flow-react").evaluateAll((digits) =>
+    digits.every((digit) => (digit as HTMLElement & { animated?: boolean }).animated === false),
+  )).toBe(true);
   const primary = page.getByRole("button", { name: "Primary", exact: true });
   await expect(primary).toHaveCSS("transition-duration", "0s");
   await expect(primary).toHaveCSS("opacity", "1");
