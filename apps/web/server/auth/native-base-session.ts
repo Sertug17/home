@@ -7,7 +7,7 @@ import { resolveBaseRpcUrl } from "@/server/portfolio/rpc";
 import {
   createNeonSqlExecutor,
   type SqlExecutor,
-} from "@/server/money-actions/postgres-sql";
+} from "@/server/db/sql";
 
 export const HOME_SESSION_COOKIE = "home-session";
 export const HOME_CHALLENGE_COOKIE = "home-auth-challenge";

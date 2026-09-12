@@ -12,7 +12,7 @@ import {
   resolveNativeBaseNonceStoreBackend,
   type NativeBaseNonce,
 } from "./native-base-session";
-import type { SqlExecutor, SqlQueryResult } from "@/server/money-actions/postgres-sql";
+import type { SqlExecutor, SqlQueryResult } from "@/server/db/sql";
 
 const SECRET = "test-only-home-session-secret-32-bytes-minimum";
 const ADDRESS = "0x1111111111111111111111111111111111111111" as const;
