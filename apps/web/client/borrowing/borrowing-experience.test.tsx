@@ -93,8 +93,7 @@ describe("BorrowExperience", () => {
     };
 
     render(<BorrowExperience session={session} fetchAccountResource={fetchAccountResource} prepareMoneyAction={prepareMoneyAction} executeMoneyAction={async (action) => ({ id: action.id, status: "submitted" })} />);
-    expect(await within(document.body).findByText(/no cbBTC, USDC, or position/i)).toBeTruthy();
-    const refreshButton = within(document.body).getByRole("button", { name: "Refresh" });
+    const refreshButton = await within(document.body).findByRole("button", { name: "Refresh" });
     expect(refreshButton.classList.contains("home-ui-button")).toBe(true);
     expect(refreshButton.getAttribute("data-variant")).toBe("secondary");
     fireEvent.change(within(document.body).getByLabelText("Action"), { target: { value: "borrow" } });

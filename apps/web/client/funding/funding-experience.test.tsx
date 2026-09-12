@@ -166,7 +166,7 @@ describe("FundingExperience", () => {
       />,
     );
 
-    fireEvent.click(page().getByRole("button", { name: /Use Coinbase to deposit USD/ }));
+    fireEvent.click(page().getByRole("button", { name: "Deposit USD with Coinbase" }));
     fireEvent.click(page().getByRole("button", { name: "Continue to Coinbase" }));
     await waitFor(() => expect(page().getByRole("button", { name: "Opening Coinbase…" })).toBeTruthy());
     fireEvent.click(page().getByRole("button", { name: "Close add money" }));

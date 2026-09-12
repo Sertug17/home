@@ -46,20 +46,12 @@
   padding: 22px 20px;
 }
 
-.kicker {
-  margin-bottom: 5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.market,
 .metrics,
 .form,
 .previewOnly {
   padding: 20px;
 }
 
-.market,
 .metrics,
 .form,
 .previewOnly,
@@ -67,7 +59,6 @@
   border-bottom: 1px solid var(--home-ui-color-border);
 }
 
-.addresses,
 .metricGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -77,22 +68,15 @@
   background: var(--home-ui-color-border);
 }
 
-.addresses div,
 .metricGrid div {
   min-width: 0;
   background: var(--home-ui-color-canvas);
   padding: var(--home-ui-space-3);
 }
 
-.addresses dd,
 .metricGrid dd {
   margin: 5px 0 0;
   overflow-wrap: anywhere;
-}
-
-.addresses code {
-  font-family: var(--home-ui-font-numeric);
-  font-size: var(--home-ui-type-metadata-size);
 }
 
 .metricGrid small {
@@ -173,7 +157,6 @@
 }
 
 @media (max-width: 760px) {
-  .addresses,
   .metricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -199,7 +182,6 @@
 
   .chrome,
   .header,
-  .market,
   .metrics,
   .form,
   .previewOnly {
@@ -207,7 +189,6 @@
     padding-left: var(--home-ui-space-4);
   }
 
-  .addresses,
   .metricGrid {
     grid-template-columns: 1fr;
   }
