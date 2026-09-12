@@ -35,6 +35,7 @@ import type { HomeExperienceProps, HomeAssetBalancesPresentation } from "./home-
 import { homePanelHref, readHomeInboundPanelState } from "./panel-routing";
 import { ShellHeader, SignedOutLanding } from "./shell-chrome";
 import { DashboardShell } from "./shell-panels";
+import { ActionToasts } from "./action-toasts";
 import { useHomeRegion } from "./use-home-region";
 
 const loadingAssetBalances: HomeAssetBalancesPresentation = {
@@ -446,6 +447,9 @@ export function HomeShell({
           onRetrySignOut={() => void account.signOut().catch(() => {})}
         />
       )}
+      {routeMode === "dashboard" && isVerified ? (
+        <ActionToasts session={account.session} fetchOperations={account.fetchOperations} />
+      ) : null}
       <AccountSignInSheet
         open={isAccountOpen}
         onClose={closeAccount}

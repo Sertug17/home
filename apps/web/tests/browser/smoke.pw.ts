@@ -9,10 +9,11 @@ const RECIPIENT = "0x2222222222222222222222222222222222222222";
 const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const ACTION_ID = "11111111-1111-4111-8111-111111111111";
 const USER_OPERATION_HASH = `0x${"ab".repeat(32)}`;
+const TRANSACTION_HASH = `0x${"cd".repeat(32)}`;
 const CREATED_AT = new Date().toISOString();
 const EXPIRES_AT = new Date(Date.now() + 10 * 60_000).toISOString();
 
-type ActionStatus = "unconfirmed" | "pending";
+type ActionStatus = "unconfirmed" | "pending" | "confirmed";
 
 function action() {
   const amount = "1000000";
@@ -126,6 +127,11 @@ async function installApiFixtures(
     if (path === "/api/actions/prepare" && request.method() === "POST") { status = "unconfirmed"; return json(route, action()); }
     if (path === `/api/actions/${ACTION_ID}/confirm`) { status = "pending"; return json(route, { id: ACTION_ID, calls: action().calls, summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, expiresAt: EXPIRES_AT }); }
     if (path === `/api/actions/${ACTION_ID}/handle`) {
+      const body = request.postDataJSON() as { providerHandle?: string; transactionHash?: string };
+      if (body.transactionHash) {
+        status = "confirmed";
+        return json(route, { action: { id: ACTION_ID, status, providerHandle: USER_OPERATION_HASH, transactionHash: body.transactionHash } });
+      }
       handleRecorded = true;
       if (failHandleResponseOnce) { failHandleResponseOnce = false; return route.abort("failed"); }
       return json(route, { action: { id: ACTION_ID, status: "pending", providerHandle: USER_OPERATION_HASH } });
@@ -133,8 +139,31 @@ async function installApiFixtures(
     if (path === `/api/actions/${ACTION_ID}`) return json(route, status === "unconfirmed"
       ? { id: ACTION_ID, kind: "send", summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, calls: action().calls, expiresAt: EXPIRES_AT }
       : { action: { id: ACTION_ID, status: "pending", providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined } });
-    if (path === "/api/actions") return json(route, { actions: status === "pending" ? [{ id: ACTION_ID, provider: "cdp-embedded", kind: "send", summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, status: "pending", createdAt: CREATED_AT, confirmedAt: CREATED_AT, providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined, owner: action().owner }] : [] });
-    if (path === "/api/activity") return json(route, { version: 1, walletAddress: OWNER, chainId: 8453, from: "2026-09-01T00:00:00.000Z", to: new Date().toISOString(), transfers: [], nextCursor: null, source: { provider: "Playwright", method: "fixture", fetchedAt: new Date().toISOString() } });
+    if (path === "/api/actions") return json(route, { actions: status === "pending" || status === "confirmed" ? [{ id: ACTION_ID, provider: "cdp-embedded", kind: "send", summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, status, createdAt: CREATED_AT, confirmedAt: CREATED_AT, providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined, transactionHash: status === "confirmed" ? TRANSACTION_HASH : undefined, owner: action().owner }] : [] });
+    if (path === "/api/activity") {
+      const to = url.searchParams.get("to") ?? new Date().toISOString();
+      const from = new Date(new Date(to).getTime() - 31 * 24 * 60 * 60 * 1000).toISOString();
+      const transfers = status === "confirmed" ? [{
+        id: `8453:${USDC}:${ACTION_ID}`,
+        logId: ACTION_ID,
+        chainId: 8453,
+        assetId: "usdc",
+        tokenAddress: USDC,
+        tokenSymbol: "USDC",
+        tokenDecimals: 6,
+        walletAddress: OWNER,
+        fromAddress: OWNER,
+        toAddress: RECIPIENT,
+        direction: "outgoing",
+        amountBaseUnits: "1000000",
+        blockNumber: "20",
+        blockHash: `0x${"ef".repeat(32)}`,
+        transactionHash: TRANSACTION_HASH,
+        logIndex: "1",
+        blockTimestamp: new Date(new Date(to).getTime() - 1_000).toISOString(),
+      }] : [];
+      return json(route, { walletAddress: OWNER, chainId: 8453, recordedOperations: "available", window: { from, to }, transfers, nextCursor: null, source: { provider: "cdp-sql", cached: false, stale: false, executionTimestamp: to, executionTimeMs: 1, fetchedAt: to } });
+    }
     if (path === "/api/funding/providers") return json(route, url.searchParams.get("region") === "ID" ? { providers: [{ providerId: "idrx", displayName: "IDRX", region: "ID", assetId: "base:idrx", assetSymbol: "IDRX", assetDecimals: 2, currency: "IDR", paymentMethods: [{ id: "bank-va-mandiri", label: "Bank transfer · Mandiri" }], quotes: false, kyc: null }] } : { providers: [] });
     if (path === "/api/funding/quotes") return json(route, { quoteToken: "fixture-signed-quote", quote: { fiatAmount: "20000", tokenAmountAtomic: "2000000", fees: [], expiresAt: EXPIRES_AT } });
     if (path === "/api/funding/orders" && request.method() === "POST") return json(route, { order: { id: ACTION_ID, providerId: "idrx", region: "ID", assetId: "base:idrx", paymentMethod: "bank-va-mandiri", fiatAmount: "20000", state: "awaiting-payment", expectedTokenAmountAtomic: "2000000", fees: [{ label: "Network", amount: "100", currency: "IDR" }], instructions: { kind: "bank-transfer", rail: "Mandiri virtual account", accountNumber: "123456789012", accountName: "Home Fixture", amount: "20000", currency: "IDR" }, providerStatus: "pending" } });
@@ -238,9 +267,11 @@ test("ambiguous handle response retries without a second wallet dispatch", async
   await confirmDialog.getByRole("button", { name: "Send $1.00" }).click();
   await expect(confirmDialog).toBeHidden();
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("home:playwright-smoke:dispatch-count"))).toBe("1");
+  await expect(page.getByText("Sent $1.00 to 0x2222…222222", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Activity" }).click();
-  await expect(page.getByText("Send USDC", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Pending/)).toBeVisible();
+  await expect(page.getByText("Sent", { exact: true })).toBeVisible();
+  await expect(page.getByText("Send USDC", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Pending/)).toHaveCount(0);
 });
 
 test("reload resumes an unconfirmed send review from its URL action", async ({ page }) => {
