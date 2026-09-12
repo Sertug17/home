@@ -9,6 +9,7 @@ import {
 } from "@/client/asset-mark/presentation";
 import { TradeActions } from "@/client/trading/trade-actions";
 import type { MarketDataState } from "@/shared/invest/invest-market";
+import { moneyChangeTone } from "@/shared/formatting";
 import { useMarketDisplay } from "./use-market-display";
 import { AssetIcon } from "./asset-icon";
 import { BackIcon } from "./category-screen";
@@ -63,8 +64,7 @@ export function AssetDetailScreen({
   const history = usePriceHistory(asset.id, range);
   const price = useMarketDisplay(asset.id, market);
   const change = price.changeLabel ?? "—";
-  const changeTone =
-    change.startsWith("+") ? styles.changeUp : change.startsWith("-") ? styles.changeDown : "";
+  const changeTone = moneyChangeTone(change);
   const hosted = Boolean(useOptionalAppChrome());
   const mark = presentInvestAssetMark(asset, assetMarkResolution);
   return (
@@ -90,7 +90,7 @@ export function AssetDetailScreen({
           {price.tone === "ready" ? price.value : price.detail}
         </strong>
         {change !== "—" ? (
-          <small className={`${styles.change} ${changeTone}`}>{change}</small>
+          <small className={styles.change} data-money-change={changeTone}>{change}</small>
         ) : null}
         <span>
           {asset.representation.tokenSymbol} · Base

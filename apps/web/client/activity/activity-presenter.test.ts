@@ -53,21 +53,6 @@ function transfer(
   };
 }
 
-function expectedActivityDate(
-  value: string,
-  timeZone: string,
-  includeYear: boolean,
-): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    ...(includeYear ? { year: "numeric" as const } : {}),
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-  }).format(new Date(value));
-}
-
 function expectSerializable(model: ActivityRowViewModel) {
   expect(JSON.parse(JSON.stringify(model))).toEqual(model);
 }
@@ -106,12 +91,12 @@ describe("presentActivityTransferRow", () => {
 
     expect(utc).toMatchObject({
       dateTime: timestamp,
-      fullDate: expectedActivityDate(timestamp, "UTC", true),
-      shortDate: expectedActivityDate(timestamp, "UTC", false),
+      fullDate: "Sep 7, 2026 at 11:05 AM",
+      shortDate: "Sep 7 at 11:05 AM",
     });
     expect(pacific).toMatchObject({
-      fullDate: expectedActivityDate(timestamp, "America/Los_Angeles", true),
-      shortDate: expectedActivityDate(timestamp, "America/Los_Angeles", false),
+      fullDate: "Sep 7, 2026 at 4:05 AM",
+      shortDate: "Sep 7 at 4:05 AM",
     });
   });
 

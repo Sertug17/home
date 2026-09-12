@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { RegionId } from "@/config/regions";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import type {
   ActivityPanelDensity,
@@ -11,6 +12,7 @@ export type ActivityPanelProps = {
   session: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
   refreshTrigger?: string | number;
+  regionId?: RegionId;
   onTransactionHashesChange?: (hashes: string[]) => void;
   leading?: ReactNode;
   suppressEmpty?: boolean;

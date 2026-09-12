@@ -6,6 +6,7 @@ import {
   type AssetMarkResolution,
 } from "@/client/asset-mark/presentation";
 import type { MarketDataState } from "@/shared/invest/invest-market";
+import { moneyChangeTone } from "@/shared/formatting";
 import { useMarketDisplay } from "./use-market-display";
 import { AssetIcon } from "./asset-icon";
 import styles from "./invest-experience.module.css";
@@ -24,8 +25,7 @@ export function DiscoverAssetRow({
   const price = useMarketDisplay(asset.id, market);
   const mark = presentInvestAssetMark(asset, assetMarkResolution);
   const change = price.changeLabel ?? "—";
-  const changeTone =
-    change.startsWith("+") ? styles.changeUp : change.startsWith("-") ? styles.changeDown : "";
+  const changeTone = moneyChangeTone(change);
 
   return (
     <li>
@@ -43,7 +43,7 @@ export function DiscoverAssetRow({
         <span className={styles.quote}>
           <strong>{price.value}</strong>
           {change !== "—" ? (
-            <small className={`${styles.change} ${changeTone}`}>{change}</small>
+            <small className={styles.change} data-money-change={changeTone}>{change}</small>
           ) : null}
         </span>
       </button>

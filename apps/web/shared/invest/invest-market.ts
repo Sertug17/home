@@ -1,4 +1,4 @@
-import type { FiatCurrencyCode } from "@/config/regions";
+import type { FiatCurrencyCode, RegionId } from "@/config/regions";
 import {
   formatPresentationPrice,
   formatSignedPercentChange,
@@ -29,6 +29,7 @@ export type MarketDisplay = {
 };
 
 export type MarketPresentationQuote = {
+  regionId?: RegionId;
   valueCurrency?: string | null;
   quoteUnitsPerUsd?: { atoms: string; scale: number } | null;
 };
@@ -81,7 +82,7 @@ export function getMarketDisplay(
       detail: `${snapshot.sourceLabel} · ${snapshot.asOf}`,
       sourceUrl: snapshot.sourceUrl,
       changeLabel: snapshot.changeLabel
-        ? formatSignedPercentChange(snapshot.changeLabel) ?? snapshot.changeLabel
+        ? formatSignedPercentChange(snapshot.changeLabel, quote.regionId) ?? snapshot.changeLabel
         : undefined,
       tone: "ready",
     };
@@ -106,11 +107,11 @@ function formatSnapshotDisplayPrice(
     : "USD";
 
   if (currency === "USD") {
-    return formatPresentationPrice(usdAmount, "USD");
+    return formatPresentationPrice(usdAmount, "USD", quote.regionId);
   }
 
   if (!quote.quoteUnitsPerUsd) return "—";
   const localAmount = scaleDecimalByExact(usdAmount, quote.quoteUnitsPerUsd);
   if (!localAmount) return "—";
-  return formatPresentationPrice(localAmount, currency) ?? "—";
+  return formatPresentationPrice(localAmount, currency, quote.regionId) ?? "—";
 }

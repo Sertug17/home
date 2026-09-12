@@ -848,6 +848,7 @@ function HomeExperienceView({
                       readOperation={readOperation}
                       checkOperation={account.checkMoneyAction}
                       activityRefreshTrigger={activityRefreshTrigger}
+                      regionId={regionId}
                       showSessionShimmer={!activitySession && (
                         paintedAssetBalances.status === "loading" ||
                         paintedAssetBalances.revalidating === true
@@ -1255,6 +1256,7 @@ function HomePanel({
             readOperation={readOperation}
             checkOperation={checkOperation}
             activityRefreshTrigger={activityRefreshTrigger}
+            regionId={regionId}
           />
         </div>
       )}
@@ -1313,6 +1315,7 @@ function ActivityPage({
   readOperation,
   checkOperation,
   activityRefreshTrigger,
+  regionId,
   showSessionShimmer,
 }: {
   activitySession: VerifiedAccountSession | null;
@@ -1321,6 +1324,7 @@ function ActivityPage({
   readOperation: (id: string, signal?: AbortSignal) => Promise<unknown>;
   checkOperation?: (action: PreparedMoneyAction) => Promise<unknown>;
   activityRefreshTrigger?: string | number;
+  regionId: RegionId;
   showSessionShimmer: boolean;
 }) {
   if (showSessionShimmer) {
@@ -1341,6 +1345,7 @@ function ActivityPage({
         readOperation={readOperation}
         checkOperation={checkOperation}
         activityRefreshTrigger={activityRefreshTrigger}
+        regionId={regionId}
       />
     </div>
   );
@@ -1355,6 +1360,7 @@ function ConnectedActivityPanel({
   readOperation,
   checkOperation,
   activityRefreshTrigger,
+  regionId,
 }: {
   density: ActivityPanelDensity;
   header?: ReactNode | null;
@@ -1364,6 +1370,7 @@ function ConnectedActivityPanel({
   readOperation: (id: string, signal?: AbortSignal) => Promise<unknown>;
   checkOperation?: (action: PreparedMoneyAction) => Promise<unknown>;
   activityRefreshTrigger?: string | number;
+  regionId: RegionId;
 }) {
   const [indexedTransactionHashes, setIndexedTransactionHashes] = useState<string[]>([]);
   const [localActionCount, setLocalActionCount] = useState(0);
@@ -1380,6 +1387,7 @@ function ConnectedActivityPanel({
       session={activitySession}
       fetchActivity={fetchActivity}
       refreshTrigger={activityRefreshTrigger}
+      regionId={regionId}
       onTransactionHashesChange={updateIndexedTransactionHashes}
       suppressEmpty={localActionCount > 0}
       density={density}

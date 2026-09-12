@@ -82,15 +82,17 @@ describe("invest market display", () => {
 
     expect(
       getMarketDisplay("nvdac", state, {
+        regionId: "ID",
         valueCurrency: "IDR",
         quoteUnitsPerUsd: { atoms: "16425", scale: 0 },
       }),
     ).toMatchObject({
-      value: "Rp 3,805,816.92",
-      changeLabel: "+1.25%",
+      value: "Rp3.805.816,92",
+      changeLabel: "+1,25%",
     });
     expect(
       getMarketDisplay("nvdac", state, {
+        regionId: "ID",
         valueCurrency: "IDR",
         quoteUnitsPerUsd: null,
       }).value,

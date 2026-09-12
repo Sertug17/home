@@ -1,4 +1,9 @@
-import { formatAddress, formatPresentationTokenAmount } from "@/shared/formatting";
+import {
+  formatAddress,
+  formatPresentationDate,
+  formatPresentationTokenAmount,
+} from "@/shared/formatting";
+import type { RegionId } from "@/config/regions";
 import { formatBaseUnitAmount } from "@/client/portfolio/format";
 import {
   condensedTransactionHash,
@@ -23,6 +28,7 @@ export type ActivityRowViewModel = {
 };
 
 export type ActivityPresenterOptions = {
+  regionId?: RegionId;
   timeZone: string;
 };
 
@@ -52,7 +58,11 @@ export function presentActivityTransferRow(
   options: ActivityPresenterOptions,
 ): ActivityRowViewModel {
   const direction = directionPresentation[transfer.direction];
-  const fullDate = formatActivityDate(transfer.blockTimestamp, options.timeZone);
+  const fullDate = formatPresentationDate(transfer.blockTimestamp, {
+    regionId: options.regionId,
+    timeZone: options.timeZone,
+    style: "activity-full",
+  });
 
   return {
     id: transfer.id,
@@ -62,11 +72,16 @@ export function presentActivityTransferRow(
     sign: direction.sign,
     dateTime: transfer.blockTimestamp,
     fullDate,
-    shortDate: formatActivityDateShort(
-      transfer.blockTimestamp,
-      options.timeZone,
-    ),
-    value: `${direction.sign}${formatActivityAmount(transfer, true)}`,
+    shortDate: formatPresentationDate(transfer.blockTimestamp, {
+      regionId: options.regionId,
+      timeZone: options.timeZone,
+      style: "activity-short",
+    }),
+    value: `${direction.sign}${formatActivityAmount(
+      transfer,
+      true,
+      options.regionId,
+    )}`,
   };
 }
 
@@ -75,11 +90,19 @@ export function presentActivityTransferDetails(
   options: ActivityPresenterOptions,
 ): TransactionDetails {
   const direction = directionPresentation[transfer.direction];
-  const fullDate = formatActivityDate(transfer.blockTimestamp, options.timeZone);
+  const fullDate = formatPresentationDate(transfer.blockTimestamp, {
+    regionId: options.regionId,
+    timeZone: options.timeZone,
+    style: "activity-full",
+  });
   const rows: TransactionDetailRow[] = [
     {
       label: "Amount",
-      value: `${direction.sign}${formatActivityAmount(transfer, false)}`,
+      value: `${direction.sign}${formatActivityAmount(
+        transfer,
+        false,
+        options.regionId,
+      )}`,
     },
     {
       label: "From",
@@ -113,6 +136,7 @@ export function presentActivityTransferDetails(
 function formatActivityAmount(
   transfer: ActivityTransfer,
   presentation: boolean,
+  regionId?: RegionId,
 ): string {
   if (transfer.tokenSymbol === null || transfer.tokenDecimals === null) {
     return `${transfer.amountBaseUnits} base units${presentation ? "" : " · unknown token"}`;
@@ -124,30 +148,12 @@ function formatActivityAmount(
     )} ${transfer.tokenSymbol}`;
   }
   return formatPresentationTokenAmount(
-    transfer.amountBaseUnits,
+    BigInt(transfer.amountBaseUnits),
     transfer.tokenDecimals,
     transfer.tokenSymbol,
-    { cashCurrency: transfer.assetId === "usdc" ? "USD" : null },
+    {
+      cashCurrency: transfer.assetId === "usdc" ? "USD" : null,
+      regionId,
+    },
   );
-}
-
-function formatActivityDate(value: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-  }).format(new Date(value));
-}
-
-function formatActivityDateShort(value: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-  }).format(new Date(value));
 }

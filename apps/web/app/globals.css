@@ -11,6 +11,8 @@
   --home-canvas: #f7f8fa;
   --home-hairline: #e6e8ec;
   --home-blue: #0052ff;
+  --home-positive: #0f8a4b;
+  --home-negative: #c3372a;
   --home-gray-50: var(--home-canvas);
   --home-gray-100: var(--home-hairline);
   --home-gray-300: #b1b7c3;

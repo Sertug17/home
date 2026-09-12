@@ -10,6 +10,7 @@ import type {
 export type { PresentationFxQuote };
 
 const defaultQuote: MarketPresentationQuote = {
+  regionId: "GLOBAL",
   valueCurrency: "USD",
   quoteUnitsPerUsd: { atoms: "1", scale: 0 },
 };
@@ -64,6 +65,7 @@ export function presentationQuoteForRegion(
   const currency = presentationRegions[regionId].currency.code;
   if (!currency || currency === "USD") {
     return {
+      regionId,
       valueCurrency: currency ?? "USD",
       quoteUnitsPerUsd: { atoms: "1", scale: 0 },
     };
@@ -73,6 +75,7 @@ export function presentationQuoteForRegion(
     (item) => item.quoteCurrency === currency && item.status === "fresh",
   );
   return {
+    regionId,
     valueCurrency: currency,
     quoteUnitsPerUsd: match?.quoteUnitsPerUsd ?? null,
   };

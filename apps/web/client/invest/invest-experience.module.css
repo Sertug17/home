@@ -184,14 +184,12 @@
   white-space: nowrap;
 }
 
-.quote small.changeUp,
-.changeUp {
-  color: #0f8a4b;
+.change[data-money-change="positive"] {
+  color: var(--home-positive);
 }
 
-.quote small.changeDown,
-.changeDown {
-  color: #c3372a;
+.change[data-money-change="negative"] {
+  color: var(--home-negative);
 }
 
 .detailExperience {

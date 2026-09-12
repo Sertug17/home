@@ -20,6 +20,7 @@ export function ActivityPanel({
   session,
   fetchActivity,
   refreshTrigger,
+  regionId = "GLOBAL",
   onTransactionHashesChange,
   leading,
   suppressEmpty = false,
@@ -47,7 +48,7 @@ export function ActivityPanel({
   const labelled = header === null ? "Activity" : undefined;
   const timeZone = runtimeTimeZone();
   const details = selectedTransfer
-    ? presentActivityTransferDetails(selectedTransfer, { timeZone })
+    ? presentActivityTransferDetails(selectedTransfer, { regionId, timeZone })
     : null;
   const detailsTitleId = "activity-transfer-details-title";
 
@@ -134,6 +135,7 @@ export function ActivityPanel({
             <TransferActivityRow
               key={transfer.id}
               transfer={transfer}
+              regionId={regionId}
               timeZone={timeZone}
               onActivate={() => setSelectedTransfer(transfer)}
             />
@@ -268,14 +270,16 @@ function DefaultActivityHeader() {
 
 function TransferActivityRow({
   transfer,
+  regionId,
   timeZone,
   onActivate,
 }: {
   transfer: ActivityTransfer;
+  regionId: NonNullable<ActivityPanelProps["regionId"]>;
   timeZone: string;
   onActivate: () => void;
 }) {
-  const model = presentActivityTransferRow(transfer, { timeZone });
+  const model = presentActivityTransferRow(transfer, { regionId, timeZone });
   return (
     <ActivityRow
       icon={iconForDirection(transfer.direction)}

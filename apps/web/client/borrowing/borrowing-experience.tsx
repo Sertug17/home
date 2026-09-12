@@ -9,7 +9,17 @@ import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import { MoneyActionReview } from "@/client/money-actions/review";
 import { useMoneyDataRefresh } from "@/client/money-actions/refresh";
 import type { PreparedMoneyAction } from "@/shared/money-actions/types";
-import { formatAddress } from "@/shared/formatting";
+import {
+  formatAddress,
+  formatPresentationDate,
+} from "@/shared/formatting";
+import {
+  readAnonymousCountryPreference,
+} from "@/config/country-preference";
+import {
+  resolvePresentation,
+  type RegionId,
+} from "@/config/regions";
 import {
   BORROW_COLLATERAL_TOKEN,
   BORROW_LLTV_WAD,
@@ -38,6 +48,7 @@ type BorrowExperienceProps = {
   session: VerifiedAccountSession | null;
   fetchAccountResource?: FetchAccountResource;
   onActionConfirmed?: () => void;
+  regionId?: RegionId;
 };
 
 type SnapshotState =
@@ -55,11 +66,13 @@ type PreviewState =
 export function AuthenticatedBorrowExperience() {
   const account = useAccountWallet();
   const refreshMoneyData = useMoneyDataRefresh();
+  const regionId = usePersistedPresentationRegion();
   return (
     <BorrowExperience
       session={account.status === "verified" ? account.session : null}
       fetchAccountResource={account.fetchAccountResource}
       onActionConfirmed={refreshMoneyData}
+      regionId={regionId}
     />
   );
 }
@@ -72,7 +85,12 @@ export function BorrowExperience(props: BorrowExperienceProps) {
   return <BorrowExperienceInner key={sessionKey} {...props} />;
 }
 
-function BorrowExperienceInner({ session, fetchAccountResource, onActionConfirmed }: BorrowExperienceProps) {
+function BorrowExperienceInner({
+  session,
+  fetchAccountResource,
+  onActionConfirmed,
+  regionId = "GLOBAL",
+}: BorrowExperienceProps) {
   const owner = session?.smartAccount?.address ?? null;
   const sessionKey = session && owner
     ? `${session.user.subject}:${session.accountProvider}:${owner}`
@@ -237,7 +255,7 @@ function BorrowExperienceInner({ session, fetchAccountResource, onActionConfirme
           <>
             <div className={styles.asOf}>
               <Text as="span" textStyle="metadata" tone="muted">RPC block {snapshot.source.blockNumber}</Text>
-              <time dateTime={blockTime(snapshot.source.blockTimestamp)}>As of {formatTime(blockTime(snapshot.source.blockTimestamp))}</time>
+              <time dateTime={blockTime(snapshot.source.blockTimestamp)}>As of {formatTime(blockTime(snapshot.source.blockTimestamp), regionId)}</time>
             </div>
             <section className={styles.metrics} aria-labelledby="position-title">
               <div className={styles.sectionHeading}>
@@ -257,7 +275,7 @@ function BorrowExperienceInner({ session, fetchAccountResource, onActionConfirme
                 <Metric label="Oracle price" value={`${formatOracleUsd(snapshot.state.oraclePriceRaw)} USDC / cbBTC`} />
                 <Metric label="Variable borrow APR" value={`${formatWadPercent(snapshot.state.borrowAprWad)}%`} note="Current per-second rate annualized; not fixed" />
                 <Metric label="Indexed liquidity" value={`${formatUnits(snapshot.state.liquidityAssetsRaw, 6)} USDC`} />
-                <Metric label="Market state updated" value={formatTime(blockTime(snapshot.state.lastUpdateTimestamp))} note="Debt is accrued locally to the pinned block" />
+                <Metric label="Market state updated" value={formatTime(blockTime(snapshot.state.lastUpdateTimestamp), regionId)} note="Debt is accrued locally to the pinned block" />
               </dl>
             </section>
 
@@ -439,8 +457,20 @@ function blockTime(seconds: string) {
   return new Date(Number(seconds) * 1_000).toISOString();
 }
 
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(value));
+function formatTime(value: string, regionId: RegionId) {
+  return formatPresentationDate(value, { regionId, style: "date-time-zone" });
+}
+
+function usePersistedPresentationRegion(): RegionId {
+  const [regionId] = useState<RegionId>(() => {
+    if (typeof window === "undefined") return "GLOBAL";
+    return resolvePresentation({
+      persistedCountry: readAnonymousCountryPreference(
+        () => window.localStorage,
+      ),
+    }).region.id;
+  });
+  return regionId;
 }
 
 function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }

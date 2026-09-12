@@ -7,6 +7,12 @@ import {
   type MarketPriceHistoryPoint,
   type MarketPriceRange,
 } from "@/shared/invest/history-contract";
+import {
+  formatChartPrice,
+  formatPresentationDate,
+} from "@/shared/formatting";
+import type { RegionId } from "@/config/regions";
+import { usePresentationRegionId } from "./presentation-quote";
 import type { PriceHistoryState } from "./use-price-history";
 import styles from "./invest-experience.module.css";
 
@@ -203,9 +209,14 @@ function AssetLiveline({
   reduceMotion: boolean;
 }) {
   const range = plot.range;
+  const regionId = usePresentationRegionId();
   const formatTime = useMemo(
-    () => (time: number) => formatChartTime(time, range),
-    [range],
+    () => (time: number) => formatChartTime(time, range, regionId),
+    [range, regionId],
+  );
+  const formatValue = useMemo(
+    () => (value: number) => formatChartValue(value, regionId),
+    [regionId],
   );
 
   return (
@@ -227,7 +238,7 @@ function AssetLiveline({
       lerpSpeed={reduceMotion ? 1 : 0.08}
       lineWidth={2.5}
       formatTime={formatTime}
-      formatValue={formatChartValue}
+      formatValue={formatValue}
       padding={LIVELINE_PLOT_PADDING}
       style={{ height: "100%" }}
     />
@@ -259,36 +270,24 @@ export function visibleWindowSeconds(
   return Math.max(nominal, last - first + 1, now - first + 1);
 }
 
-function formatChartTime(time: number, range: MarketPriceRange) {
-  const date = new Date(time * 1000);
-  if (range === "1D") {
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-  if (range === "1W") {
-    return date.toLocaleDateString("en-US", { weekday: "short" });
-  }
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+function formatChartTime(
+  time: number,
+  range: MarketPriceRange,
+  regionId: RegionId,
+) {
+  const style = range === "1D"
+    ? "chart-time"
+    : range === "1W"
+      ? "chart-weekday"
+      : "chart-date";
+  return formatPresentationDate(time * 1000, { regionId, style });
 }
 
-export function formatChartValue(value: number) {
-  const magnitude = Math.abs(value);
-  if (magnitude > 0 && magnitude < 0.001) {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumSignificantDigits: 4,
-    }).format(value);
-  }
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: magnitude >= 1000 ? "compact" : "standard",
-    minimumFractionDigits: magnitude >= 1 ? 2 : 0,
-    maximumFractionDigits: magnitude >= 1 ? 2 : 6,
-  }).format(value);
+export function formatChartValue(
+  value: number,
+  regionId: RegionId = "GLOBAL",
+) {
+  return formatChartPrice(value, { currency: "USD", regionId });
 }
 
 function subscribeReducedMotion(onStoreChange: () => void) {
