@@ -10,6 +10,10 @@ import {
   type VerifiedPortfolioAccount,
 } from "@/shared/portfolio/types";
 import type { SessionAuthorizer } from "./handler";
+import {
+  createPortfolioFreshReadLimiter,
+  type PortfolioFreshReadLimiter,
+} from "./fresh-read-limiter";
 
 const privateResponseHeaders = {
   "Cache-Control": "private, no-store, max-age=0",
@@ -23,8 +27,11 @@ export function createPortfolioValuationHandler(dependencies: {
     account: VerifiedPortfolioAccount,
     region: RegionId,
     signal?: AbortSignal,
+    options?: { fresh?: boolean },
   ) => Promise<PortfolioValuationSnapshot>;
+  freshReadLimiter?: PortfolioFreshReadLimiter;
 }) {
+  const freshReadLimiter = dependencies.freshReadLimiter ?? createPortfolioFreshReadLimiter();
   return async function GET(request: Request): Promise<Response> {
     const region = readRegion(request);
     if (!region) {
@@ -69,6 +76,7 @@ export function createPortfolioValuationHandler(dependencies: {
     }
 
     try {
+      const wantsFresh = new URL(request.url).searchParams.get("fresh") === "1";
       const snapshot = await dependencies.readValuation(
         {
           address: session.smartAccount.address,
@@ -77,6 +85,7 @@ export function createPortfolioValuationHandler(dependencies: {
         },
         region,
         request.signal,
+        { fresh: wantsFresh && freshReadLimiter.take(session.ownerKey) },
       );
       return privateJson(snapshot, 200);
     } catch {
@@ -103,6 +112,7 @@ async function parseAuthorizedSession(
   expectedProvider: AccountProvider | null,
 ): Promise<{
   smartAccount: { address: Address; chainId: typeof BASE_CHAIN_ID } | null;
+  ownerKey: string;
 } | null> {
   let value: unknown;
   try {
@@ -120,7 +130,12 @@ async function parseAuthorizedSession(
   ) {
     return null;
   }
-  if (value.smartAccount === null) return { smartAccount: null };
+  if (value.smartAccount === null) {
+    return {
+      smartAccount: null,
+      ownerKey: `${value.user.subject}\u0000none\u0000${expectedProvider}`,
+    };
+  }
   if (!isRecord(value.smartAccount)) return null;
   if (
     typeof value.smartAccount.address !== "string" ||
@@ -129,9 +144,11 @@ async function parseAuthorizedSession(
   ) {
     return null;
   }
+  const address = value.smartAccount.address.toLowerCase() as Address;
   return {
+    ownerKey: `${value.user.subject}\u0000${address}\u0000${expectedProvider}`,
     smartAccount: {
-      address: value.smartAccount.address.toLowerCase() as Address,
+      address,
       chainId: BASE_CHAIN_ID,
     },
   };

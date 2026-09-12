@@ -444,4 +444,39 @@ describe("CDP Onchain Data Token Balances client", () => {
       CdpTokenBalancesError,
     );
   });
+
+  test("fresh reads discard a same-owner pagination checkpoint", async () => {
+    const urls: string[] = [];
+    let calls = 0;
+    const client = createCdpTokenBalancesClient({
+      pageAttempts: 1,
+      env: { CDP_API_KEY_ID: "key-id", CDP_API_KEY_SECRET: "key-secret" },
+      generateJwtImpl: async () => "signed-jwt",
+      fetchImpl: async (input) => {
+        urls.push(String(input));
+        calls += 1;
+        if (calls === 1) {
+          return Response.json({
+            balances: [token(USDC, "1")],
+            nextPageToken: "resume-me",
+          });
+        }
+        if (calls === 2) return new Response("slow", { status: 429 });
+        return Response.json({ balances: [token(IDRX, "2")] });
+      },
+    });
+
+    expect(await client.listBalances({
+      address: ADDRESS,
+      neededContractAddresses: new Set([IDRX]),
+    })).toMatchObject({ complete: false });
+    expect(await client.listBalances({
+      address: ADDRESS,
+      neededContractAddresses: new Set([IDRX]),
+      fresh: true,
+    })).toMatchObject({ complete: true });
+    expect(urls[1]).toContain("pageToken=resume-me");
+    expect(urls[2]).not.toContain("pageToken=");
+  });
+
 });
