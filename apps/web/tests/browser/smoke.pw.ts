@@ -114,6 +114,9 @@ async function installApiFixtures(
   options: { portfolioValuation?: ReturnType<typeof valuation> } = {},
 ) {
   let status: ActionStatus = "unconfirmed";
+  let valuationReads = 0;
+  let delayedValuation: Promise<void> | null = null;
+  let releaseDelayedValuation: (() => void) | null = null;
   let handleRecorded = false;
   let failHandleResponseOnce = true;
   let fundingStatusReads = 0;
@@ -122,7 +125,11 @@ async function installApiFixtures(
     const url = new URL(request.url());
     const path = url.pathname;
     if (path === "/api/session") return json(route, { user: { subject: "playwright-smoke-subject" }, smartAccount: { address: OWNER, chainId: 8453 }, accountProvider: "cdp-embedded" });
-    if (path === "/api/portfolio/valuation") return json(route, options.portfolioValuation ?? valuation());
+    if (path === "/api/portfolio/valuation") {
+      valuationReads += 1;
+      if (delayedValuation) await delayedValuation;
+      return json(route, options.portfolioValuation ?? valuation());
+    }
     if (path === "/api/portfolio") return json(route, { walletAddress: OWNER, chainId: 8453, blockNumber: "16", blockHash: `0x${"cd".repeat(32)}`, blockTimestamp: "100", fetchedAt: new Date().toISOString(), assets: [{ id: "usdc", symbol: "USDC", decimals: 6, kind: "erc20", tokenAddress: USDC, balanceBaseUnits: "12340000" }, { id: "eth", symbol: "ETH", decimals: 18, kind: "native", balanceBaseUnits: "0" }] });
     if (path === "/api/actions/prepare" && request.method() === "POST") { status = "unconfirmed"; return json(route, action()); }
     if (path === `/api/actions/${ACTION_ID}/confirm`) { status = "pending"; return json(route, { id: ACTION_ID, calls: action().calls, summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, expiresAt: EXPIRES_AT }); }
@@ -172,6 +179,18 @@ async function installApiFixtures(
     if (path === "/api/basename-profile") return json(route, { profile: null });
     return json(route, {});
   });
+  return {
+    valuationReads: () => valuationReads,
+    delayNextValuation() {
+      delayedValuation = new Promise<void>((resolve) => { releaseDelayedValuation = resolve; });
+      return valuationReads + 1;
+    },
+    releaseValuation() {
+      releaseDelayedValuation?.();
+      delayedValuation = null;
+      releaseDelayedValuation = null;
+    },
+  };
 }
 
 async function signIn(page: Page) {
@@ -272,6 +291,39 @@ test("ambiguous handle response retries without a second wallet dispatch", async
   await expect(page.getByText("Sent", { exact: true })).toBeVisible();
   await expect(page.getByText("Send USDC", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Pending/)).toHaveCount(0);
+});
+
+test("reload paints persisted balances before stale valuation responds", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  const fixtures = await installApiFixtures(page);
+  await signIn(page);
+  const coldPaint = await page.evaluate(() =>
+    performance.getEntriesByName("balances:painted", "mark")[0]?.startTime ?? Number.POSITIVE_INFINITY,
+  );
+  await expect.poll(() => page.evaluate(() =>
+    Object.keys(localStorage).find((key) => key.startsWith("home.query.v1:")) ?? null,
+  )).not.toBeNull();
+  await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((candidate) => candidate.startsWith("home.query.v1:"));
+    if (!key) throw new Error("Persisted owner cache is missing");
+    const persisted = JSON.parse(localStorage.getItem(key) ?? "null") as {
+      clientState?: { queries?: Array<{ state?: { dataUpdatedAt?: number } }> };
+    };
+    for (const query of persisted.clientState?.queries ?? []) {
+      if (query.state) query.state.dataUpdatedAt = 0;
+    }
+    localStorage.setItem(key, JSON.stringify(persisted));
+  });
+  const delayedRead = fixtures.delayNextValuation();
+
+  await page.reload();
+  await expect.poll(fixtures.valuationReads).toBe(delayedRead);
+  await expect(page.getByText("$12.34", { exact: true }).first()).toBeVisible();
+  const reloadPaint = await page.evaluate(() =>
+    performance.getEntriesByName("balances:painted", "mark")[0]?.startTime ?? Number.POSITIVE_INFINITY,
+  );
+  expect(reloadPaint).toBeLessThan(coldPaint);
+  fixtures.releaseValuation();
 });
 
 test("reload resumes an unconfirmed send review from its URL action", async ({ page }) => {
