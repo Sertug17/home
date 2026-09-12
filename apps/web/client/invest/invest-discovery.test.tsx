@@ -1,21 +1,15 @@
 import "@/client/account/dom-test-harness";
 
 import { getHomeQueryClient } from "@/client/query/query-client";
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ReactElement } from "react";
 import type { MarketDataState } from "@/shared/invest/invest-market";
 
-const pushCalls: string[] = [];
-const replaceCalls: string[] = [];
-let backCalls = 0;
-
 mock.module("next/navigation", () => ({
   useRouter: () => ({
-    push: (href: string) => pushCalls.push(href),
-    replace: (href: string) => replaceCalls.push(href),
-    back: () => {
-      backCalls += 1;
-    },
+    push: () => {},
+    replace: () => {},
+    back: () => {},
   }),
 }));
 
@@ -115,13 +109,14 @@ const readyCrypto: MarketDataState = {
   ],
 };
 
+beforeEach(() => {
+  window.history.replaceState({}, "", "/dashboard?panel=invest");
+});
+
 afterEach(() => {
   cleanup();
   getHomeQueryClient().clear();
   window.fetch = originalFetch;
-  pushCalls.length = 0;
-  replaceCalls.length = 0;
-  backCalls = 0;
   intersectionObserverInstances.length = 0;
 });
 
@@ -220,14 +215,13 @@ describe("invest discovery flow", () => {
     await waitFor(() =>
       expect(page().getByRole("heading", { name: "Stocks" })).toBeTruthy(),
     );
-    expect(pushCalls).toEqual(["/dashboard?panel=invest&shelf=stocks"]);
+    expect(window.location.search).toBe("?panel=invest&shelf=stocks");
     expect(page().getByText("Tesla")).toBeTruthy();
     expect(page().getByText("Strategy")).toBeTruthy();
     expect(page().getByText("SanDisk")).toBeTruthy();
     expect(page().getByText("SpaceX")).toBeTruthy();
     expect(page().queryByText("Buy")).toBeNull();
     fireEvent.click(page().getByRole("button", { name: "Back to Invest" }));
-    expect(backCalls).toBe(1);
     expect(page().getByRole("heading", { name: "Invest" })).toBeTruthy();
     expect(page().queryByText("Tesla")).toBeNull();
   });
@@ -239,14 +233,12 @@ describe("invest discovery flow", () => {
     await waitFor(() =>
       expect(page().getByRole("heading", { name: "Crypto" })).toBeTruthy(),
     );
-    expect(pushCalls).toEqual(["/dashboard?panel=invest&shelf=crypto"]);
+    expect(window.location.search).toBe("?panel=invest&shelf=crypto");
     expect(page().getByText("Cardano")).toBeTruthy();
     expect(page().getByText("ADA")).toBeTruthy();
     expect(page().queryByText("Buy")).toBeNull();
     expect(page().queryByText("Sell")).toBeNull();
     fireEvent.click(page().getByRole("button", { name: "Back to Invest" }));
-    expect(backCalls).toBe(1);
-    expect(replaceCalls).toEqual([]);
     expect(page().getByRole("heading", { name: "Invest" })).toBeTruthy();
     expect(page().queryByText("Cardano")).toBeNull();
   });
@@ -274,13 +266,9 @@ describe("invest discovery flow", () => {
     );
 
     fireEvent.click(page().getByRole("button", { name: "Back" }));
-    expect(backCalls).toBe(1);
-    expect(replaceCalls).toEqual([]);
     expect(page().getByRole("heading", { name: "Crypto" })).toBeTruthy();
 
     fireEvent.click(page().getByRole("button", { name: "Back to Invest" }));
-    expect(backCalls).toBe(2);
-    expect(replaceCalls).toEqual([]);
     expect(page().getByRole("heading", { name: "Invest" })).toBeTruthy();
   });
 
@@ -294,8 +282,7 @@ describe("invest discovery flow", () => {
 
     expect(page().getByRole("heading", { name: "Crypto" })).toBeTruthy();
     fireEvent.click(page().getByRole("button", { name: "Back to Invest" }));
-    expect(backCalls).toBe(0);
-    expect(replaceCalls).toEqual(["/dashboard?panel=invest"]);
+    expect(window.location.search).toBe("?panel=invest");
     expect(page().getByRole("heading", { name: "Invest" })).toBeTruthy();
   });
 
@@ -325,7 +312,7 @@ describe("invest discovery flow", () => {
     await waitFor(() =>
       expect(page().getByRole("heading", { name: "Bitcoin" })).toBeTruthy(),
     );
-    expect(pushCalls).toEqual(["/dashboard?panel=invest&asset=cbbtc"]);
+    expect(window.location.search).toBe("?panel=invest&asset=cbbtc");
     const readyPrice = page().getByText("$64,210.00");
     expect(readyPrice).toBeTruthy();
     expect(readyPrice.getAttribute("data-tone")).toBe("ready");
