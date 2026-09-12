@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 
 const { cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
@@ -34,7 +35,10 @@ function action(status: "pending" | "unknown" | "confirmed" | "failed", transact
   };
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  getHomeQueryClient().clear();
+});
 
 describe("RecentMoneyActions", () => {
   test("renders confirmed rows from GET /api/actions and opens read-only details", async () => {

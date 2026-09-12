@@ -48,17 +48,13 @@ import {
   MoneyDataRefreshProvider,
   RecentMoneyActions,
 } from "@/client/money-actions";
-import type { VerifiedPortfolioSession } from "@/client/portfolio";
 import { FundingActions } from "@/client/funding/funding-actions";
 import {
-  deleteHomeBalancesPresentation,
   presentHomeBalanceMark,
   presentHomeBalanceRow,
   presentPortfolioValuation,
   previewHomeBalanceItems,
-  usePaintedHomeBalances,
   usePortfolioValuation,
-  writeHomeBalancesPresentation,
   type HomeAssetBalanceItem,
   type HomeAssetBalancesPresentation,
 } from "@/client/portfolio";
@@ -66,6 +62,7 @@ import { TransferActions } from "@/client/transfers";
 import type { AssetMarkResolution } from "@/client/asset-mark/presentation";
 import { PresentationRegionProvider } from "@/client/invest/presentation-quote";
 import { PiggyBank } from "lucide-react";
+import { browserHomeQueryClient, useHomeQueryClient } from "@/client/query/query-client";
 
 export type { HomeAssetBalanceItem, HomeAssetBalancesPresentation };
 
@@ -89,7 +86,6 @@ export type HomeExperienceProps = {
   routeMode?: "landing" | "dashboard";
   initialAddMoney?: boolean;
   returnedFromCoinbase?: boolean;
-  activityRefreshTrigger?: string | number;
   onTransferConfirmed?: () => void;
   selectedRegionId?: RegionId;
   onRegionChange?: (region: RegionId) => void;
@@ -98,53 +94,44 @@ export type HomeExperienceProps = {
 export function PortfolioHomeExperience(
   props: Omit<
     HomeExperienceProps,
-    "activityRefreshTrigger" | "assetBalances" | "onTransferConfirmed"
+    "assetBalances" | "onTransferConfirmed"
   >,
 ) {
   const account = useAccountWallet();
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const queryClient = useHomeQueryClient(browserHomeQueryClient());
   const [selectedRegion, setSelectedRegion] = useState<RegionId>(
     () => resolvePresentation({ detectedCountry: props.detectedCountry }).region.id,
   );
-  const session: VerifiedPortfolioSession | null =
-    account.status === "verified" && account.session?.smartAccount
+  const session = account.status === "verified" && account.session?.smartAccount
       ? {
           subject: account.session.user.subject,
           smartAccountAddress: account.session.smartAccount.address,
           chainId: account.session.smartAccount.chainId,
+          accountProvider: account.session.accountProvider,
         }
       : null;
-  const sessionSubject = session?.subject ?? null;
-  const sessionSmartAccount = session?.smartAccountAddress ?? null;
   const valuation = usePortfolioValuation(
     session,
     selectedRegion,
     account.fetchPortfolioValuation,
-    refreshTrigger,
   );
-  const presentedValuation = useMemo(
-    () => presentPortfolioValuation(valuation),
-    [valuation],
-  );
+  const presentedValuation = useMemo(() => {
+    const presented = presentPortfolioValuation(valuation);
+    return valuation.revalidating && presented.status === "ready"
+      ? { ...presented, revalidating: true as const, statusLabel: "Updating…" }
+      : presented;
+  }, [valuation]);
   const refreshWalletData = useCallback(() => {
-    if (sessionSubject && sessionSmartAccount) {
-      deleteHomeBalancesPresentation(
-        () => window.localStorage,
-        {
-          subject: sessionSubject,
-          smartAccount: sessionSmartAccount,
-          region: selectedRegion,
-        },
-      );
-    }
-    setRefreshTrigger((trigger) => trigger + 1);
-  }, [selectedRegion, sessionSmartAccount, sessionSubject]);
+    void queryClient.invalidateQueries({
+      predicate: (query) => ["valuation", "portfolio", "activity", "savings-positions", "borrow", "actions"]
+        .includes(String(query.queryKey[1] ?? "")),
+    });
+  }, [queryClient]);
 
   return (
     <MoneyDataRefreshProvider onConfirmed={refreshWalletData}>
       <HomeExperience
         {...props}
-        activityRefreshTrigger={refreshTrigger}
         assetBalances={presentedValuation}
         selectedRegionId={selectedRegion}
         onRegionChange={setSelectedRegion}
@@ -236,7 +223,6 @@ function HomeExperienceView({
   routeMode = "landing",
   initialAddMoney = false,
   returnedFromCoinbase = false,
-  activityRefreshTrigger,
   onTransferConfirmed,
   selectedRegionId,
   onRegionChange,
@@ -283,10 +269,6 @@ function HomeExperienceView({
   // the explicitly supported Account overlay path arms independently.
   const panelStageRef = useRef<HTMLElement>(null);
   const explicitLogoutRef = useRef(false);
-  const lastBalanceCacheWriteRef = useRef<{
-    identity: string;
-    live: HomeAssetBalancesPresentation;
-  } | null>(null);
   const [isPreferenceReady, setIsPreferenceReady] = useState(false);
   const [preferenceMessage, setPreferenceMessage] = useState("");
   const [isAccountOpen, setIsAccountOpen] = useState(initialAccountOpen);
@@ -412,13 +394,7 @@ function HomeExperienceView({
   const liveAssetBalances = isVerified
     ? (assetBalances ?? loadingAssetBalances)
     : loadingAssetBalances;
-  const paintedAssetBalances = usePaintedHomeBalances({
-    ownerKey: isSignedOut ? null : account.ownerKey,
-    subject: account.session?.user.subject ?? null,
-    smartAccount: account.session?.smartAccount?.address ?? null,
-    region: regionId,
-    live: liveAssetBalances,
-  });
+  const paintedAssetBalances = liveAssetBalances;
   const balancesOwnerKey = account.ownerKey;
   const balancesSubject = account.session?.user.subject ?? null;
   const balancesSmartAccount = account.session?.smartAccount?.address ?? null;
@@ -495,50 +471,6 @@ function HomeExperienceView({
       router.replace("/?account=signin", { scroll: false });
     }
   }, [isSignedOut, routeMode, router]);
-
-  useEffect(() => {
-    if (
-      !isVerified ||
-      !account.ownerKey ||
-      !account.session?.user.subject ||
-      !account.session.smartAccount?.address ||
-      assetBalances?.status !== "ready" ||
-      paintedAssetBalances.status !== "ready"
-    ) {
-      lastBalanceCacheWriteRef.current = null;
-      return;
-    }
-
-    const identity = `${account.ownerKey}\u0000${account.session.user.subject}\u0000${account.session.smartAccount.address.toLowerCase()}\u0000${regionId}`;
-    if (
-      lastBalanceCacheWriteRef.current?.identity === identity &&
-      lastBalanceCacheWriteRef.current.live === assetBalances
-    ) {
-      return;
-    }
-
-    const didWrite = writeHomeBalancesPresentation(
-      () => window.localStorage,
-      {
-        ownerKey: account.ownerKey,
-        subject: account.session.user.subject,
-        smartAccount: account.session.smartAccount.address,
-        region: regionId,
-      },
-      paintedAssetBalances,
-    );
-    if (didWrite) {
-      lastBalanceCacheWriteRef.current = { identity, live: assetBalances };
-    }
-  }, [
-    account.ownerKey,
-    account.session?.smartAccount?.address,
-    account.session?.user.subject,
-    assetBalances,
-    isVerified,
-    paintedAssetBalances,
-    regionId,
-  ]);
 
   function selectRegion(nextRegionId: RegionId) {
     setInternalRegionId(nextRegionId);
@@ -809,7 +741,6 @@ function HomeExperienceView({
                       activitySession={activitySession}
                       fetchActivity={account.fetchActivity}
                       fetchOperations={account.fetchOperations}
-                      activityRefreshTrigger={activityRefreshTrigger}
                       onTransferConfirmed={onTransferConfirmed}
                       onOpenSave={() => navigateTo(savePanelId)}
                       onOpenBalances={() => navigateTo(balancesPanelId)}
@@ -833,7 +764,6 @@ function HomeExperienceView({
                       activitySession={activitySession}
                       fetchActivity={account.fetchActivity}
                       fetchOperations={account.fetchOperations}
-                      activityRefreshTrigger={activityRefreshTrigger}
                       regionId={regionId}
                       showSessionShimmer={!activitySession && (
                         paintedAssetBalances.status === "loading" ||
@@ -1082,7 +1012,6 @@ function HomePanel({
   activitySession,
   fetchActivity,
   fetchOperations,
-  activityRefreshTrigger,
   onTransferConfirmed,
   onOpenSave,
   onOpenBalances,
@@ -1096,7 +1025,6 @@ function HomePanel({
   activitySession: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  activityRefreshTrigger?: string | number;
   onTransferConfirmed?: () => void;
   onOpenSave: () => void;
   onOpenBalances: () => void;
@@ -1235,7 +1163,6 @@ function HomePanel({
             activitySession={activitySession}
             fetchActivity={fetchActivity}
             fetchOperations={fetchOperations}
-            activityRefreshTrigger={activityRefreshTrigger}
             regionId={regionId}
           />
         </div>
@@ -1292,14 +1219,12 @@ function ActivityPage({
   activitySession,
   fetchActivity,
   fetchOperations,
-  activityRefreshTrigger,
   regionId,
   showSessionShimmer,
 }: {
   activitySession: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  activityRefreshTrigger?: string | number;
   regionId: RegionId;
   showSessionShimmer: boolean;
 }) {
@@ -1318,7 +1243,6 @@ function ActivityPage({
         activitySession={activitySession}
         fetchActivity={fetchActivity}
         fetchOperations={fetchOperations}
-        activityRefreshTrigger={activityRefreshTrigger}
         regionId={regionId}
       />
     </div>
@@ -1331,7 +1255,6 @@ function ConnectedActivityPanel({
   activitySession,
   fetchActivity,
   fetchOperations,
-  activityRefreshTrigger,
   regionId,
 }: {
   density: ActivityPanelDensity;
@@ -1339,7 +1262,6 @@ function ConnectedActivityPanel({
   activitySession: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  activityRefreshTrigger?: string | number;
   regionId: RegionId;
 }) {
   const [indexedTransactionHashes, setIndexedTransactionHashes] = useState<string[]>([]);
@@ -1356,7 +1278,6 @@ function ConnectedActivityPanel({
     <ActivityPanel
       session={activitySession}
       fetchActivity={fetchActivity}
-      refreshTrigger={activityRefreshTrigger}
       regionId={regionId}
       onTransactionHashesChange={updateIndexedTransactionHashes}
       suppressEmpty={localActionCount > 0}
@@ -1366,8 +1287,7 @@ function ConnectedActivityPanel({
         <RecentMoneyActions
           session={activitySession}
           fetchOperations={fetchOperations}
-          refreshTrigger={activityRefreshTrigger}
-          excludeTransactionHashes={indexedTransactionHashes}
+              excludeTransactionHashes={indexedTransactionHashes}
           embedded
           showUnavailableNotice={false}
           onVisibleCountChange={setLocalActionCount}

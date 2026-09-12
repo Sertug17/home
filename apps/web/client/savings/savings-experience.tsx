@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CopyableValue } from "@/components/copyable-value";
 import { useOptionalAppChrome } from "@/components/app-chrome";
 import { useAccountWallet } from "@/client/account/cdp-client";
@@ -38,6 +38,8 @@ import {
   type SavingsApySummary,
 } from "./portfolio-summary";
 import styles from "./savings-experience.module.css";
+import { ownerQueryKey, ownerQueryMeta, publicQueryKey, useHomeQuery } from "@/client/query/query-client";
+import { activityOwnerKey } from "@/client/activity/use-activity";
 
 type SavingsExperienceProps = {
   initialData?: MorphoVaultsResult | null;
@@ -88,10 +90,10 @@ export function AuthenticatedSavingsExperience({
         subject: session.user.subject,
         smartAccountAddress: session.smartAccount.address,
         chainId: session.smartAccount.chainId,
+        accountProvider: session.accountProvider,
       }
     : null;
-  const [portfolioTick, setPortfolioTick] = useState(0);
-  const portfolio = usePortfolio(portfolioSession, account.fetchPortfolio, portfolioTick);
+  const portfolio = usePortfolio(portfolioSession, account.fetchPortfolio);
   const usdc = portfolio.snapshot?.assets.find((asset) => asset.id === "usdc");
 
   return (
@@ -102,7 +104,6 @@ export function AuthenticatedSavingsExperience({
       prepareMoneyAction={account.prepareMoneyAction}
       executeMoneyAction={account.executeMoneyAction}
       onActionConfirmed={async (result) => {
-        setPortfolioTick((tick) => tick + 1);
         refreshMoneyData();
         await onActionConfirmed?.(result);
       }}
@@ -122,62 +123,53 @@ export function SavingsExperience({
   onBack,
   onActionConfirmed,
 }: SavingsExperienceProps) {
-  const [loadState, setLoadState] = useState<LoadState>(
-    initialData
-      ? { status: "ready", data: initialData }
-      : { status: "loading", data: null },
-  );
-  const [positionResult, setPositionResult] = useState<{
-    key: string;
-    state: PositionState;
-  } | null>(null);
-  const [positionRefreshTrigger, setPositionRefreshTrigger] = useState(0);
-  const [metadataRefreshTrigger, setMetadataRefreshTrigger] = useState(0);
   const [rateNowMs, setRateNowMs] = useState(() => now());
-  const positionRequestSequence = useRef(0);
-  const metadataRequestSequence = useRef(0);
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
   const [actionMode, setActionMode] = useState<SavingsActionMode | null>(null);
   const hosted = Boolean(useOptionalAppChrome());
   const sessionAddress = session?.smartAccount?.address ?? null;
-  const sessionKey = session && sessionAddress
-    ? `${session.user.subject}:${session.accountProvider}:${sessionAddress}`
-    : null;
-
+  const sessionKey = session?.smartAccount ? activityOwnerKey(session) : null;
+  const metadataQuery = useHomeQuery({
+    queryKey: publicQueryKey("savings-vaults"),
+    initialData: initialData ?? undefined,
+    staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: ({ signal }) => fetchVaults(signal),
+    select: (value) => {
+      const data = parseVaultsResult(value);
+      if (!data) throw new Error("Savings vault metadata is invalid.");
+      return data;
+    },
+  });
+  const loadState: LoadState = metadataQuery.data
+    ? { status: "ready", data: metadataQuery.data }
+    : metadataQuery.isError
+      ? { status: "error", data: null }
+      : { status: "loading", data: null };
+  const positionsQuery = useHomeQuery({
+    queryKey: sessionKey
+      ? ownerQueryKey(sessionKey, "savings-positions")
+      : ["unauthenticated", "savings-positions-disabled"],
+    enabled: Boolean(sessionKey && fetchPositions && sessionAddress),
+    staleTime: 15_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    meta: sessionKey ? ownerQueryMeta(sessionKey, "owner") : undefined,
+    queryFn: ({ signal }) => {
+      if (!fetchPositions) throw new Error("Savings positions are unavailable.");
+      return fetchPositions(signal);
+    },
+    select: (value) => {
+      if (!sessionAddress) throw new Error("Savings positions are unavailable.");
+      const data = parsePositionResult(value, sessionAddress);
+      if (!data || !isUsablePositionResult(data)) throw new Error("Savings positions are invalid.");
+      return data;
+    },
+  });
   useEffect(() => {
-    if (initialData && metadataRefreshTrigger === 0) return;
-
-    const controller = new AbortController();
-    const requestSequence = ++metadataRequestSequence.current;
-    void fetchVaults(controller.signal)
-      .then((value) => {
-        if (
-          controller.signal.aborted ||
-          requestSequence !== metadataRequestSequence.current
-        ) return;
-        const data = parseVaultsResult(value);
-        if (!data) {
-          setLoadState((current) => current.status === "ready"
-            ? current
-            : { status: "error", data: null });
-          return;
-        }
-        setRateNowMs(now());
-        setLoadState({ status: "ready", data });
-      })
-      .catch((error: unknown) => {
-        if (
-          controller.signal.aborted ||
-          requestSequence !== metadataRequestSequence.current ||
-          isAbortError(error)
-        ) return;
-        setLoadState((current) => current.status === "ready"
-          ? current
-          : { status: "error", data: null });
-      });
-
-    return () => controller.abort();
-  }, [fetchVaults, initialData, metadataRefreshTrigger, now]);
+    if (positionsQuery.data && positionsQuery.isFetching) setRateNowMs(now());
+  }, [now, positionsQuery.data, positionsQuery.isFetching]);
 
   useEffect(() => {
     if (loadState.status !== "ready") return;
@@ -191,71 +183,24 @@ export function SavingsExperience({
     return () => clearTimeout(timeout);
   }, [loadState, now, rateNowMs]);
 
-  useEffect(() => {
-    if (!sessionKey || !fetchPositions) return;
-
-    const controller = new AbortController();
-    const requestSequence = ++positionRequestSequence.current;
-    queueMicrotask(() => {
-      if (controller.signal.aborted) return;
-      setRateNowMs(now());
-      setPositionResult((current) => {
-        if (current?.key === sessionKey && current.state.status === "ready") {
-          return {
-            key: sessionKey,
-            state: {
-              ...current.state,
-              refreshing: true,
-              refreshError: false,
-            },
-          };
-        }
-        return { key: sessionKey, state: { status: "loading" } };
-      });
-    });
-
-    void fetchPositions(controller.signal)
-      .then((value) => {
-        if (
-          controller.signal.aborted ||
-          requestSequence !== positionRequestSequence.current
-        ) return;
-        const data = parsePositionResult(value, sessionAddress!);
-        setPositionResult((current) => {
-          if (!data || !isUsablePositionResult(data)) {
-            return retainVerifiedPositionOrError(current, sessionKey);
-          }
-          return {
-            key: sessionKey,
-            state: { status: "ready", data, refreshing: false, refreshError: false },
-          };
-        });
-      })
-      .catch((error: unknown) => {
-        if (
-          controller.signal.aborted ||
-          requestSequence !== positionRequestSequence.current ||
-          isAbortError(error)
-        ) return;
-        setPositionResult((current) => retainVerifiedPositionOrError(current, sessionKey));
-      });
-
-    return () => controller.abort();
-  }, [fetchPositions, now, positionRefreshTrigger, sessionAddress, sessionKey]);
-
   const handleActionConfirmed = useCallback(async (result: OperationResult) => {
     setRateNowMs(now());
-    setPositionRefreshTrigger((value) => value + 1);
-    setMetadataRefreshTrigger((value) => value + 1);
+    await Promise.all([metadataQuery.refetch(), positionsQuery.refetch()]);
     await onActionConfirmed?.(result);
-  }, [now, onActionConfirmed]);
+  }, [metadataQuery, now, onActionConfirmed, positionsQuery]);
 
   const positionState = useMemo<PositionState>(() => {
     if (!sessionKey) return { status: "idle" };
-    return positionResult?.key === sessionKey
-      ? positionResult.state
-      : { status: "loading" };
-  }, [positionResult, sessionKey]);
+    if (positionsQuery.data) {
+      return {
+        status: "ready",
+        data: positionsQuery.data,
+        refreshing: positionsQuery.isFetching,
+        refreshError: positionsQuery.isError,
+      };
+    }
+    return positionsQuery.isError ? { status: "error" } : { status: "loading" };
+  }, [positionsQuery.data, positionsQuery.isError, positionsQuery.isFetching, sessionKey]);
 
   const allCandidates = useMemo(() => {
     if (loadState.status !== "ready") return [];

@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { ComponentProps, ReactNode } from "react";
 import type { AccountWalletSdkBoundary } from "@/client/account/cdp-client";
@@ -115,12 +116,6 @@ const {
   clampHomeScrollTop,
   homeBalancesRestoreScope,
 } = await import("./home-experience");
-const {
-  homeBalancesPresentationCachePrefix,
-  readHomeBalancesPresentation,
-  writeHomeBalancesPresentation,
-} = await import("@/client/portfolio/presentation-cache");
-
 const OWNER = "home-user";
 const OWNER_B = "home-user-b";
 const ADDRESS = "0x1111111111111111111111111111111111111111";
@@ -555,44 +550,6 @@ function connectedBaseAccount(): ConnectedBaseAccount {
   };
 }
 
-function seedBalancesCache({
-  ownerKey = OWNER,
-  subject = "subject-home",
-  smartAccount = ADDRESS,
-  region = "GLOBAL",
-  displayTotal = "$12.34",
-  totalStatus = "complete",
-  statusLabel,
-}: {
-  ownerKey?: string;
-  subject?: string;
-  smartAccount?: `0x${string}`;
-  region?: RegionId;
-  displayTotal?: string;
-  totalStatus?: NonNullable<HomeAssetBalancesPresentation["totalStatus"]>;
-  statusLabel?: string;
-} = {}) {
-  writeHomeBalancesPresentation(
-    () => window.localStorage,
-    { ownerKey, subject, smartAccount, region },
-    {
-      status: "ready",
-      displayTotal,
-      totalStatus,
-      ...(statusLabel ? { statusLabel } : {}),
-      items: [
-        {
-          id: "usdc",
-          group: "cash",
-          name: "US dollar",
-          displayBalance: displayTotal,
-          currencyCode: "USD",
-        },
-      ],
-    },
-  );
-}
-
 const defaultHomeSessionFetch: SessionFetch = async () => Response.json(session());
 
 function HomeHarness({
@@ -776,6 +733,7 @@ function stubInvestHistory() {
 
 afterEach(() => {
   cleanup();
+  getHomeQueryClient().clear();
   window.localStorage.clear();
   window.sessionStorage.clear();
   document.body.style.overflow = "";
@@ -961,87 +919,6 @@ describe("login-state home experience", () => {
     expect(page().queryByText("One home for your money.")).toBeNull();
   });
 
-  test("paints last-known balances while Checking when the owner cache matches", async () => {
-    seedBalancesCache();
-    const pendingSession = deferred<Response>();
-    render(
-      <HomeHarness
-        accountSdk={sdk({
-          isSignedIn: true,
-          ownerKey: OWNER,
-        })}
-        sessionFetch={() => pendingSession.promise}
-      />,
-    );
-
-    expect((await page().findAllByText("$12.34")).length).toBeGreaterThanOrEqual(1);
-    expect(page().getByRole("heading", { name: "Balances" })).toBeTruthy();
-    expect(page().getByText("US dollar")).toBeTruthy();
-    expect(page().getByText("Updating…")).toBeTruthy();
-    expect(document.querySelector("[data-shimmer='hero']")).toBeNull();
-    expect(document.querySelectorAll("[data-shimmer='row']").length).toBe(2);
-    expect(page().queryByText("No activity yet")).toBeNull();
-    expect(document.body.textContent).not.toContain(ADDRESS);
-    expect(page().queryByRole("button", { name: "Checking…" })).toBeNull();
-
-    await act(async () => {
-      pendingSession.resolve(Response.json(session()));
-      await pendingSession.promise;
-    });
-    await enabledAccountButton();
-    expect(page().getAllByText("$12.34").length).toBeGreaterThanOrEqual(1);
-  });
-
-  test("keeps cached partial-total truth visible while the account revalidates", async () => {
-    seedBalancesCache({
-      totalStatus: "partial",
-      statusLabel: "Unavailable",
-    });
-    const pendingSession = deferred<Response>();
-    render(
-      <HomeHarness
-        accountSdk={sdk({ isSignedIn: true, ownerKey: OWNER })}
-        sessionFetch={() => pendingSession.promise}
-      />,
-    );
-
-    const status = await page().findByText("Unavailable");
-    expect(status.getAttribute("data-total-status")).toBe("partial");
-    expect(page().getByText("US dollar")).toBeTruthy();
-    expect(document.querySelector("[data-shimmer='hero']")).toBeNull();
-    fireEvent.click(page().getByRole("button", { name: "Balances" }));
-    expect(page().getByText("Unavailable")).toBeTruthy();
-
-    await act(async () => {
-      pendingSession.resolve(Response.json(session()));
-      await pendingSession.promise;
-    });
-  });
-
-  test("does not paint another owner's or signed-out cache during Checking", async () => {
-    seedBalancesCache({ ownerKey: OWNER_B, displayTotal: "$99.00" });
-    const pendingSession = deferred<Response>();
-    render(
-      <HomeHarness
-        accountSdk={sdk({
-          isSignedIn: true,
-          ownerKey: OWNER,
-        })}
-        sessionFetch={() => pendingSession.promise}
-      />,
-    );
-
-    expect(page().getByRole("heading", { name: "Balances" })).toBeTruthy();
-    expect(document.querySelector("[data-shimmer='hero']")).toBeTruthy();
-    expect(page().queryByText("$99.00")).toBeNull();
-    expect(page().queryByText("$12.34")).toBeNull();
-
-    await act(async () => {
-      pendingSession.resolve(Response.json(session()));
-      await pendingSession.promise;
-    });
-  });
-
   test("holds signed-out dashboard on a placeholder and redirects without portfolio chrome", async () => {
     render(<HomeHarness accountSdk={sdk()} routeMode="dashboard" />);
 
@@ -1061,60 +938,6 @@ describe("login-state home experience", () => {
     expect(page().queryByText("Setup in progress")).toBeNull();
     expect(page().queryByText("$12.34")).toBeNull();
     expect(document.body.textContent).not.toContain(ADDRESS);
-  });
-
-  test("does not paint a leftover cache on the signed-out dashboard", async () => {
-    seedBalancesCache();
-    render(<HomeHarness accountSdk={sdk()} routeMode="dashboard" />);
-
-    await waitFor(() => expect(replaceCalls).toEqual(["/?account=signin"]));
-    expect(page().queryByText("$12.34")).toBeNull();
-    expect(page().queryByRole("heading", { name: "Balances" })).toBeNull();
-    expect(page().getByText("Signed out")).toBeTruthy();
-  });
-
-  test("writes a ready presentation through and wipes every balances cache key on sign-out", async () => {
-    const sessionFetch: SessionFetch = async (input) => {
-      if (input === "/api/session") return Response.json(session());
-      if (String(input).startsWith("/api/activity?")) {
-        return Response.json(activityPage(input));
-      }
-      if (String(input).startsWith("/api/portfolio/valuation?")) {
-        return valuationResponse(input, { usdc: "12340000" });
-      }
-      return Response.json(portfolioSnapshot({ usdc: "12340000" }));
-    };
-    window.localStorage.setItem("home.country.v1", "US");
-    window.localStorage.setItem(`${homeBalancesPresentationCachePrefix}stale`, "{}");
-
-    render(
-      <PortfolioHomeHarness
-        accountSdk={sdk({ isSignedIn: true, ownerKey: OWNER })}
-        sessionFetch={sessionFetch}
-      />,
-    );
-
-    expect((await page().findAllByText("$12.34")).length).toBeGreaterThanOrEqual(1);
-    await waitFor(() => {
-      expect(
-        Object.keys(window.localStorage).some(
-          (key) =>
-            key.startsWith(homeBalancesPresentationCachePrefix) &&
-            key !== `${homeBalancesPresentationCachePrefix}stale`,
-        ),
-      ).toBe(true);
-    });
-
-    fireEvent.click(await enabledAccountButton());
-    fireEvent.click(page().getByRole("button", { name: "Sign out" }));
-    await waitFor(() =>
-      expect(
-        Object.keys(window.localStorage).filter((key) =>
-          key.startsWith(homeBalancesPresentationCachePrefix),
-        ),
-      ).toEqual([]),
-    );
-    expect(window.localStorage.getItem("home.country.v1")).toBe("US");
   });
 
   test("treats a verified session without a smart account as authenticated but not ready", async () => {
@@ -1464,11 +1287,6 @@ describe("login-state home experience", () => {
     expect(await page().findByText("Brazilian real")).toBeTruthy();
 
     firstVisit.unmount();
-    for (const key of Object.keys(window.localStorage)) {
-      if (key.startsWith(homeBalancesPresentationCachePrefix)) {
-        window.localStorage.removeItem(key);
-      }
-    }
     valuationRegions.length = 0;
 
     render(
@@ -1563,105 +1381,6 @@ describe("login-state home experience", () => {
       "default",
     );
     expect(page().queryByText("2,500.00 LCLX")).toBeNull();
-  });
-
-  test("persists one reconciled unavailable row without a cache-write loop", async () => {
-    writeHomeBalancesPresentation(
-      () => window.localStorage,
-      {
-        ownerKey: OWNER,
-        subject: "subject-home",
-        smartAccount: ADDRESS,
-        region: "GLOBAL",
-      },
-      {
-        status: "ready",
-        displayTotal: "$12.34",
-        items: [
-          {
-            id: "usdc",
-            group: "cash",
-            name: "US dollar",
-            displayBalance: "$12.34",
-            currencyCode: "USD",
-          },
-          {
-            id: "asset:fixture-eurc",
-            group: "asset",
-            name: "Euro",
-            detail: "EURC",
-            displayBalance: "25.00 EURC",
-            currencyCode: "EUR",
-          },
-        ],
-      },
-    );
-
-    let presentationWrites = 0;
-    const onPresentationWrite = () => {
-      presentationWrites += 1;
-    };
-    window.addEventListener("home:balances-presentation-cache", onPresentationWrite);
-
-    try {
-      render(
-        <AccountWalletSessionOwner
-          sdk={sdk({ isSignedIn: true, ownerKey: OWNER })}
-          sessionFetch={async () => Response.json(session())}
-        >
-          <HomeExperience
-            routeMode="dashboard"
-            savingsContent={<section aria-label="Savings module">Savings fixture</section>}
-            investContent={<section aria-label="Invest module">Invest fixture</section>}
-            assetBalances={{
-              status: "ready",
-              displayTotal: "$12.34",
-              items: [
-                {
-                  id: "usdc",
-                  group: "cash",
-                  name: "US dollar",
-                  displayBalance: "$12.34",
-                  currencyCode: "USD",
-                },
-              ],
-              unavailableItemIds: ["asset:fixture-eurc"],
-            }}
-          />
-        </AccountWalletSessionOwner>,
-      );
-
-      expect(await page().findByText("Unavailable")).toBeTruthy();
-      expect(page().getByText("Euro")).toBeTruthy();
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      });
-      expect(presentationWrites).toBe(1);
-      expect(
-        readHomeBalancesPresentation(
-          () => window.localStorage,
-          {
-            ownerKey: OWNER,
-            subject: "subject-home",
-            smartAccount: ADDRESS,
-            region: "GLOBAL",
-          },
-        )?.items[1],
-      ).toEqual({
-        id: "asset:fixture-eurc",
-        group: "asset",
-        name: "Euro",
-        detail: "EURC",
-        displayBalance: "Unavailable",
-        currencyCode: "EUR",
-        tone: "error",
-      });
-    } finally {
-      window.removeEventListener(
-        "home:balances-presentation-cache",
-        onPresentationWrite,
-      );
-    }
   });
 
   test("renders priced ETH with fiat primary and bounded native under the name", async () => {

@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { RegionId } from "@/config/regions";
 import { useAccountWallet, type AccountWalletClient } from "@/client/account/cdp-client";
+import { activityOwnerKey } from "@/client/activity/use-activity";
 import {
   AddMoneyDialog,
   type AddMoneyStep,
 } from "./add-money-dialog";
 import { readFundingOrder, type FundingBinding, type FundingOrderSummary } from "./order-flow";
+import { ownerQueryKey, ownerQueryMeta, useHomeQuery } from "@/client/query/query-client";
 import {
   FundingRequestError,
   requestHostedOnrampSession,
@@ -65,6 +67,7 @@ function FundingExperienceBoundary({
   const boundary = fundingBoundary(wallet);
   const session = wallet.status === "verified" ? wallet.session : null;
   const address = session?.smartAccount?.address ?? null;
+  const queryOwnerKey = session?.smartAccount ? activityOwnerKey(session) : null;
   const signedOut = !boundary || !session?.smartAccount || !address;
   const startStep: AddMoneyStep =
     initialStep ?? (returnedFromCoinbase && !signedOut ? "receive" : "method");
@@ -80,25 +83,37 @@ function FundingExperienceBoundary({
   const requestAbortRef = useRef<AbortController | null>(null);
   const openRef = useRef(open);
 
+  const fundingQuery = useHomeQuery({
+    queryKey: queryOwnerKey
+      ? ownerQueryKey(queryOwnerKey, "funding", regionId)
+      : ["unauthenticated", "funding-disabled", regionId],
+    enabled: Boolean(open && !signedOut && regionId !== "GLOBAL" && queryOwnerKey),
+    staleTime: 15_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    meta: queryOwnerKey ? ownerQueryMeta(queryOwnerKey, "owner") : undefined,
+    queryFn: async ({ signal }) => Promise.all([
+      wallet.fetchAccountResource(`/api/funding/providers?region=${encodeURIComponent(regionId)}`, { signal }),
+      wallet.fetchAccountResource(`/api/funding/orders?region=${encodeURIComponent(regionId)}`, { signal }),
+    ]),
+  });
+
   useEffect(() => {
-    if (!open || signedOut || regionId === "GLOBAL") return;
-    const controller = new AbortController();
+    const values = fundingQuery.data;
+    if (!values) {
+      if (fundingQuery.isError) setProviderBindings([]);
+      return;
+    }
+    const [providerValue, orderValue] = values;
     const navigationEpoch = navigationEpochRef.current;
-    void Promise.all([
-      wallet.fetchAccountResource(`/api/funding/providers?region=${encodeURIComponent(regionId)}`, { signal: controller.signal }),
-      wallet.fetchAccountResource(`/api/funding/orders?region=${encodeURIComponent(regionId)}`, { signal: controller.signal }),
-    ]).then(([providerValue, orderValue]) => {
-      if (controller.signal.aborted) return;
-      const bindings = readProviderBindings(providerValue);
-      setProviderBindings(bindings);
-      const resumed = readFundingOrder(orderValue);
-      if (resumed && navigationEpochRef.current === navigationEpoch && stepRef.current === "method") {
-        const binding = bindings.find((candidate) => candidate.providerId === readProviderId(orderValue));
-        if (binding) { setSelectedBinding(binding); setInitialOrder(resumed); navigateTo("order", false); }
-      }
-    }).catch(() => { if (!controller.signal.aborted) setProviderBindings([]); });
-    return () => controller.abort();
-  }, [open, regionId, signedOut, wallet]);
+    const bindings = readProviderBindings(providerValue);
+    setProviderBindings(bindings);
+    const resumed = readFundingOrder(orderValue);
+    if (resumed && navigationEpochRef.current === navigationEpoch && stepRef.current === "method") {
+      const binding = bindings.find((candidate) => candidate.providerId === readProviderId(orderValue));
+      if (binding) { setSelectedBinding(binding); setInitialOrder(resumed); navigateTo("order", false); }
+    }
+  }, [fundingQuery.data, fundingQuery.isError]);
 
   useEffect(() => {
     openRef.current = open;
@@ -199,6 +214,7 @@ function FundingExperienceBoundary({
       selectedBinding={selectedBinding}
       initialOrder={initialOrder}
       fetchAccountResource={wallet.fetchAccountResource}
+      queryOwnerKey={queryOwnerKey}
       onSelectBinding={(binding) => {
         setSelectedBinding(binding);
         setInitialOrder(null);

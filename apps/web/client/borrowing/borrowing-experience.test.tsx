@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import {
@@ -52,7 +53,10 @@ function emptySnapshot(): BorrowMarketSnapshot {
   };
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  getHomeQueryClient().clear();
+});
 
 describe("BorrowExperience", () => {
   test("shows the single verified market while keeping a signed-out wallet truly empty", () => {

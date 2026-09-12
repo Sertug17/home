@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import type { PreparedMoneyAction } from "@/shared/money-actions/types";
@@ -53,7 +54,10 @@ function page() { return within(document.body); }
 function typeAmount(digits: string) {
   for (const digit of digits) fireEvent.click(page().getByRole("button", { name: digit === "." ? "Decimal point" : digit }));
 }
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  getHomeQueryClient().clear();
+});
 
 describe("SavingsMoneyDialog", () => {
   test("prepares a deposit through the unified actions endpoint", async () => {

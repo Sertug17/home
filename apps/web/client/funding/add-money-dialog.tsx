@@ -42,6 +42,7 @@ export function AddMoneyDialog({
   selectedBinding,
   initialOrder,
   fetchAccountResource,
+  queryOwnerKey,
   onSelectBinding,
   onSelectAnotherOnramp,
   onContinueToCoinbase,
@@ -61,6 +62,7 @@ export function AddMoneyDialog({
   selectedBinding: FundingBinding | null;
   initialOrder: FundingOrderSummary | null;
   fetchAccountResource: (path: string, options?: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal }) => Promise<unknown>;
+  queryOwnerKey?: string | null;
   onSelectBinding: (binding: FundingBinding) => void;
   onSelectAnotherOnramp: () => void;
   onContinueToCoinbase: () => void;
@@ -108,7 +110,7 @@ export function AddMoneyDialog({
       ) : null}
       {!signedOut && step === "buy" ? <BuyBody /> : null}
       {!signedOut && step === "order" && selectedBinding ? (
-        <FundingOrderFlow binding={selectedBinding} fetchAccountResource={fetchAccountResource} onBack={onBack} initialOrder={initialOrder} />
+        <FundingOrderFlow binding={selectedBinding} fetchAccountResource={fetchAccountResource} queryOwnerKey={queryOwnerKey} onBack={onBack} initialOrder={initialOrder} />
       ) : null}
       {!signedOut && step === "onramps" ? (
         <OtherOnrampsBody
