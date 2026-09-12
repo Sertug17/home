@@ -178,13 +178,36 @@ export function AccountWalletSessionOwner({
       setMessage(null);
     } catch (error) {
       if (controller.signal.aborted || !fence.isCurrent(generation)) return;
+      if (error instanceof BaseAccountConnectorError && error.reason === "missing-connection") {
+        fence.advance();
+        clearPrivate();
+        setStatus("signing-out");
+        setMessage(null);
+        providerRef.current = "base-account";
+        writeAccountProviderHint("pending:base-account");
+        const cleanup = (async () => {
+          await disconnectBase();
+          await sdkSignOut();
+          providerRef.current = "restore";
+          writeAccountProviderHint(null);
+          setStatus("signed-out");
+          setMessage("You are signed out.");
+        })();
+        cleanupRef.current = cleanup;
+        try { await cleanup; }
+        catch {
+          setStatus("signout-error");
+          setMessage("Sign-out did not finish. Retry sign out.");
+        } finally { cleanupRef.current = null; }
+        return;
+      }
       await disconnectBase();
       fence.advance();
       setSession(null);
       setStatus("unavailable");
       setMessage(error instanceof Error ? error.message : "Account verification is unavailable.");
     }
-  }, [authentication, baseAccountEnabled, baseAccountRestorer, disconnectBase, fence, getAccessToken, isInitialized, isSignedIn, onBaseInvalidated, ownerKey, sessionFetch]);
+  }, [authentication, baseAccountEnabled, baseAccountRestorer, clearPrivate, disconnectBase, fence, getAccessToken, isInitialized, isSignedIn, onBaseInvalidated, ownerKey, sdkSignOut, sessionFetch]);
 
   const validateRef = useRef(validate);
   useLayoutEffect(() => { validateRef.current = validate; }, [validate]);
@@ -212,6 +235,7 @@ export function AccountWalletSessionOwner({
 
   const beginSignIn = useCallback((provider: AccountProvider) => {
     if (cleanupRef.current) throw new Error("Sign-out is still finishing.");
+    fence.updateAuthorizationBoundary(null);
     const generation = fence.advance();
     clearPrivate();
     providerRef.current = provider;
