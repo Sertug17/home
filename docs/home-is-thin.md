@@ -81,6 +81,20 @@ One `ownerGeneration` counter replaces the four-field fence in `cdp-session-life
 3. It bumps on sign-in, sign-out, provider switch, Base `accountsChanged` / `chainChanged` / `disconnect`, and loss of server-session verification.
 4. Sign-out awaits SDK cleanup before a new sign-in may begin.
 
+## Client architecture
+
+- Use TanStack Query for remote client state. Every private key starts with the owner key; clear the query client and persisted owner cache on every owner-generation bump.
+- Keep the shell mounted. Flows are shallow-routed and URL-addressable; resumed Send is `?flow=send&action=<id>`.
+- Parse inbound URLs through one allowlist. Unknown panels, flows, assets, and action IDs do nothing.
+- After a confirmed action, invalidate balances, valuation, Activity, positions, Borrow, and actions so the normal freshness loop refetches them.
+- Render money only through `MoneyTicker` and the shared formatting module; features do not format amounts independently.
+
+## Performance
+
+- Startup gate: verified session plus wallet address renders the shell with cached balances; every other surface streams in afterward.
+- Frame budget: never call `setState` for each pointer move or price tick. Use transforms, opacity, motion values, or imperative text writes.
+- Mark `shell:paint`, `session:verified`, `wallet:ready`, `balances:painted`, and `action:first-interactive`; CI budgets `balances:painted`.
+
 ## Failure modes we accept
 
 - Send succeeded, handle post lost, tab closed: the row reads `unknown`; Activity shows the transfer when indexed; the row ages out at 24h.
@@ -112,7 +126,7 @@ Client: `client/money-actions/{provider-handle-journal,provider-handle-recovery}
 
 Keep: `server/funding/*`, `server/cdp/session.ts`, `server/auth/*`, `server/money-actions/{issue,prepare-send,receipt}.ts` builders and receipt verification, `server/trading/{permit2,signer,balance,prepare,cdp}.ts`, savings/borrow calldata builders, `server/activity`, `server/chain-data`, `server/portfolio`, all presentation. Trades keep their current hosted availability; this reset does not change whether swaps are enabled.
 
-Docs: this file replaces the superseded sections of `architecture-review-2026-09.md`; `docs/operating-manual.md` drops "Money work keeps its rigor" and the money-specific writer/reviewer routing and adds the test policy; `docs/wallet-runtime-spike.md`, `docs/fork-and-extend.md`, `docs/vercel-deploy.md`, `docs/integrations/README.md` lose their cutover-flag and migrate references. Invariants shrink to five: server-authored calldata; verified scope; `bigint` amounts; `idempotencyKey` / EIP-5792 id = action id; owner-generation fence.
+Docs: this file replaces superseded money-action sections in `architecture-review-2026-09.md`. Related operator docs are `docs/fork-and-extend.md`, `docs/vercel-deploy.md`, and `docs/integrations/README.md`. Invariants shrink to five: server-authored calldata; verified scope; `bigint` amounts; `idempotencyKey` / EIP-5792 id = action id; owner-generation fence.
 
 ## Residual risks (verify on preview, once)
 
