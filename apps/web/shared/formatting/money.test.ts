@@ -33,39 +33,39 @@ const localeCases = [
     percentage: "4.50%",
     delta: "−0.67%",
     tiny: "$0.0000001234",
-    date: "Sep 7, 2026 at 11:05 AM",
+    date: "Sep 7, 2026, 11:05 AM",
   },
   {
     regionId: "BR" as const,
     currency: "BRL",
-    fiat: "R$ 1.234,56",
+    fiat: "R$\u00A01.234,56",
     token: "−123,45 USDC",
-    compact: "R$ 64,21 mil",
+    compact: "R$\u00A064,21 mil",
     percentage: "4,50%",
     delta: "−0,67%",
-    tiny: "R$ 0,0000001234",
+    tiny: "R$\u00A00,0000001234",
     date: "7 de set. de 2026, 11:05",
   },
   {
     regionId: "AR" as const,
     currency: "ARS",
-    fiat: "$ 1.234,56",
+    fiat: "$1.234,56",
     token: "−123,45 USDC",
-    compact: "$ 64,21 K",
+    compact: "$64,21K",
     percentage: "4,50%",
     delta: "−0,67%",
-    tiny: "$ 0,0000001234",
+    tiny: "$0,0000001234",
     date: "7 de sept de 2026, 11:05 a. m.",
   },
   {
     regionId: "ID" as const,
     currency: "IDR",
-    fiat: "Rp1.234,56",
+    fiat: "Rp\u00A01.234,56",
     token: "−123,45 USDC",
-    compact: "Rp64,21 rb",
+    compact: "Rp\u00A064,21 rb",
     percentage: "4,50%",
     delta: "−0,67%",
-    tiny: "Rp0,0000001234",
+    tiny: "Rp\u00A00,0000001234",
     date: "7 Sep 2026, 11.05",
   },
 ];
@@ -174,7 +174,7 @@ describe("presentation money formatting", () => {
     expect(formatUsdPrice("1e-7")).toBe("$0.0000001");
     expect(formatUsdPrice("0.000000001")).toBe("<$0.00000001");
     expect(formatPresentationPrice("231.708792875", "BRL", "BR")).toBe(
-      "R$ 231,71",
+      "R$\u00A0231,71",
     );
     expect(formatChartPrice("0.0123456")).toBe("$0.012346");
     expect(formatChartPrice("1.234e-7")).toBe("$0.0000001234");
@@ -210,8 +210,8 @@ describe("presentation money formatting", () => {
     expect(formatFiatValue({ atoms: "0", scale: 18 }, "USD")).toBe("USD 0.00");
     expect(presentationCurrencyName("USD")).toBe("US dollar");
     expect(formatPresentationFiat({ atoms: "481240", scale: 2 }, "IDR", 2, "ID")).toBe(
-      "Rp4.812,40",
+      "Rp\u00A04.812,40",
     );
-    expect(formatMoneyLabel("4,812.40", "BRL", "BR")).toBe("R$ 4.812,40");
+    expect(formatMoneyLabel("4,812.40", "BRL", "BR")).toBe("R$\u00A04.812,40");
   });
 });
