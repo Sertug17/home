@@ -11,6 +11,8 @@ Start with [Home is thin](home-is-thin.md) for the current action and client con
 | [Base Account](base-account.md) | Optional Base Account configuration. |
 | [Build status](build-status.md) | Local-app scope and validation boundary. |
 | [Checkpoint 2026-09-12](checkpoint-2026-09-12.md) | State of main after the Home-is-thin reset; decisions, open items, how to resume. |
+| [Architecture audit 2026-09-12](architecture-audit-2026-09-12.md) | Post-reset audit of server, funding seam, and client; ranked cleanup lanes and decisions. |
+| [Design-system audit 2026-09-12](design-system-audit-2026-09-12.md) | Primitive gaps, token strategy, guardrails, and surface-by-surface adoption lanes. |
 | [CDP error reporting](cdp-error-reporting.md) | Default CDP error-reporting policy. |
 | [CDP setup](cdp-setup.md) | CDP project, sessions, and allowed origins. |
 | [CDP SQL](cdp-sql.md) | Indexed Base-history adapter notes. |
