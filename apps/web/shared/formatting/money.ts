@@ -12,6 +12,31 @@ const maximumTinyPriceFractionDigits = 8;
 const maximumChartTinyFractionDigits = 12;
 const minusSign = "−";
 
+const NBSP = "\u00A0";
+const anySpace = /[\s\u00A0\u2007\u2009\u202F]+/g;
+
+/**
+ * ICU builds disagree on the whitespace they emit (U+0020 vs U+00A0 vs U+202F)
+ * and on joiners such as "at". Home owns these typographic choices so output is
+ * byte-identical on every platform.
+ */
+function collapseSpaces(value: string, replacement: string): string {
+  return value.replace(anySpace, replacement).trim();
+}
+
+/** Multi-character currency symbols (R$, Rp, US$) take one no-break space; single glyphs ($, €, £) none. */
+function joinCurrencyPrefix(symbol: string, amount: string): string {
+  const compact = collapseSpaces(symbol, "");
+  if (!compact) return amount;
+  return compact.length > 1 ? `${compact}${NBSP}${amount}` : `${compact}${amount}`;
+}
+
+function joinCurrencySuffix(amount: string, symbol: string): string {
+  const compact = collapseSpaces(symbol, "");
+  return compact ? `${amount}${NBSP}${compact}` : amount;
+}
+
+
 const regionLocales = {
   GLOBAL: "en-US",
   AR: "es-AR",
@@ -431,24 +456,32 @@ export function formatPresentationDate(
     style: PresentationDateStyle;
   },
 ): string {
-  const styles: Record<PresentationDateStyle, Intl.DateTimeFormatOptions> = {
-    "activity-full": {
-      month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
-    },
-    "activity-short": {
-      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-    },
-    "date-time-zone": {
-      month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short",
-    },
-    "chart-time": { hour: "numeric", minute: "2-digit" },
+  const locale = presentationLocale(options.regionId);
+  const zone = options.timeZone ? { timeZone: options.timeZone } : {};
+  const date = new Date(value);
+  const part = (formatOptions: Intl.DateTimeFormatOptions) =>
+    collapseSpaces(new Intl.DateTimeFormat(locale, { ...formatOptions, ...zone }).format(date), " ");
+  const dateParts: Record<PresentationDateStyle, Intl.DateTimeFormatOptions | null> = {
+    "activity-full": { month: "short", day: "numeric", year: "numeric" },
+    "activity-short": { month: "short", day: "numeric" },
+    "date-time-zone": { month: "short", day: "numeric", year: "numeric" },
+    "chart-time": null,
     "chart-weekday": { weekday: "short" },
     "chart-date": { month: "short", day: "numeric" },
   };
-  return new Intl.DateTimeFormat(presentationLocale(options.regionId), {
-    ...styles[options.style],
-    ...(options.timeZone ? { timeZone: options.timeZone } : {}),
-  }).format(new Date(value));
+  const timeParts: Record<PresentationDateStyle, Intl.DateTimeFormatOptions | null> = {
+    "activity-full": { hour: "numeric", minute: "2-digit" },
+    "activity-short": { hour: "numeric", minute: "2-digit" },
+    "date-time-zone": { hour: "numeric", minute: "2-digit", timeZoneName: "short" },
+    "chart-time": { hour: "numeric", minute: "2-digit" },
+    "chart-weekday": null,
+    "chart-date": null,
+  };
+  const dateOptions = dateParts[options.style];
+  const timeOptions = timeParts[options.style];
+  const pieces = [dateOptions ? part(dateOptions) : null, timeOptions ? part(timeOptions) : null]
+    .filter((piece): piece is string => Boolean(piece));
+  return pieces.join(", ");
 }
 
 export function scaleDecimalByExact(
@@ -672,7 +705,7 @@ function formatCurrencyDecimal(
   }
   const prefix = parts.slice(0, firstNumeric).map((part) => part.value).join("");
   const suffix = parts.slice(lastNumeric + 1).map((part) => part.value).join("");
-  return `${prefix}${localizedAmount}${suffix}`;
+  return joinCurrencySuffix(joinCurrencyPrefix(prefix, localizedAmount), suffix);
 }
 
 function formatCompactPrice(
@@ -696,9 +729,10 @@ function formatCompactPrice(
     part.type === "integer" || part.type === "group" ||
     part.type === "decimal" || part.type === "fraction"
   );
-  const suffix = compactIndex < 0 || lastNumericIndex < 0
+  const rawSuffix = compactIndex < 0 || lastNumericIndex < 0
     ? ""
-    : compactParts.slice(lastNumericIndex + 1).map((part) => part.value).join("");
+    : collapseSpaces(compactParts.slice(lastNumericIndex + 1).map((part) => part.value).join(""), "");
+  const suffix = rawSuffix.length > 1 ? `${NBSP}${rawSuffix}` : rawSuffix;
   const label = `${formatCurrencyDecimal(amount, currency, regionId)}${suffix}`;
   return applySign(label, decimal.negative, "auto");
 }
@@ -714,7 +748,7 @@ function applySign(
 }
 
 function normalizeMinus(value: string): string {
-  return value.replace(/-/g, minusSign);
+  return collapseSpaces(value.replace(/-/g, minusSign), NBSP);
 }
 
 function presentationFractionDigits(

@@ -1385,10 +1385,10 @@ describe("login-state home experience", () => {
     expect(flagSources).not.toContain("/currency-flags/eth.svg");
     expect(page().queryByText("Euro")).toBeNull();
     expect(page().getByText("US dollar").closest("li")?.textContent).toContain(
-      "$ 0,00",
+      "$0,00",
     );
     expect(page().getByText("Brazilian real").closest("li")?.textContent).toContain(
-      "R$ 0,00",
+      "R$\u00A00,00",
     );
     expect(page().queryByText("USD / USDC")).toBeNull();
     expect(page().queryByText("BRL / BRZ")).toBeNull();
@@ -1514,9 +1514,9 @@ describe("login-state home experience", () => {
 
     await page().findByText("Indonesian rupiah");
     expect(page().getByText("$4.343,85")).toBeTruthy();
-    expect(page().getByText("Rp234.090,41")).toBeTruthy();
+    expect(page().getByText("Rp 234.090,41")).toBeTruthy();
     expect(page().getByText("€131,32")).toBeTruthy();
-    expect(document.body.textContent).not.toContain("Rp131,32");
+    expect(document.body.textContent).not.toContain("Rp\u00A0131,32");
     const euroRow = page().getByText("Euro").closest("li");
     expect(euroRow?.querySelector("img")?.getAttribute("src")).toBe(
       "/currency-flags/eu.svg",
