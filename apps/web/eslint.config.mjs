@@ -5,6 +5,8 @@ import nextTs from "eslint-config-next/typescript";
 const sharedLayerMessage =
   "shared modules must remain runtime-agnostic and independent of web application layers";
 const clientLayerMessage = "client modules must not import the server layer";
+const browserSdkMessage =
+  "browser wallet provider SDKs belong behind the client/account owner-generation fence";
 const serverLayerMessage = "server modules must not import web client or app layers";
 
 const relativePrefixPattern = String.raw`(?:\.\.?\/)+`;
@@ -110,6 +112,10 @@ const eslintConfig = defineConfig([
               ],
               message: sharedLayerMessage,
             },
+            {
+              group: ["@coinbase/cdp-*", "@coinbase/cdp-*/*", "@base-org/account", "@base-org/account/*"],
+              message: browserSdkMessage,
+            },
           ],
         },
       ],
@@ -131,6 +137,10 @@ const eslintConfig = defineConfig([
               group: ["@/server/*"],
               message: clientLayerMessage,
             },
+            {
+              group: ["@coinbase/cdp-*", "@coinbase/cdp-*/*", "@base-org/account", "@base-org/account/*"],
+              message: browserSdkMessage,
+            },
           ],
         },
       ],
@@ -141,8 +151,24 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    files: ["{app,client,components}/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
-    ignores: ["client/account/**"],
+    files: ["client/account/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [{ name: "@/server", message: clientLayerMessage }],
+          patterns: [
+            {
+              group: ["@/server/*"],
+              message: clientLayerMessage,
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["app/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -150,7 +176,7 @@ const eslintConfig = defineConfig([
           patterns: [
             {
               group: ["@coinbase/cdp-*", "@coinbase/cdp-*/*", "@base-org/account", "@base-org/account/*"],
-              message: "browser wallet provider SDKs belong behind the client/account owner-generation fence",
+              message: browserSdkMessage,
             },
           ],
         },
