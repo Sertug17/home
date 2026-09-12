@@ -3,6 +3,7 @@ import "@/client/account/dom-test-harness";
 import { afterEach, describe, expect, test } from "bun:test";
 import { StrictMode } from "react";
 import type { AccountWalletClient } from "@/client/account/cdp-client";
+import { getHomeQueryClient } from "@/client/query/query-client";
 
 const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
 const { FundingExperienceForWallet } = await import("./funding-experience");
@@ -54,6 +55,7 @@ function page() {
 
 afterEach(() => {
   cleanup();
+  getHomeQueryClient().clear();
   window.sessionStorage.clear();
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,

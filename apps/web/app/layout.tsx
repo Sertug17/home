@@ -6,6 +6,7 @@ import { SmokeFixtureAccountProvider } from "@/client/account/smoke-fixture-prov
 import { normalizeProjectId } from "@/client/account/session-client";
 import { isBaseAccountEnabled } from "@/shared/account/session-types";
 import { isHomeSessionConfigured } from "@/server/auth/native-base-session";
+import { HomeQueryClientProvider } from "@/client/query/query-client";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,7 +33,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 
   return (
     <html lang="en" className={`${dmSans.variable} ${dmMono.variable} h-full antialiased`}>
-      <body className="min-h-full">{accountProvider}</body>
+      <body className="min-h-full">
+        <HomeQueryClientProvider>{accountProvider}</HomeQueryClientProvider>
+      </body>
     </html>
   );
 }

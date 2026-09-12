@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import type { InfiniteData } from "@tanstack/react-query";
+import {
+  browserHomeQueryClient,
+  publicQueryKey,
+  useHomeInfiniteQuery,
+  useHomeQueryClient,
+} from "@/client/query/query-client";
 import type { InvestAsset } from "@/config/invest-assets";
 import {
   assetMarkResolutionFromDiscover,
@@ -41,12 +48,6 @@ export type UseInvestDiscoverOptions = {
   refreshCooldownMs?: number;
 };
 
-type LoadMoreRequest = {
-  sequence: number;
-  offset: number;
-  controller: AbortController;
-};
-
 const emptyIcons = {} as const;
 
 const emptyPagination: MemePagination = {
@@ -80,182 +81,79 @@ const errorDiscoverState: InvestDiscoverState = {
 export function useInvestDiscover({
   endpoint = DISCOVER_ENDPOINT,
   fetchImpl = fetch,
-  now = Date.now,
   refreshCooldownMs = VISIBILITY_REFRESH_COOLDOWN_MS,
 }: UseInvestDiscoverOptions = {}): UseInvestDiscoverResult {
-  const [state, setState] = useState<InvestDiscoverState>(initialDiscoverState);
-  const sequence = useRef(0);
-  const requestController = useRef<AbortController | null>(null);
-  const loadMoreRequest = useRef<LoadMoreRequest | null>(null);
-  const attemptedOffsets = useRef(new Set<number>());
-  const hasLoadedMore = useRef(false);
-  const lastRequestAt = useRef(Number.NEGATIVE_INFINITY);
-
-  const refresh = useCallback(async () => {
-    // Once the user has paged, a background refresh would slice rows off the
-    // top and desynchronize the loaded catalog. Keep the loaded content.
-    if (hasLoadedMore.current) return;
-    const requestTime = now();
-    if (requestTime - lastRequestAt.current < refreshCooldownMs) return;
-    lastRequestAt.current = requestTime;
-
-    const requestSequence = ++sequence.current;
-    loadMoreRequest.current?.controller.abort();
-    loadMoreRequest.current = null;
-    attemptedOffsets.current = new Set();
-    requestController.current?.abort();
-    const controller = new AbortController();
-    requestController.current = controller;
-
-    try {
-      const response = await fetchImpl(endpoint, {
-        headers: { accept: "application/json" },
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      const payload = parseDiscoverResponse(await response.json());
-      if (!payload) throw new Error("Invalid invest discover response");
-      if (controller.signal.aborted || sequence.current !== requestSequence) {
-        return;
-      }
-      setState(payload);
-    } catch {
-      if (controller.signal.aborted || sequence.current !== requestSequence) {
-        return;
-      }
-      setState(errorDiscoverState);
+  const queryClient = useHomeQueryClient(browserHomeQueryClient());
+  const loadMoreInFlightRef = useRef(false);
+  const [manualLoadState, setManualLoadState] = useState<"idle" | "loading" | "error">("idle");
+  const queryKey = publicQueryKey("invest-discover", endpoint);
+  const fetchPage = useCallback(async (pageParam: number | null, signal: AbortSignal) => {
+    const queryString = pageParam === null ? "" : new URLSearchParams({ offset: String(pageParam) }).toString();
+    const url = !queryString ? endpoint : endpoint.includes("?") ? `${endpoint}&${queryString}` : `${endpoint}?${queryString}`;
+    const response = await fetchImpl(url, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) throw new Error("Discover page request failed.");
+    const payload = parseDiscoverResponse(await response.json());
+    if (!payload) throw new Error("Invalid invest discover response");
+    if (pageParam !== null && (payload.memeStatus === "error" || payload.memeStatus === "unavailable")) {
+      throw new Error("Discover page provider failed.");
     }
-  }, [endpoint, fetchImpl, now, refreshCooldownMs]);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => void refresh(), 0);
-    return () => {
-      window.clearTimeout(timeout);
-      requestController.current?.abort();
-      loadMoreRequest.current?.controller.abort();
-      loadMoreRequest.current = null;
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") void refresh();
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [refresh]);
-
-  const requestMore = useCallback(
-    (manualRetry: boolean) => {
-      const pagination = state.memePagination;
-      const offset = pagination.nextOffset;
-      // A non-null next offset on a successful initial load is the gate. Empty
-      // catalog pages (zero normalized assets) must still be advanceable.
-      if (
-        offset === null ||
-        pagination.exhausted ||
-        pagination.loadingMore ||
-        loadMoreRequest.current ||
-        (!manualRetry && pagination.autoLoadPaused) ||
-        (!manualRetry && attemptedOffsets.current.has(offset))
-      ) {
-        return;
-      }
-
-      // Claim ownership before any fetch: abort a background visibility
-      // refresh and advance the sequence so a late refresh result cannot
-      // overwrite appended rows or strand this attempted offset.
-      hasLoadedMore.current = true;
-      requestController.current?.abort();
-      requestController.current = null;
-      const requestSequence = ++sequence.current;
-
-      const controller = new AbortController();
-      const request: LoadMoreRequest = { sequence: requestSequence, offset, controller };
-      loadMoreRequest.current = request;
-      attemptedOffsets.current.add(offset);
-      setState((current) =>
-        current.memePagination.nextOffset === offset &&
-        !current.memePagination.loadingMore
-          ? {
-              ...current,
-              memePagination: {
-                ...current.memePagination,
-                loadingMore: true,
-                loadMoreError: false,
-              },
-            }
-          : current,
-      );
-
-      const query = new URLSearchParams({ offset: String(offset) }).toString();
-      const url = endpoint.includes("?")
-        ? `${endpoint}&${query}`
-        : `${endpoint}?${query}`;
-
-      void (async () => {
-        try {
-          const response = await fetchImpl(url, {
-            headers: { accept: "application/json" },
-            cache: "no-store",
-            signal: controller.signal,
-          });
-          if (!isCurrentLoadMoreRequest(loadMoreRequest.current, request, sequence.current)) {
-            return;
-          }
-          if (!response.ok) {
-            throw new Error("Discover page request failed.");
-          }
-          const next = parseDiscoverResponse(await response.json());
-          if (!next) throw new Error("Invalid invest discover page");
-          if (
-            next.memeStatus === "error" ||
-            next.memeStatus === "unavailable"
-          ) {
-            throw new Error("Discover page is unavailable.");
-          }
-          if (next.memePagination.nextOffset === offset) {
-            throw new Error("Discover offset did not advance.");
-          }
-          setState((current) => {
-            if (
-              current.memePagination.nextOffset !== offset ||
-              !current.memePagination.loadingMore
-            ) {
-              return current;
-            }
-            return mergeDiscoverPages(current, next);
-          });
-        } catch {
-          if (!isCurrentLoadMoreRequest(loadMoreRequest.current, request, sequence.current)) {
-            return;
-          }
-          setState((current) =>
-            current.memePagination.nextOffset === offset
-              ? {
-                  ...current,
-                  memePagination: {
-                    ...current.memePagination,
-                    loadingMore: false,
-                    loadMoreError: true,
-                  },
-                }
-              : current,
-          );
-        } finally {
-          if (loadMoreRequest.current === request) {
-            loadMoreRequest.current = null;
-          }
-        }
-      })();
+    return payload;
+  }, [endpoint, fetchImpl]);
+  const query = useHomeInfiniteQuery({
+    queryKey,
+    initialPageParam: null as number | null,
+    staleTime: refreshCooldownMs,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: ({ pageParam, signal }) => fetchPage(pageParam, signal),
+    getNextPageParam: (page) => page.memePagination.nextOffset ?? undefined,
+  });
+  const state = useMemo(() => {
+    const pages = query.data?.pages;
+    if (!pages?.length) return query.isError ? errorDiscoverState : initialDiscoverState;
+    return pages.slice(1).reduce(mergeDiscoverPages, pages[0]!);
+  }, [query.data?.pages, query.isError]);
+  const visibleState: InvestDiscoverState = {
+    ...state,
+    memePagination: {
+      ...state.memePagination,
+      loadingMore: query.isFetchingNextPage || manualLoadState === "loading",
+      loadMoreError: query.isFetchNextPageError || manualLoadState === "error",
     },
-    [endpoint, fetchImpl, state],
-  );
-
-  const loadMoreMemes = useCallback(() => requestMore(false), [requestMore]);
-  const retryLoadMoreMemes = useCallback(() => requestMore(true), [requestMore]);
-
-  return { ...state, loadMoreMemes, retryLoadMoreMemes };
+  };
+  const requestNextPage = useCallback(() => {
+    const nextOffset = visibleState.memePagination.nextOffset;
+    if (nextOffset === null || visibleState.memePagination.exhausted || loadMoreInFlightRef.current) return;
+    loadMoreInFlightRef.current = true;
+    setManualLoadState("loading");
+    if (query.isFetching) void queryClient.cancelQueries({ queryKey, exact: true });
+    void fetchPage(nextOffset, new AbortController().signal).then((page) => {
+      queryClient.setQueryData<InfiniteData<InvestDiscoverState>>(queryKey, (current) => current
+        ? {
+            pages: [...current.pages, page],
+            pageParams: [...current.pageParams, nextOffset],
+          }
+        : current);
+      setManualLoadState("idle");
+    }).catch(() => {
+      setManualLoadState("error");
+    }).finally(() => {
+      loadMoreInFlightRef.current = false;
+    });
+  }, [fetchPage, query.isFetching, queryClient, queryKey, visibleState.memePagination.exhausted, visibleState.memePagination.nextOffset]);
+  const loadMoreMemes = useCallback(() => {
+    if (visibleState.memePagination.autoLoadPaused) return;
+    requestNextPage();
+  }, [requestNextPage, visibleState.memePagination.autoLoadPaused]);
+  const retryLoadMoreMemes = useCallback(() => {
+    setManualLoadState("idle");
+    requestNextPage();
+  }, [requestNextPage]);
+  return { ...visibleState, loadMoreMemes, retryLoadMoreMemes };
 }
 
 function parseDiscoverResponse(
@@ -497,18 +395,6 @@ function parseIconMap(value: unknown): Record<string, string | null> | null {
     icons[id] = imageUrl;
   }
   return icons;
-}
-
-function isCurrentLoadMoreRequest(
-  current: LoadMoreRequest | null,
-  expected: LoadMoreRequest,
-  sequence: number,
-): boolean {
-  return (
-    current === expected &&
-    !expected.controller.signal.aborted &&
-    expected.sequence === sequence
-  );
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {

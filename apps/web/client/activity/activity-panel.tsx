@@ -19,7 +19,6 @@ import {
 export function ActivityPanel({
   session,
   fetchActivity,
-  refreshTrigger,
   regionId = "GLOBAL",
   onTransactionHashesChange,
   leading,
@@ -27,7 +26,7 @@ export function ActivityPanel({
   density = "page",
   header,
 }: ActivityPanelProps) {
-  const activity = useActivity(session, fetchActivity, refreshTrigger);
+  const activity = useActivity(session, fetchActivity);
   const [selectedTransfer, setSelectedTransfer] =
     useState<ActivityTransfer | null>(null);
   const [detailsStatus, setDetailsStatus] = useState(activity.status);

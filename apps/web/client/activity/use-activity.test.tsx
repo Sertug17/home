@@ -1,5 +1,6 @@
 import "../account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import type { ActivityPage, ActivityTransfer, FetchActivity } from "./types";
@@ -124,7 +125,10 @@ function HookHarness({
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  getHomeQueryClient().clear();
+});
 
 describe("useActivity pagination", () => {
   test("keeps one fixed window, blocks concurrent loads, and appends deduplicated ordered pages", async () => {
@@ -153,7 +157,9 @@ describe("useActivity pagination", () => {
     fireEvent.click(view.getByText("automatic attempt"));
     fireEvent.click(view.getByText("automatic attempt"));
     expect(queries).toHaveLength(2);
-    expect(view.getByTestId("loading-more").textContent).toBe("true");
+    await waitFor(() =>
+      expect(view.getByTestId("loading-more").textContent).toBe("true"),
+    );
 
     await act(async () => {
       const secondQuery = queries[1]!;

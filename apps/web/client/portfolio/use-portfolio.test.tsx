@@ -1,5 +1,6 @@
 import "../account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import type {
   FetchPortfolio,
@@ -8,7 +9,7 @@ import type {
 } from "@/shared/portfolio/types";
 
 const { act, cleanup, render, waitFor } = await import("@testing-library/react");
-const { usePortfolio } = await import("./use-portfolio");
+const { portfolioOwnerKey, usePortfolio } = await import("./use-portfolio");
 
 const ADDRESS_A = "0x1111111111111111111111111111111111111111";
 const ADDRESS_B = "0x2222222222222222222222222222222222222222";
@@ -65,13 +66,11 @@ function deferred<T>() {
 function PortfolioProbe({
   verifiedSession,
   fetchPortfolio,
-  refreshTrigger,
 }: {
   verifiedSession: VerifiedPortfolioSession | null;
   fetchPortfolio: FetchPortfolio;
-  refreshTrigger?: string | number;
 }) {
-  const state = usePortfolio(verifiedSession, fetchPortfolio, refreshTrigger);
+  const state = usePortfolio(verifiedSession, fetchPortfolio);
   return (
     <div>
       <output data-testid="status">{state.status}</output>
@@ -86,7 +85,10 @@ function PortfolioProbe({
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  getHomeQueryClient().clear();
+});
 
 describe("usePortfolio production hook", () => {
   test("loads a controlled HTTP callback and accepts a real zero snapshot as ready", async () => {
@@ -111,7 +113,7 @@ describe("usePortfolio production hook", () => {
     expect(seenSignals).toHaveLength(1);
   });
 
-  test("reloads the same owner when the optional refresh trigger changes", async () => {
+  test("reloads the same owner after query invalidation", async () => {
     let calls = 0;
     const fetchPortfolio: FetchPortfolio = async () => {
       calls += 1;
@@ -121,18 +123,13 @@ describe("usePortfolio production hook", () => {
       <PortfolioProbe
         verifiedSession={session("subject-a", ADDRESS_A)}
         fetchPortfolio={fetchPortfolio}
-        refreshTrigger={0}
       />,
     );
 
     await waitFor(() => expect(view.getByTestId("usdc").textContent).toBe("1"));
-    view.rerender(
-      <PortfolioProbe
-        verifiedSession={session("subject-a", ADDRESS_A)}
-        fetchPortfolio={fetchPortfolio}
-        refreshTrigger={1}
-      />,
-    );
+    await getHomeQueryClient().invalidateQueries({
+      queryKey: [portfolioOwnerKey(session("subject-a", ADDRESS_A)), "portfolio"],
+    });
 
     await waitFor(() => expect(view.getByTestId("usdc").textContent).toBe("2"));
     expect(calls).toBe(2);
@@ -172,7 +169,7 @@ describe("usePortfolio production hook", () => {
       pendingB.resolve(snapshot(ADDRESS_B));
       await pendingB.promise;
     });
-    expect(view.getByTestId("status").textContent).toBe("ready");
+    await waitFor(() => expect(view.getByTestId("status").textContent).toBe("ready"));
     expect(view.getByTestId("wallet").textContent).toBe(ADDRESS_B);
 
     await act(async () => {

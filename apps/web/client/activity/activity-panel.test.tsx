@@ -1,5 +1,6 @@
 import "../account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import {
@@ -157,6 +158,7 @@ function deferred<T>() {
 
 afterEach(() => {
   cleanup();
+  getHomeQueryClient().clear();
   ControlledIntersectionObserver.instances = [];
   Object.defineProperty(globalThis, "IntersectionObserver", {
     configurable: true,
@@ -314,9 +316,10 @@ describe("ActivityPanel", () => {
       await pendingA.promise;
     });
 
-    fireEvent.click(
+    const detailsButton = await waitFor(() =>
       view.getByRole("button", { name: "View received USDC transaction details" }),
     );
+    fireEvent.click(detailsButton);
     expect(view.getByRole("dialog", { name: "Received USDC" })).toBeTruthy();
 
     view.rerender(
@@ -365,7 +368,7 @@ describe("ActivityPanel", () => {
       pendingB.resolve(pageFor(queries[1]!, WALLET_B, { id: "event-2" }));
       await pendingB.promise;
     });
-    expect(view.getByText("Received")).toBeTruthy();
+    await waitFor(() => expect(view.getByText("Received")).toBeTruthy());
 
     await act(async () => {
       pendingA.resolve(pageFor(queries[0]!, WALLET_A));

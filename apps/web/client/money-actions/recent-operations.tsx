@@ -8,6 +8,8 @@ import { formatPresentationTokenAmount } from "@/shared/formatting";
 import { labelForOperationStatus, presentOperationDetails, primaryOperationAmount } from "./operation-details";
 import type { MoneyActionOperationStatus, PreparedMoneyAction } from "@/shared/money-actions/types";
 import styles from "./recent-operations.module.css";
+import { ownerQueryKey, ownerQueryMeta, useHomeQuery } from "@/client/query/query-client";
+import { activityOwnerKey } from "@/client/activity/use-activity";
 
 export type RecentMoneyActionOperation = {
   action: PreparedMoneyAction;
@@ -23,7 +25,6 @@ export type FetchRecentMoneyActions = (signal?: AbortSignal) => Promise<unknown>
 export function RecentMoneyActions({
   session,
   fetchOperations,
-  refreshTrigger,
   excludeTransactionHashes = [],
   embedded = false,
   showUnavailableNotice = true,
@@ -31,32 +32,29 @@ export function RecentMoneyActions({
 }: {
   session: VerifiedAccountSession | null;
   fetchOperations: FetchRecentMoneyActions;
-  refreshTrigger?: string | number;
   excludeTransactionHashes?: Iterable<string>;
   embedded?: boolean;
   showUnavailableNotice?: boolean;
   onVisibleCountChange?: (count: number) => void;
 }) {
-  const ownerKey = session?.smartAccount ? `${session.user.subject}:${session.smartAccount.address}:${session.accountProvider}` : null;
-  const [state, setState] = useState<{ ownerKey: string; operations: RecentMoneyActionOperation[]; unavailable: boolean } | null>(null);
+  const ownerKey = session?.smartAccount ? activityOwnerKey(session) : null;
   const [selected, setSelected] = useState<RecentMoneyActionOperation | null>(null);
-
-  useEffect(() => {
-    if (!session?.smartAccount || !ownerKey) return;
-    const controller = new AbortController();
-    void fetchOperations(controller.signal).then((value) => {
-      if (!controller.signal.aborted) setState({ ownerKey, operations: parseRecentMoneyActions(value, session), unavailable: false });
-    }).catch(() => {
-      if (!controller.signal.aborted) setState({ ownerKey, operations: [], unavailable: true });
-    });
-    return () => controller.abort();
-  }, [fetchOperations, ownerKey, refreshTrigger, session]);
-
+  const actions = useHomeQuery({
+    queryKey: ownerKey ? ownerQueryKey(ownerKey, "actions") : ["unauthenticated", "actions-disabled"],
+    enabled: ownerKey !== null,
+    staleTime: 10_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    meta: ownerKey ? ownerQueryMeta(ownerKey, "owner") : undefined,
+    queryFn: ({ signal }) => fetchOperations(signal),
+    select: (value) => {
+      if (!session?.smartAccount) throw new Error("Actions are unavailable.");
+      return parseRecentMoneyActions(value, session);
+    },
+  });
   const excluded = new Set(Array.from(excludeTransactionHashes, (hash) => hash.toLowerCase()));
-  const operations = state?.ownerKey === ownerKey
-    ? dedupeRecentMoneyActions(state.operations, excluded)
-    : [];
-  const unavailable = state?.ownerKey === ownerKey && state.unavailable;
+  const operations = dedupeRecentMoneyActions(actions.data ?? [], excluded);
+  const unavailable = actions.isError;
   const visibleCount = operations.length + (unavailable && showUnavailableNotice ? 1 : 0);
   useEffect(() => onVisibleCountChange?.(visibleCount), [onVisibleCountChange, visibleCount]);
   if (operations.length === 0 && (!unavailable || !showUnavailableNotice)) return null;

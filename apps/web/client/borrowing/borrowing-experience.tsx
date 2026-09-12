@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Button, Heading, Text } from "@home/ui";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { CopyableValue } from "@/components/copyable-value";
 import { useAccountWallet } from "@/client/account/cdp-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
@@ -34,6 +34,8 @@ import type {
   BorrowPreviewResponse,
 } from "@/shared/borrowing/types";
 import styles from "./borrowing-experience.module.css";
+import { ownerQueryKey, ownerQueryMeta, useHomeQuery } from "@/client/query/query-client";
+import { activityOwnerKey } from "@/client/activity/use-activity";
 
 type FetchAccountResource = (
   path: string,
@@ -101,46 +103,37 @@ function BorrowExperienceInner({
   const sessionKey = session && owner
     ? `${session.user.subject}:${session.accountProvider}:${owner}`
     : null;
-  const [state, setState] = useState<SnapshotState>(
-    sessionKey ? { status: "loading", snapshot: null } : { status: "idle", snapshot: null },
-  );
+  const dataOwnerKey = session?.smartAccount ? activityOwnerKey(session) : null;
+  const snapshotQuery = useHomeQuery({
+    queryKey: dataOwnerKey ? ownerQueryKey(dataOwnerKey, "borrow") : ["unauthenticated", "borrow-disabled"],
+    enabled: Boolean(sessionKey && fetchAccountResource && owner),
+    staleTime: 15_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    meta: dataOwnerKey ? ownerQueryMeta(dataOwnerKey, "owner") : undefined,
+    queryFn: ({ signal }) => {
+      if (!fetchAccountResource) throw new Error("Borrowing is unavailable.");
+      return fetchAccountResource("/api/borrow", { signal });
+    },
+    select: (value) => {
+      if (!owner) throw new Error("Borrowing is unavailable.");
+      const snapshot = parseSnapshot(value, owner);
+      if (!snapshot) throw new Error("Borrowing response is invalid.");
+      return snapshot;
+    },
+  });
+  const state: SnapshotState = !sessionKey
+    ? { status: "idle", snapshot: null }
+    : snapshotQuery.isPending
+      ? { status: "loading", snapshot: null }
+      : snapshotQuery.isError
+        ? { status: "error", snapshot: null }
+        : { status: "ready", snapshot: snapshotQuery.data };
   const [operation, setOperation] = useState<BorrowOperation>("supply-collateral");
   const [amount, setAmount] = useState("");
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
 
-  const loadSnapshot = useCallback(async (signal?: AbortSignal) => {
-    if (!owner || !fetchAccountResource) return;
-    try {
-      const value = await fetchAccountResource("/api/borrow", { signal });
-      if (signal?.aborted) return;
-      const snapshot = parseSnapshot(value, owner);
-      setState(snapshot ? { status: "ready", snapshot } : { status: "error", snapshot: null });
-    } catch (error) {
-      if (signal?.aborted || isAbortError(error)) return;
-      setState({ status: "error", snapshot: null });
-    }
-  }, [fetchAccountResource, owner]);
-
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    setState({ status: "loading", snapshot: null });
-    await loadSnapshot(signal);
-  }, [loadSnapshot]);
-
-  useEffect(() => {
-    if (!sessionKey || !fetchAccountResource || !owner) return;
-    const controller = new AbortController();
-    void fetchAccountResource("/api/borrow", { signal: controller.signal })
-      .then((value) => {
-        if (controller.signal.aborted) return;
-        const snapshot = parseSnapshot(value, owner);
-        setState(snapshot ? { status: "ready", snapshot } : { status: "error", snapshot: null });
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted || isAbortError(error)) return;
-        setState({ status: "error", snapshot: null });
-      });
-    return () => controller.abort();
-  }, [fetchAccountResource, owner, sessionKey]);
+  const refresh = () => snapshotQuery.refetch();
 
   const snapshot = state.status === "ready" ? state.snapshot : null;
   const actionAsset = operation === "supply-collateral" || operation === "withdraw-collateral"
@@ -451,7 +444,6 @@ function usePersistedPresentationRegion(): RegionId {
 
 function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
-function isAbortError(error: unknown) { return error instanceof DOMException && error.name === "AbortError"; }
 function readableResourceError(error: unknown) {
   if (error instanceof Error && error.message && error.message !== "Authenticated resource is unavailable.") return error.message;
   return "The current limit or RPC simulation could not be verified. Refresh and try again.";

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CopyableValue } from "@/components/copyable-value";
 import { MoneyAmountDisplay, MoneyModalFooter, MoneyNumpad } from "@/client/money-modal";
 import modal from "@/client/money-modal/money-modal.module.css";
 import styles from "./add-money.module.css";
+import { ownerQueryKey, ownerQueryMeta, publicQueryKey, useHomeQuery } from "@/client/query/query-client";
 
 export type FundingBinding = {
   providerId: string;
@@ -47,7 +48,7 @@ type Instruction =
 
 type AccountFetch = (path: string, options?: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal }) => Promise<unknown>;
 
-export function FundingOrderFlow({ binding, fetchAccountResource, onBack, initialOrder }: { binding: FundingBinding; fetchAccountResource: AccountFetch; onBack: () => void; initialOrder?: FundingOrderSummary | null }) {
+export function FundingOrderFlow({ binding, fetchAccountResource, queryOwnerKey, onBack, initialOrder }: { binding: FundingBinding; fetchAccountResource: AccountFetch; queryOwnerKey?: string | null; onBack: () => void; initialOrder?: FundingOrderSummary | null }) {
   const [method, setMethod] = useState(binding.paymentMethods[0]?.id ?? "");
   const [amount, setAmount] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -58,15 +59,30 @@ export function FundingOrderFlow({ binding, fetchAccountResource, onBack, initia
   const [confirmationAttempted, setConfirmationAttempted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!order || terminal(order.state)) return;
-    const timer = window.setInterval(() => {
-      void fetchAccountResource(`/api/funding/orders/${order.id}`).then((value) => {
-        const next = readFundingOrder(value); if (next) setOrder(next);
-      }).catch(() => undefined);
-    }, 4_000);
-    return () => window.clearInterval(timer);
-  }, [fetchAccountResource, order]);
+  const orderQuery = useHomeQuery({
+    queryKey: order
+      ? (queryOwnerKey
+          ? ownerQueryKey(queryOwnerKey, "funding-order", order.id)
+          : publicQueryKey("funding-order-isolated", order.id))
+      : publicQueryKey("funding-order-disabled"),
+    enabled: Boolean(order && !terminal(order.state)),
+    initialData: order ?? undefined,
+    staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchInterval: (query) => {
+      const current = query.state.data as FundingOrderSummary | undefined;
+      return current && !terminal(current.state) ? 4_000 : false;
+    },
+    meta: queryOwnerKey ? ownerQueryMeta(queryOwnerKey, "owner") : undefined,
+    queryFn: async ({ signal }) => {
+      if (!order) throw new Error("Funding order is unavailable.");
+      const next = readFundingOrder(await fetchAccountResource(`/api/funding/orders/${order.id}`, { signal }));
+      if (!next) throw new Error("Funding order response is invalid.");
+      return next;
+    },
+  });
+  const currentOrder = orderQuery.data ?? order;
 
   async function requestQuote() {
     if (busy || draft || !method || !positiveDecimal(amount)) return;
@@ -97,10 +113,10 @@ export function FundingOrderFlow({ binding, fetchAccountResource, onBack, initia
     finally { setBusy(false); }
   }
 
-  if (order?.instructions && order.expectedTokenAmountAtomic && !showInstructions) {
-    return <ProviderEconomicsReview binding={binding} order={order} onContinue={() => setShowInstructions(true)} />;
+  if (currentOrder?.instructions && currentOrder.expectedTokenAmountAtomic && !showInstructions) {
+    return <ProviderEconomicsReview binding={binding} order={currentOrder} onContinue={() => setShowInstructions(true)} />;
   }
-  if (order) return <OrderStatus order={order} onBack={onBack} />;
+  if (currentOrder) return <OrderStatus order={currentOrder} onBack={onBack} />;
   if (draft) return <QuoteReview binding={binding} draft={draft} busy={busy} confirmationAttempted={confirmationAttempted} error={error} onConfirm={() => void confirmOrder()} onBack={() => setDraft(null)} />;
 
   const fieldsComplete = !binding.kyc?.fields?.some((field) => !fields[field.name]?.trim());

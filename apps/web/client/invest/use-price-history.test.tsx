@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { MarketPriceRange } from "@/shared/invest/history-contract";
 
@@ -48,6 +49,7 @@ function HookProbe({
 
 afterEach(() => {
   cleanup();
+  getHomeQueryClient().clear();
   window.fetch = originalFetch;
 });
 

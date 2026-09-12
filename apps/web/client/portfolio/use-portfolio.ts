@@ -1,121 +1,47 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { isVerifiedPortfolioSession, parsePortfolioSnapshot } from "./parse";
+import { ownerQueryKey, ownerQueryMeta, useHomeQuery } from "@/client/query/query-client";
 import type {
   FetchPortfolio,
-  PortfolioSnapshot,
   PortfolioState,
   VerifiedPortfolioSession,
 } from "@/shared/portfolio/types";
 
-type OwnedPortfolioState =
-  | { ownerKey: null; status: "unavailable"; snapshot: null; error: null }
-  | { ownerKey: string; status: "loading"; snapshot: null; error: null }
-  | {
-      ownerKey: string;
-      status: "ready";
-      snapshot: PortfolioSnapshot;
-      error: null;
-    }
-  | {
-      ownerKey: string;
-      status: "error";
-      snapshot: null;
-      error: "portfolio-unavailable";
-    };
+export const portfolioStaleTimeMs = 15_000;
 
-const unavailableState: OwnedPortfolioState = {
-  ownerKey: null,
-  status: "unavailable",
-  snapshot: null,
-  error: null,
-};
+export type PortfolioQuerySession = VerifiedPortfolioSession & { accountProvider?: string };
+
+export function portfolioOwnerKey(session: PortfolioQuerySession): string {
+  const baseOwner = `${session.subject}\u0000${session.smartAccountAddress.toLowerCase()}\u0000${session.chainId}`;
+  return session.accountProvider ? `${baseOwner}\u0000${session.accountProvider}` : baseOwner;
+}
 
 export function usePortfolio(
-  session: VerifiedPortfolioSession | null,
+  session: PortfolioQuerySession | null,
   fetchPortfolio: FetchPortfolio,
-  refreshTrigger?: string | number,
 ): PortfolioState {
-  const sequence = useRef(0);
-  const [state, setState] = useState<OwnedPortfolioState>(unavailableState);
-
   const validSession = isVerifiedPortfolioSession(session) ? session : null;
-  const subject = validSession?.subject ?? null;
-  const smartAccountAddress = validSession?.smartAccountAddress ?? null;
-  const chainId = validSession?.chainId ?? null;
-  const ownerKey = validSession
-    ? `${subject}\u0000${smartAccountAddress?.toLowerCase()}\u0000${chainId}`
-    : null;
+  const ownerKey = validSession ? portfolioOwnerKey(validSession) : null;
+  const query = useHomeQuery({
+    queryKey: ownerKey ? ownerQueryKey(ownerKey, "portfolio") : ["unauthenticated", "portfolio-disabled"],
+    enabled: ownerKey !== null,
+    staleTime: portfolioStaleTimeMs,
+    retry: false,
+    refetchOnWindowFocus: true,
+    meta: ownerKey ? ownerQueryMeta(ownerKey, "owner") : undefined,
+    queryFn: async ({ signal }) => {
+      if (!validSession) throw new Error("Portfolio is unavailable.");
+      return fetchPortfolio(signal);
+    },
+    select: (value) => {
+      if (!validSession) throw new Error("Portfolio is unavailable.");
+      return parsePortfolioSnapshot(value, validSession);
+    },
+  });
 
-  useEffect(() => {
-    const requestSequence = ++sequence.current;
-    if (!subject || !smartAccountAddress || chainId !== 8453 || !ownerKey) {
-      return;
-    }
-
-    const controller = new AbortController();
-    const expectedSession: VerifiedPortfolioSession = {
-      subject,
-      smartAccountAddress,
-      chainId,
-    };
-
-    void fetchPortfolio(controller.signal).then(
-      (payload) => {
-        if (controller.signal.aborted || sequence.current !== requestSequence) {
-          return;
-        }
-        try {
-          const snapshot = parsePortfolioSnapshot(payload, expectedSession);
-          setState({
-            ownerKey,
-            status: "ready",
-            snapshot,
-            error: null,
-          });
-        } catch {
-          setState({
-            ownerKey,
-            status: "error",
-            snapshot: null,
-            error: "portfolio-unavailable",
-          });
-        }
-      },
-      () => {
-        if (controller.signal.aborted || sequence.current !== requestSequence) {
-          return;
-        }
-        setState({
-          ownerKey,
-          status: "error",
-          snapshot: null,
-          error: "portfolio-unavailable",
-        });
-      },
-    );
-
-    return () => controller.abort();
-  }, [
-    chainId,
-    fetchPortfolio,
-    ownerKey,
-    refreshTrigger,
-    smartAccountAddress,
-    subject,
-  ]);
-
-  if (state.ownerKey !== ownerKey) {
-    setState(
-      ownerKey
-        ? { ownerKey, status: "loading", snapshot: null, error: null }
-        : unavailableState,
-    );
-    return ownerKey
-      ? { status: "loading", snapshot: null, error: null }
-      : unavailableState;
-  }
-
-  return state;
+  if (!ownerKey) return { status: "unavailable", snapshot: null, error: null };
+  if (query.isPending) return { status: "loading", snapshot: null, error: null };
+  if (query.isError) return { status: "error", snapshot: null, error: "portfolio-unavailable" };
+  return { status: "ready", snapshot: query.data, error: null };
 }

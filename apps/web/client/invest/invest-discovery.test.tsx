@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { ReactElement } from "react";
 import type { MarketDataState } from "@/shared/invest/invest-market";
@@ -116,6 +117,7 @@ const readyCrypto: MarketDataState = {
 
 afterEach(() => {
   cleanup();
+  getHomeQueryClient().clear();
   window.fetch = originalFetch;
   pushCalls.length = 0;
   replaceCalls.length = 0;

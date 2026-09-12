@@ -1,4 +1,6 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { afterEach } from "bun:test";
+import { getHomeQueryClient } from "@/client/query/query-client";
 
 if (typeof window === "undefined") {
   // Happy DOM models browser fetch responses, so it intentionally drops the
@@ -33,6 +35,15 @@ if (typeof window === "undefined") {
       statusText: `Unit tests cannot reach the network: ${String(input)}`,
     })) as unknown as typeof fetch;
 }
+
+const { cleanup: cleanupDomTests } = await import("@testing-library/react");
+
+afterEach(() => {
+  // Unmount observers before clearing so no active query can repopulate the
+  // shared browser client after a test boundary.
+  cleanupDomTests();
+  getHomeQueryClient().clear();
+});
 
 if (!HTMLDialogElement.prototype.showModal) {
   HTMLDialogElement.prototype.showModal = function showModal() {

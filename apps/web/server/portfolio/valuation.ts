@@ -47,6 +47,7 @@ export type PortfolioValuationReader = (
   account: VerifiedPortfolioAccount,
   region: RegionId,
   signal?: AbortSignal,
+  options?: { fresh?: boolean },
 ) => Promise<PortfolioValuationSnapshot>;
 
 export function createPortfolioValuationReader(dependencies: {
@@ -59,7 +60,7 @@ export function createPortfolioValuationReader(dependencies: {
   const readExchangeRates =
     dependencies.readExchangeRates ?? getCoinbaseExchangeRates;
 
-  return async function readPortfolioValuation(account, region, signal) {
+  return async function readPortfolioValuation(account, region, signal, options) {
     const quoteCurrency = presentationRegions[region].currency.code;
     const priceInputs = getDirectPortfolioAssets()
       .filter(
@@ -73,7 +74,7 @@ export function createPortfolioValuationReader(dependencies: {
       }));
 
     const [inventory, pricesResult, exchangeRatesResult] = await Promise.all([
-      readInventory(account, quoteCurrency, signal),
+      readInventory(account, quoteCurrency, signal, options),
       readPrices(priceInputs).catch(() => unavailablePrices(priceInputs)),
       readExchangeRates().catch(() => unavailableExchangeRates()),
     ]);

@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   MARKET_PRICE_DISPLAY_FRESHNESS_MS,
@@ -89,7 +90,10 @@ function HookProbe({
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  getHomeQueryClient().clear();
+});
 
 describe("useMarketPrices", () => {
   test("loads the public snapshot without auth and preserves a stable market props object", async () => {

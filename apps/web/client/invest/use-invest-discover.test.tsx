@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { UseInvestDiscoverOptions } from "./use-invest-discover";
 
@@ -127,7 +128,10 @@ function HookProbe({ options }: { options: UseInvestDiscoverOptions }) {
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  getHomeQueryClient().clear();
+});
 
 describe("useInvestDiscover", () => {
   test("normalizes configured and supported meme images from one discover response", async () => {
@@ -592,8 +596,7 @@ describe("useInvestDiscover pagination", () => {
     expect(page().getByTestId("auto-load-paused").textContent).toBe("yes");
   });
 
-  test("a late background refresh cannot overwrite appended rows", async () => {
-    const releaseRefresh: Array<() => void> = [];
+  test("does not refetch public discovery on visibility changes", async () => {
     let pageZeroCalls = 0;
     render(
       <HookProbe
@@ -603,12 +606,6 @@ describe("useInvestDiscover pagination", () => {
             const url = String(input);
             if (!url.includes("offset=")) {
               pageZeroCalls += 1;
-              if (pageZeroCalls > 1) {
-                // A background visibility refresh stays in-flight.
-                await new Promise<void>((resolve) => {
-                  releaseRefresh.push(resolve);
-                });
-              }
               return discoverResponse(
                 [degenAsset],
                 { nextOffset: 24, exhausted: false },
@@ -627,21 +624,16 @@ describe("useInvestDiscover pagination", () => {
       expect(page().getByTestId("meme-status").textContent).toBe("ready"),
     );
 
-    // Start a background visibility refresh and wait until it is in-flight.
     document.dispatchEvent(new Event("visibilitychange"));
-    await waitFor(() => expect(releaseRefresh.length).toBe(1));
+    await Promise.resolve();
+    expect(pageZeroCalls).toBe(1);
 
-    // Start pagination while that refresh is still in-flight.
     fireEvent.click(page().getByRole("button", { name: "load-more" }));
     await waitFor(() =>
       expect(page().getByTestId("meme-names").textContent).toBe(
         "Degen,Higher",
       ),
     );
-
-    // Let the stale refresh resolve; it must not clobber the appended rows.
-    releaseRefresh.forEach((resolve) => resolve());
-    expect(page().getByTestId("meme-names").textContent).toBe("Degen,Higher");
     expect(page().getByTestId("exhausted").textContent).toBe("yes");
   });
 });

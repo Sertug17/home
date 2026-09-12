@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 import { renderToString } from "react-dom/server";
 import type { Root } from "react-dom/client";
 import type { AccountWalletClient } from "@/client/account/cdp-client";
+import { getHomeQueryClient } from "@/client/query/query-client";
 
 const replaceCalls: string[] = [];
 mock.module("next/navigation", () => ({
@@ -64,6 +65,7 @@ async function unmount(root: Root, container: HTMLElement) {
 
 afterEach(() => {
   replaceCalls.length = 0;
+  getHomeQueryClient().clear();
   document.body.innerHTML = "";
   document.body.style.overflow = "";
 });

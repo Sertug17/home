@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { publicQueryKey, useHomeQuery } from "@/client/query/query-client";
 import { investAssets } from "@/config/invest-assets";
 import {
   presentationRegions,
@@ -60,66 +61,35 @@ export function useMarketPrices({
   freshnessMs = MARKET_PRICE_DISPLAY_FRESHNESS_MS,
   refreshCooldownMs = VISIBILITY_REFRESH_COOLDOWN_MS,
 }: UseMarketPricesOptions = {}): PricedInvestMarketProps {
-  const [marketResponse, setMarketResponse] = useState<MarketPricesResponse>(() =>
-    createClientMarketResponse({ status: "loading" }),
-  );
-  const requestController = useRef<AbortController | null>(null);
-  const lastRequestAt = useRef(Number.NEGATIVE_INFINITY);
-
-  const refresh = useCallback(async () => {
-    const requestTime = now();
-    if (requestTime - lastRequestAt.current < refreshCooldownMs) return;
-    lastRequestAt.current = requestTime;
-    requestController.current?.abort();
-    const controller = new AbortController();
-    requestController.current = controller;
-
-    try {
+  const [, setAgeRevision] = useState(0);
+  const marketQuery = useHomeQuery({
+    queryKey: publicQueryKey("market-prices", endpoint),
+    staleTime: refreshCooldownMs,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async ({ signal }) => {
       const response = await fetchImpl(endpoint, {
         headers: { accept: "application/json" },
         cache: "no-store",
-        signal: controller.signal,
+        signal,
       });
       const payload = parseMarketPricesResponse(await response.json());
       if (!payload) throw new Error("Invalid market price response");
-      setMarketResponse(ageMarketPricesResponse(payload, now(), freshnessMs));
-    } catch {
-      if (controller.signal.aborted) return;
-      setMarketResponse(
-        createClientMarketResponse({
-          status: "error",
-          message: "Current market prices are unavailable.",
-        }),
-      );
-    }
-  }, [endpoint, fetchImpl, freshnessMs, now, refreshCooldownMs]);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => void refresh(), 0);
-    return () => {
-      window.clearTimeout(timeout);
-      requestController.current?.abort();
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") void refresh();
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [refresh]);
+      return payload;
+    },
+  });
+  const marketResponse = marketQuery.data
+    ? ageMarketPricesResponse(marketQuery.data, now(), freshnessMs)
+    : createClientMarketResponse({
+        status: marketQuery.isError ? "error" : "loading",
+        ...(marketQuery.isError ? { message: "Current market prices are unavailable." } : {}),
+      });
 
   useEffect(() => {
     const nextExpiry = findNextExpiry(marketResponse, freshnessMs);
     if (nextExpiry === null) return;
-
     const delay = Math.max(0, nextExpiry - now() + 1);
-    const timeout = window.setTimeout(() => {
-      setMarketResponse((current) =>
-        ageMarketPricesResponse(current, now(), freshnessMs),
-      );
-    }, delay);
+    const timeout = window.setTimeout(() => setAgeRevision((value) => value + 1), delay);
     return () => window.clearTimeout(timeout);
   }, [freshnessMs, marketResponse, now]);
 

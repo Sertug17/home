@@ -1,6 +1,8 @@
 import "@/client/account/dom-test-harness";
 
 import { afterEach, describe, expect, jest, test } from "bun:test";
+import { activityOwnerKey } from "@/client/activity/use-activity";
+import { getHomeQueryClient } from "@/client/query/query-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import type { PreparedMoneyAction } from "@/shared/money-actions/types";
 import type { MorphoVaultCandidate, MorphoVaultsResult } from "@/shared/savings/types";
@@ -154,6 +156,7 @@ afterEach(() => {
   jest.useRealTimers();
   globalThis.fetch = originalFetch;
   cleanup();
+  getHomeQueryClient().clear();
 });
 
 describe("Save simplify", () => {
@@ -445,6 +448,7 @@ describe("Save simplify", () => {
     });
     expect(await page().findByText("Nothing saved yet")).toBeTruthy();
     cleanup();
+    getHomeQueryClient().clear();
 
     const pendingMetadata = deferred<Response>();
     globalThis.fetch = (() => pendingMetadata.promise) as unknown as typeof fetch;
@@ -577,6 +581,7 @@ describe("Save simplify", () => {
     expect(page().getByText("APY partially unavailable")).toBeTruthy();
     expect(page().queryByText(/Earning ~/)).toBeNull();
     missing.unmount();
+    getHomeQueryClient().clear();
 
     render(
       <SavingsExperience
@@ -653,6 +658,9 @@ describe("Save simplify", () => {
         fetchPositions={() => pending.promise}
       />,
     );
+    void getHomeQueryClient().invalidateQueries({
+      queryKey: [activityOwnerKey(session(ADDRESS_A)), "savings-positions"],
+    });
     expect(await page().findByText("Refreshing…")).toBeTruthy();
     expect(page().getAllByText("$99.00").length).toBeGreaterThan(0);
 
@@ -688,6 +696,9 @@ describe("Save simplify", () => {
         fetchPositions={() => pending.promise}
       />,
     );
+    void getHomeQueryClient().invalidateQueries({
+      queryKey: [activityOwnerKey(session(ADDRESS_A)), "savings-positions"],
+    });
     await page().findByText("Refreshing…");
     const malformed = positions(ADDRESS_A, { [GAUNTLET]: "100000000" });
     malformed.vaults[1] = {
@@ -728,6 +739,9 @@ describe("Save simplify", () => {
         fetchPositions={() => pending.promise}
       />,
     );
+    void getHomeQueryClient().invalidateQueries({
+      queryKey: [activityOwnerKey(session(ADDRESS_A)), "savings-positions"],
+    });
     await page().findByText("Refreshing…");
     const malformed = positions(ADDRESS_A);
     malformed.vaults = malformed.vaults.slice(0, 2);
