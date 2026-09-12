@@ -165,7 +165,7 @@ describe("presentPortfolioValuation", () => {
       error: null,
     });
 
-    expect(presented.displayTotal).toBe("R$ 0,00");
+    expect(presented.displayTotal).toBe("R$ 0,00");
     expect(presented.totalStatus).toBe("complete");
     expect(presented.statusLabel).toBeUndefined();
     expect(presented.items.map((item) => item.name)).toEqual([
@@ -173,8 +173,8 @@ describe("presentPortfolioValuation", () => {
       "Brazilian real",
     ]);
     expect(presented.items.map((item) => item.displayBalance)).toEqual([
-      "$0.00",
-      "R$ 0,00",
+      "$ 0,00",
+      "R$ 0,00",
     ]);
     expect(presented.items.every((item) => item.group === "cash")).toBe(true);
     const serialized = JSON.stringify(presented);
@@ -234,7 +234,7 @@ describe("presentPortfolioValuation", () => {
     });
 
     expect(partial).toMatchObject({
-      displayTotal: "R$ 12,50",
+      displayTotal: "R$ 12,50",
       totalStatus: "partial",
       statusLabel: "Unavailable",
     });
@@ -305,8 +305,8 @@ describe("presentPortfolioValuation", () => {
     });
 
     expect(presented.items.map((item) => item.displayBalance)).toEqual([
-      "2,500.00 IDRX",
-      "0.00 IDRX",
+      "2.500,00 IDRX",
+      "0,00 IDRX",
       "—",
       "—",
     ]);
@@ -385,7 +385,7 @@ describe("presentPortfolioValuation", () => {
         group: "asset",
         name: "Ethereum",
         detail: "ETH",
-        displayBalance: "0.0500 ETH",
+        displayBalance: "0,0500 ETH",
         currencyCode: null,
       },
     ]);
@@ -427,7 +427,7 @@ describe("presentPortfolioValuation", () => {
     });
 
     expect(presented.items.find((item) => item.group === "asset")).toMatchObject({
-      displayBalance: "0.0500 ETH",
+      displayBalance: "0,0500 ETH",
     });
     expect(presented.items.find((item) => item.group === "asset")?.displayContext).toBeUndefined();
   });
@@ -517,8 +517,8 @@ describe("presentPortfolioValuation", () => {
       group: "asset",
       name: "Ethereum",
       detail: "ETH",
-      displayBalance: "Rp 78,123,456.00",
-      displayContext: "1.1010 ETH",
+      displayBalance: "Rp78.123.456,00",
+      displayContext: "1,1010 ETH",
       currencyCode: null,
     });
     expect(JSON.stringify(presented.items.find((item) => item.group === "asset"))).not.toContain(
@@ -580,7 +580,7 @@ describe("presentPortfolioValuation", () => {
     });
 
     expect(wrap.items.find((item) => item.group === "asset")).toMatchObject({
-      displayBalance: "1.1010 ETH",
+      displayBalance: "1,1010 ETH",
     });
     expect(JSON.stringify(wrap.items)).not.toContain("1.101012331497033445");
     expect(dust.items.find((item) => item.group === "asset")).toEqual({
@@ -761,14 +761,14 @@ describe("presentPortfolioValuation", () => {
       error: null,
     });
 
-    expect(presented.displayTotal).toBe("Rp 17,690.40");
+    expect(presented.displayTotal).toBe("Rp17.690,40");
     expect(presented.items.find((item) => item.name === "Euro")).toEqual({
       id: `asset:${verifiedLocalCashAssets.EUR.assetKey}`,
       assetKey: verifiedLocalCashAssets.EUR.assetKey,
       group: "asset",
       name: "Euro",
       detail: "EURC",
-      displayBalance: "€1.08",
+      displayBalance: "€1,08",
       currencyCode: "EUR",
     });
     expect(JSON.stringify(presented.items.find((item) => item.name === "Euro"))).not.toContain(
@@ -819,10 +819,10 @@ describe("presentPortfolioValuation", () => {
     });
 
     expect(legacy.items.find((item) => item.name === "Euro")?.displayBalance).toBe(
-      "109.43 EURC",
+      "109,43 EURC",
     );
     expect(unavailable.items.find((item) => item.name === "Euro")?.displayBalance).toBe(
-      "109.43 EURC",
+      "109,43 EURC",
     );
   });
 
@@ -860,7 +860,7 @@ describe("presentPortfolioValuation", () => {
     });
 
     expect(presented.items.find((item) => item.name === "Euro")?.displayBalance).toBe(
-      "<€0.01",
+      "<€ 0,01",
     );
   });
 
@@ -1000,15 +1000,15 @@ describe("presentPortfolioValuation", () => {
     expect(
       presented.items.map((item) => [item.group, item.name, item.displayBalance]),
     ).toEqual([
-      ["cash", "US dollar", "$10.00"],
-      ["cash", "Indonesian rupiah", "Rp 2,500.00"],
-      ["asset", "Ethereum", "Rp 78,123,456.00"],
+      ["cash", "US dollar", "$10,00"],
+      ["cash", "Indonesian rupiah", "Rp2.500,00"],
+      ["asset", "Ethereum", "Rp78.123.456,00"],
     ]);
     expect(presented.items.find((item) => item.name === "US dollar")?.displayBalance).not.toContain(
       "Rp",
     );
     expect(presented.items.find((item) => item.group === "asset")?.displayContext).toBe(
-      "1.1010 ETH",
+      "1,1010 ETH",
     );
   });
 

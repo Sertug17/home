@@ -1,4 +1,5 @@
 import { formatPresentationTokenAmount } from "@/shared/formatting";
+import type { RegionId } from "@/config/regions";
 import type {
   CashBucket,
   DirectPortfolioHolding,
@@ -78,7 +79,12 @@ export function presentPortfolioValuation(
     status: "ready",
     displayTotal:
       snapshot.total.value && snapshot.total.currency
-        ? formatPresentationFiat(snapshot.total.value, snapshot.total.currency)
+        ? formatPresentationFiat(
+            snapshot.total.value,
+            snapshot.total.currency,
+            2,
+            snapshot.selectedRegion,
+          )
         : "—",
     totalStatus:
       totalPartial
@@ -95,7 +101,11 @@ export function presentPortfolioValuation(
           : undefined,
     items: [
       ...snapshot.cashBuckets.map((bucket) =>
-        presentCashBucket(bucket, snapshot.nativeCashValuations),
+        presentCashBucket(
+          bucket,
+          snapshot.nativeCashValuations,
+          snapshot.selectedRegion,
+        ),
       ),
       ...presentAssetRows(snapshot),
     ],
@@ -106,6 +116,7 @@ export function presentPortfolioValuation(
 function presentCashBucket(
   bucket: CashBucket,
   nativeCashValuations: readonly NativeCashValuation[] | undefined,
+  regionId: RegionId,
 ): HomeAssetBalanceItem {
   const name = presentationCurrencyName(bucket.denominationCurrency);
   if (bucket.valuationStatus === "unsupported") {
@@ -117,6 +128,8 @@ function presentCashBucket(
       displayBalance: formatPresentationFiat(
         { atoms: "0", scale: 2 },
         bucket.denominationCurrency,
+        2,
+        regionId,
       ),
       currencyCode: bucket.denominationCurrency,
     };
@@ -156,12 +169,14 @@ function presentCashBucket(
       displayBalance: formatPresentationFiat(
         indicativeValue,
         bucket.denominationCurrency,
+        2,
+        regionId,
       ),
       currencyCode: bucket.denominationCurrency,
     };
   }
 
-  const tokenAmount = unpricedCashTokenAmount(bucket, valuationStatus);
+  const tokenAmount = unpricedCashTokenAmount(bucket, valuationStatus, regionId);
   return {
     id: bucket.id,
     assetKey: bucket.assetKey ?? bucket.id,
@@ -176,6 +191,7 @@ function presentCashBucket(
 function unpricedCashTokenAmount(
   bucket: CashBucket,
   valuationStatus: CashBucket["valuationStatus"] | NativeCashValuation["status"],
+  regionId: RegionId,
 ): string | null {
   if (
     valuationStatus !== "unpriced" ||
@@ -190,10 +206,10 @@ function unpricedCashTokenAmount(
   }
 
   return formatPresentationTokenAmount(
-    bucket.tokenAmountBaseUnits,
+    BigInt(bucket.tokenAmountBaseUnits),
     bucket.tokenDecimals,
     bucket.symbol,
-    { cashCurrency: bucket.denominationCurrency },
+    { cashCurrency: bucket.denominationCurrency, regionId },
   );
 }
 
@@ -229,12 +245,13 @@ function presentDirectAssetRow(
   holding: DirectPortfolioHolding & { balanceBaseUnits: string },
 ): HomeAssetBalanceItem {
   const nativeLabel = formatPresentationTokenAmount(
-    holding.balanceBaseUnits,
+    BigInt(holding.balanceBaseUnits),
     holding.decimals,
     holding.symbol,
     {
       cashCurrency: holding.cashCurrency,
       category: holding.assetKind === "native" ? "crypto" : undefined,
+      regionId: snapshot.selectedRegion,
     },
   );
   const nativeCashValuation = snapshot.nativeCashValuations?.find(
@@ -246,6 +263,8 @@ function presentDirectAssetRow(
         ? formatPresentationFiat(
             nativeCashValuation.value,
             nativeCashValuation.denominationCurrency,
+            2,
+            snapshot.selectedRegion,
           )
         : null;
     return {
@@ -262,6 +281,7 @@ function presentDirectAssetRow(
   const pricedFiat = pricedDisplayFiat(
     snapshot.lines.find((line) => line.holdingAssetKey === holding.assetKey),
     holding,
+    snapshot.selectedRegion,
   );
 
   return {
@@ -314,10 +334,11 @@ function selectedCashAssetKeys(snapshot: PortfolioValuationSnapshot): Set<string
 function pricedDisplayFiat(
   line: ValuationLine | undefined,
   holding: DirectPortfolioHolding,
+  regionId: RegionId,
 ): string | null {
   if (line?.status !== "priced" || !line.value) return null;
   if (line.value.atoms === "0" && holding.balanceBaseUnits !== "0") {
     return null;
   }
-  return formatPresentationFiat(line.value, line.valueCurrency);
+  return formatPresentationFiat(line.value, line.valueCurrency, 2, regionId);
 }

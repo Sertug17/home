@@ -1,106 +1,85 @@
-import { presentationRegions } from "@/config/regions";
+import type { RegionId } from "@/config/regions";
+import {
+  formatDecimalAmount,
+  formatFiatAmount,
+  presentationCurrencyMetadata,
+} from "@/shared/formatting/money";
 import type { ExactDecimal } from "@/shared/portfolio/valuation-types";
 
-const integerPattern = /^(?:0|[1-9]\d*)$/;
-const prefixSymbols = new Set(["$", "£", "€", "₺", "₦"]);
-const decimalCommaCurrencies = new Set(["BRL"]);
+const integerPattern = /^-?(?:0|[1-9]\d*)$/;
 
 export function formatFiatValue(
   value: ExactDecimal,
   currency: string,
   fractionDigits = 2,
+  regionId: RegionId = "GLOBAL",
 ): string {
+  const atoms = parseExactDecimal(value, fractionDigits);
+  return `${currency} ${formatDecimalAmount(atoms, value.scale, {
+    fractionDigits,
+    regionId,
+  })}`;
+}
+
+export function presentationCurrencyName(code: string): string {
+  return presentationCurrencyMetadata(code).name;
+}
+
+export function presentationCurrencySymbol(code: string): string {
+  return presentationCurrencyMetadata(code).symbol;
+}
+
+/** Presentation-only fiat value using the selected region's locale. */
+export function formatPresentationFiat(
+  value: ExactDecimal,
+  currency: string,
+  fractionDigits = 2,
+  regionId?: RegionId,
+): string {
+  const atoms = parseExactDecimal(value, fractionDigits);
+  return formatFiatAmount(atoms, value.scale, currency, {
+    fractionDigits,
+    regionId,
+  });
+}
+
+/**
+ * Attaches the configured currency presentation to an already-rounded canonical
+ * amount (`4,812.40`, `<0.01`). Kept for callers that already own rounding.
+ */
+export function formatMoneyLabel(
+  amount: string,
+  currency: string,
+  regionId?: RegionId,
+): string {
+  const negative = amount.startsWith("-") || amount.startsWith("−");
+  const unsigned = negative ? amount.slice(1) : amount;
+  const tiny = unsigned.startsWith("<");
+  const canonical = (tiny ? unsigned.slice(1) : unsigned).replace(/,/g, "");
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(canonical);
+  if (!match) throw new TypeError("The money label is invalid.");
+  const fraction = match[2] ?? "";
+  const atoms = BigInt(`${match[1]}${fraction}`);
+  const signedAtoms = negative ? -atoms : atoms;
+  const formatted = formatFiatAmount(signedAtoms, fraction.length, currency, {
+    fractionDigits: fraction.length,
+    markTiny: false,
+    regionId,
+  });
+  if (!tiny) return formatted;
+  return negative ? `−<${formatted.slice(1)}` : `<${formatted}`;
+}
+
+function parseExactDecimal(value: ExactDecimal, fractionDigits: number): bigint {
   if (
     !integerPattern.test(value.atoms) ||
     !Number.isSafeInteger(value.scale) ||
     value.scale < 0 ||
     !Number.isSafeInteger(fractionDigits) ||
     fractionDigits < 0 ||
-    fractionDigits > 6
+    fractionDigits > 20
   ) {
     throw new TypeError("The fiat value is invalid.");
   }
-  const atoms = BigInt(value.atoms);
-  const rounded = roundAtoms(atoms, value.scale, fractionDigits);
-  if (atoms > BigInt(0) && rounded === BigInt(0)) {
-    const threshold =
-      fractionDigits === 0 ? "1" : `0.${"0".repeat(fractionDigits - 1)}1`;
-    return `${currency} <${threshold}`;
-  }
-  const divisor = BigInt(10) ** BigInt(fractionDigits);
-  const whole = rounded / divisor;
-  const fraction = (rounded % divisor).toString().padStart(fractionDigits, "0");
-  const grouped = groupDigits(whole.toString(10));
-  return `${currency} ${grouped}${fractionDigits > 0 ? `.${fraction}` : ""}`;
-}
-
-function roundAtoms(atoms: bigint, scale: number, targetScale: number): bigint {
-  if (scale <= targetScale) return atoms * BigInt(10) ** BigInt(targetScale - scale);
-  const divisor = BigInt(10) ** BigInt(scale - targetScale);
-  const quotient = atoms / divisor;
-  const remainder = atoms % divisor;
-  const doubled = remainder * BigInt(2);
-  return doubled > divisor || (doubled === divisor && quotient % BigInt(2) === BigInt(1))
-    ? quotient + BigInt(1)
-    : quotient;
-}
-
-export function presentationCurrencyName(code: string): string {
-  for (const region of Object.values(presentationRegions)) {
-    if (region.currency.code === code) return region.currency.name;
-  }
-  return code;
-}
-
-export function presentationCurrencySymbol(code: string): string {
-  for (const region of Object.values(presentationRegions)) {
-    if (region.currency.code === code && region.currency.symbol) {
-      return region.currency.symbol;
-    }
-  }
-  return code;
-}
-
-/**
- * Presentation-only money label. Rounding stays in `formatFiatValue`;
- * this swaps ISO codes for everyday symbols (and Brazilian decimal commas).
- */
-export function formatPresentationFiat(
-  value: ExactDecimal,
-  currency: string,
-  fractionDigits = 2,
-): string {
-  const labeled = formatFiatValue(value, currency, fractionDigits);
-  return formatMoneyLabel(labeled.slice(currency.length).trim(), currency);
-}
-
-/**
- * Attaches the everyday currency symbol to an already-rounded amount string
- * (`4,812.40`, `<0.01`). Used by both portfolio fiat and Invest prices.
- */
-export function formatMoneyLabel(amount: string, currency: string): string {
-  const localized = decimalCommaCurrencies.has(currency)
-    ? localizeDecimalComma(amount)
-    : amount;
-  const symbol = presentationCurrencySymbol(currency);
-  if (localized.startsWith("<")) {
-    return prefixSymbols.has(symbol)
-      ? `<${symbol}${localized.slice(1)}`
-      : `${symbol} ${localized}`;
-  }
-  return prefixSymbols.has(symbol) ? `${symbol}${localized}` : `${symbol} ${localized}`;
-}
-
-function localizeDecimalComma(amount: string): string {
-  if (amount.startsWith("<")) {
-    return amount.replace(".", ",");
-  }
-  const [whole = "0", fraction] = amount.split(".");
-  return fraction === undefined
-    ? whole.replace(/,/g, ".")
-    : `${whole.replace(/,/g, ".")},${fraction}`;
-}
-
-function groupDigits(value: string): string {
-  return value.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return BigInt(value.atoms);
 }
