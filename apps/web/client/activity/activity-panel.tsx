@@ -121,11 +121,6 @@ export function ActivityPanel({
     >
       {heading}
       {leading}
-      {page.recordedOperations === "unavailable" ? (
-        <p className={styles.secondaryNotice} role="status">
-          Pending Home actions are temporarily unavailable. Onchain activity is still shown.
-        </p>
-      ) : null}
       {isEmpty ? (
         suppressEmpty ? null : <p className={styles.empty}>No activity yet</p>
       ) : (
@@ -234,20 +229,19 @@ function ActivityPagination({
           No additional activity was found on that page. Continue to check older activity.
         </p>
       ) : null}
-      <button
-        className={styles.loadMoreButton}
-        type="button"
-        onClick={failed || autoLoadPaused ? continueManually : loadMore}
-        disabled={loading}
-      >
-        {loading
-          ? "Loading…"
-          : failed
+      {loading ? null : (
+        <button
+          className={styles.loadMoreButton}
+          type="button"
+          onClick={failed || autoLoadPaused ? continueManually : loadMore}
+        >
+          {failed
             ? "Retry more activity"
             : autoLoadPaused
               ? "Continue loading activity"
               : "Load more activity"}
-      </button>
+        </button>
+      )}
       <div
         key={nextCursor}
         ref={sentinelRef}

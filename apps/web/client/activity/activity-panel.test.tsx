@@ -222,7 +222,7 @@ describe("ActivityPanel", () => {
     expect(secondQuery.get("to")).toBe(firstQuery.get("to"));
     expect(secondQuery.get("cursor")).toBe("cursor-1");
     expect(view.queryByText(/Updated /)).toBeNull();
-    expect(view.getByText(/Pending Home actions are temporarily unavailable/)).toBeTruthy();
+    expect(view.queryByText(/Pending Home actions are temporarily unavailable/)).toBeNull();
     expect(initialExecutionTimestamp).not.toBe("");
   });
 

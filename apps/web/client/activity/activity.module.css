@@ -76,12 +76,6 @@
   font-size: 0.84rem;
 }
 
-.secondaryNotice {
-  margin: 14px 0 0;
-  color: var(--home-muted);
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
 
 .error {
   display: grid;
@@ -110,10 +104,6 @@
   min-height: 42px;
 }
 
-.loadMoreButton:disabled {
-  cursor: wait;
-  opacity: 0.58;
-}
 
 .loadingMore {
   display: flex;
