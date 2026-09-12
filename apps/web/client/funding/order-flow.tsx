@@ -4,6 +4,14 @@ import { useState } from "react";
 import { Stack } from "@home/ui";
 import { CopyableValue } from "@/components/copyable-value";
 import { atomicToDecimal } from "@/shared/formatting/atomic";
+
+function displayAtomic(atomic: string, decimals: number): string {
+  try {
+    return atomicToDecimal(atomic, decimals);
+  } catch {
+    return "—";
+  }
+}
 import { MoneyAmountDisplay, MoneyModalFooter, MoneyNumpad } from "@/client/money-modal";
 import modal from "@/client/money-modal/money-modal.module.css";
 import styles from "./add-money.module.css";
@@ -140,11 +148,11 @@ export function FundingOrderFlow({ binding, fetchAccountResource, queryOwnerKey,
 }
 
 function QuoteReview({ binding, draft, busy, confirmationAttempted, error, onConfirm, onBack }: { binding: FundingBinding; draft: QuoteDraft; busy: boolean; confirmationAttempted: boolean; error: string | null; onConfirm: () => void; onBack: () => void }) {
-  return <><Stack className={`${modal.body} ${styles.statusStack}`} space="2"><h3>Review quote</h3><p>Deposit: {draft.quote.fiatAmount} {binding.currency}</p><p>Receive: {atomicToDecimal(draft.quote.tokenAmountAtomic, binding.assetDecimals)} {binding.assetSymbol}</p>{draft.quote.fees.length ? <section aria-label="Fees"><h4>Fees</h4>{draft.quote.fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : draft.quote.feesKnown ? <p>Fees: None</p> : <p>Fees: Not yet available</p>}<p>Expires: {new Date(draft.quote.expiresAt).toLocaleString()}</p>{error ? <p className={modal.error} role="alert">{error}</p> : null}</Stack><MoneyModalFooter primaryLabel={busy ? "Confirming same order…" : "Confirm deposit"} primaryDisabled={busy} onPrimary={onConfirm} secondaryLabel="Back" secondaryDisabled={confirmationAttempted} onSecondary={onBack} /></>;
+  return <><Stack className={`${modal.body} ${styles.statusStack}`} space="2"><h3>Review quote</h3><p>Deposit: {draft.quote.fiatAmount} {binding.currency}</p><p>Receive: {displayAtomic(draft.quote.tokenAmountAtomic, binding.assetDecimals)} {binding.assetSymbol}</p>{draft.quote.fees.length ? <section aria-label="Fees"><h4>Fees</h4>{draft.quote.fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : draft.quote.feesKnown ? <p>Fees: None</p> : <p>Fees: Not yet available</p>}<p>Expires: {new Date(draft.quote.expiresAt).toLocaleString()}</p>{error ? <p className={modal.error} role="alert">{error}</p> : null}</Stack><MoneyModalFooter primaryLabel={busy ? "Confirming same order…" : "Confirm deposit"} primaryDisabled={busy} onPrimary={onConfirm} secondaryLabel="Back" secondaryDisabled={confirmationAttempted} onSecondary={onBack} /></>;
 }
 function ProviderEconomicsReview({ binding, order, onContinue }: { binding: FundingBinding; order: FundingOrderSummary; onContinue: () => void }) {
   const fees = order.fees ?? [];
-  return <><Stack className={`${modal.body} ${styles.statusStack}`} space="2"><h3>Review payment details</h3><p>Receive: {atomicToDecimal(order.expectedTokenAmountAtomic!, binding.assetDecimals)} {binding.assetSymbol}</p>{fees.length ? <section aria-label="Provider fees"><h4>Fees</h4>{fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : <p>Fees: None</p>}</Stack><MoneyModalFooter primaryLabel="View payment instructions" onPrimary={onContinue} /></>;
+  return <><Stack className={`${modal.body} ${styles.statusStack}`} space="2"><h3>Review payment details</h3><p>Receive: {displayAtomic(order.expectedTokenAmountAtomic!, binding.assetDecimals)} {binding.assetSymbol}</p>{fees.length ? <section aria-label="Provider fees"><h4>Fees</h4>{fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : <p>Fees: None</p>}</Stack><MoneyModalFooter primaryLabel="View payment instructions" onPrimary={onContinue} /></>;
 }
 function OrderStatus({ order, onBack }: { order: FundingOrderSummary; onBack: () => void }) {
   const copy = stateCopy(order.state);

@@ -86,9 +86,11 @@ export function useActivity(
         windowEnd,
       );
       if (ownerKey && pageParam) {
-        const requested = requestedCursorsRef.current.get(ownerKey) ?? new Set<string>();
+        // Cursors are deterministic per window; a new window restarts the set.
+        const cursorScope = `${ownerKey}\u0000${windowEnd}`;
+        const requested = requestedCursorsRef.current.get(cursorScope) ?? new Set<string>();
         requested.add(pageParam);
-        requestedCursorsRef.current.set(ownerKey, requested);
+        requestedCursorsRef.current.set(cursorScope, requested);
         if (page.nextCursor && requested.has(page.nextCursor)) {
           throw new Error("Activity cursor did not advance.");
         }

@@ -14,24 +14,23 @@ export const afterActionScopes = [
   "actions",
 ] as const;
 
+/** Indexer-backed scopes: refreshed again once balances have visibly moved. */
+export const indexedScopes = ["activity", "savings-positions", "borrow", "actions"] as const;
+
 export const activityWindowScope = "activity-window";
 const activityWindowQuantumMs = 60_000;
 
 export function initialActivityWindowEnd(now = Date.now()): string {
-  return new Date(Math.ceil(now / activityWindowQuantumMs) * activityWindowQuantumMs).toISOString();
+  return new Date(Math.floor(now / activityWindowQuantumMs) * activityWindowQuantumMs).toISOString();
 }
 
-export function ensureActivityWindowEnd(
-  queryClient: QueryClient,
+export async function invalidateIndexedScopes(
+  queryClient: Pick<QueryClient, "invalidateQueries">,
   dataOwnerKey: string,
-  now = Date.now(),
-): string {
-  const key = ownerQueryKey(dataOwnerKey, activityWindowScope);
-  const existing = queryClient.getQueryData<string>(key);
-  if (existing) return existing;
-  const initial = initialActivityWindowEnd(now);
-  queryClient.setQueryData(key, initial);
-  return initial;
+): Promise<void> {
+  await Promise.all(indexedScopes.map((scope) =>
+    queryClient.invalidateQueries({ queryKey: ownerQueryKey(dataOwnerKey, scope) })
+  ));
 }
 
 export function advanceActivityWindowEnd(
@@ -44,7 +43,7 @@ export function advanceActivityWindowEnd(
   const previousTime = previous ? Date.parse(previous) : Number.NaN;
   const nextTime = Number.isFinite(previousTime)
     ? Math.max(now, previousTime + 1)
-    : Math.ceil(now / activityWindowQuantumMs) * activityWindowQuantumMs;
+    : Math.floor(now / activityWindowQuantumMs) * activityWindowQuantumMs;
   const next = new Date(nextTime).toISOString();
   queryClient.setQueryData(key, next);
   return next;
@@ -147,11 +146,26 @@ export async function startBalanceFreshness(input: {
   });
   state.runs.get(actionId)?.();
   state.runs.set(actionId, run.cancel);
-  void run.result.then((result) => {
-    if (result === "moved") state.moved.add(actionId);
-  }).finally(() => {
-    if (state.runs.get(actionId) === run.cancel) state.runs.delete(actionId);
-  });
+  void run.result
+    .then((result) => settleBalanceFreshness({ queryClient, dataOwnerKey, state, actionId, result }))
+    .finally(() => {
+      if (state.runs.get(actionId) === run.cancel) state.runs.delete(actionId);
+    });
+}
+
+/**
+ * Indexers (activity, Morpho positions) lag the chain; refresh them once the
+ * balances have visibly moved (or the run timed out), not only at hash-post time.
+ */
+export async function settleBalanceFreshness(input: {
+  queryClient: Pick<QueryClient, "invalidateQueries">;
+  dataOwnerKey: string;
+  state: BalanceFreshnessState;
+  actionId: string;
+  result: "moved" | "timed-out";
+}): Promise<void> {
+  if (input.result === "moved") input.state.moved.add(input.actionId);
+  await invalidateIndexedScopes(input.queryClient, input.dataOwnerKey);
 }
 
 export async function applyActionHandleEffects(input: {

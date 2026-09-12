@@ -187,7 +187,12 @@ export function restoreOwnerQueries(
     if (persisted) persister?.removeClient();
     return false;
   }
-  hydrate(queryClient, persisted.clientState);
+  // Defense in depth: hydrate only this owner's queries even if the blob was tampered with.
+  const state = persisted.clientState;
+  hydrate(queryClient, {
+    ...state,
+    queries: state.queries.filter((query) => query.queryKey[0] === ownerKey),
+  });
   return true;
 }
 

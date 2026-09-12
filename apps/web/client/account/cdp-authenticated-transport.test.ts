@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
   afterActionScopes,
   applyActionHandleEffects,
+  createBalanceFreshnessState,
+  indexedScopes,
+  settleBalanceFreshness,
   initialActivityWindowEnd,
 } from "@/client/query/after-action";
 
@@ -65,5 +68,21 @@ describe("authenticated action handle effects", () => {
     expect(fixture.client.getQueryData([ownerKey, "activity-window"]))
       .not.toBe(initialWindow);
     expect(freshness).toEqual([actionId]);
+  });
+  test("a settled freshness run refreshes the indexer-backed scopes again", async () => {
+    const fixture = queryClientFixture();
+    const state = createBalanceFreshnessState();
+
+    await settleBalanceFreshness({
+      queryClient: fixture.client as never,
+      dataOwnerKey: ownerKey,
+      state,
+      actionId,
+      result: "moved",
+    });
+
+    expect(state.moved.has(actionId)).toBe(true);
+    expect(fixture.invalidations).toEqual(indexedScopes.map((scope) => [ownerKey, scope]));
+    expect(fixture.invalidations.some(([, scope]) => scope === "valuation")).toBe(false);
   });
 });
