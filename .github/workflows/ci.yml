@@ -41,6 +41,9 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
+      - name: Audit design-system adoption
+        run: bun run ds:audit
+
       - name: Check
         run: bun check
 

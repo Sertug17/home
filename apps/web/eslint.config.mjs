@@ -17,6 +17,53 @@ const sharedForbiddenPattern = String.raw`^(?:(?:react|react-dom|next)(?:\/|$)|n
 
 const nodeBuiltins = "assert|async_hooks|buffer|child_process|cluster|crypto|dgram|dns|events|fs|http|http2|https|module|net|os|path|perf_hooks|process|querystring|readline|stream|string_decoder|timers|tls|tty|url|util|v8|vm|worker_threads|zlib".split("|").flatMap((name) => [name, `${name}/*`]);
 
+// Baseline allowlists contain today's production violators. Entries only shrink
+// as files adopt @home/ui; do not add new files to make a lint failure pass.
+const rawButtonAllowlist = [
+  "client/activity/activity-panel.tsx",
+  "client/funding/add-money-dialog.tsx",
+  "client/funding/funding-actions.tsx",
+  "client/funding/order-flow.tsx",
+  "client/home/home-panel.tsx",
+  "client/home/shell-chrome.tsx",
+  "client/home/shell-panels.tsx",
+  "client/invest/asset-detail-screen.tsx",
+  "client/invest/category-screen.tsx",
+  "client/invest/discover-asset-row.tsx",
+  "client/invest/discover-shelf.tsx",
+  "client/invest/price-chart.tsx",
+  "client/landing/supported-globe.tsx",
+  "client/money-actions/review.tsx",
+  "client/money-modal/amount.tsx",
+  "client/money-modal/money-modal.tsx",
+  "client/savings/savings-experience.tsx",
+  "client/trading/trade-actions.tsx",
+  "client/transfers/transfer-actions.tsx",
+  "components/address-field.tsx",
+  "components/copyable-value.tsx",
+  "components/finance-rows.tsx",
+  "components/home-mark.tsx",
+  "components/primary-navigation.tsx",
+  "components/profile-mark.tsx",
+];
+
+const rawHeadingAllowlist = [
+  "client/activity/activity-panel.tsx",
+  "client/funding/add-money-dialog.tsx",
+  "client/funding/order-flow.tsx",
+  "client/home/home-panel.tsx",
+  "client/home/shell-chrome.tsx",
+  "client/invest/asset-detail-screen.tsx",
+  "client/invest/category-screen.tsx",
+  "client/invest/discover-shelf.tsx",
+  "client/invest/invest-hub.tsx",
+  "client/money-actions/recent-operations.tsx",
+  "client/money-actions/review.tsx",
+  "client/money-modal/money-modal.tsx",
+  "client/savings/savings-experience.tsx",
+  "client/trading/trade-actions.tsx",
+];
+
 function restrictedDynamicImports(pattern, message) {
   return [
     {
@@ -238,6 +285,93 @@ const eslintConfig = defineConfig([
       "no-restricted-syntax": [
         "error",
         ...restrictedDynamicImports(serverForbiddenPattern, serverLayerMessage),
+      ],
+    },
+  },
+  // These final client/component blocks preserve the import-boundary syntax
+  // checks while applying the two allowlists independently.
+  {
+    files: [
+      "client/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+      "components/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+    ],
+    ignores: ["**/*.test.{ts,tsx}", "**/tests/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...restrictedDynamicImports(clientForbiddenPattern, clientLayerMessage),
+      ],
+    },
+  },
+  {
+    files: [
+      "client/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+      "components/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+    ],
+    ignores: [...rawButtonAllowlist, "**/*.test.{ts,tsx}", "**/tests/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...restrictedDynamicImports(clientForbiddenPattern, clientLayerMessage),
+        {
+          selector: "JSXOpeningElement[name.name='button']",
+          message: "Use Button or IconButton from @home/ui. The raw-button allowlist only shrinks.",
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "client/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+      "components/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+    ],
+    ignores: [...rawHeadingAllowlist, "**/*.test.{ts,tsx}", "**/tests/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...restrictedDynamicImports(clientForbiddenPattern, clientLayerMessage),
+        {
+          selector: "JSXOpeningElement[name.name=/^h[1-4]$/]",
+          message: "Use Heading from @home/ui. The raw-heading allowlist only shrinks.",
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "client/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+      "components/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+    ],
+    ignores: [...new Set([...rawButtonAllowlist, ...rawHeadingAllowlist]), "**/*.test.{ts,tsx}", "**/tests/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...restrictedDynamicImports(clientForbiddenPattern, clientLayerMessage),
+        {
+          selector: "JSXOpeningElement[name.name='button']",
+          message: "Use Button or IconButton from @home/ui. The raw-button allowlist only shrinks.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name=/^h[1-4]$/]",
+          message: "Use Heading from @home/ui. The raw-heading allowlist only shrinks.",
+        },
+      ],
+    },
+  },
+  {
+    files: ["app/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
+    ignores: ["**/*.test.{ts,tsx}", "**/tests/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXOpeningElement[name.name='button']",
+          message: "Use Button or IconButton from @home/ui. The raw-button allowlist only shrinks.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name=/^h[1-4]$/]",
+          message: "Use Heading from @home/ui. The raw-heading allowlist only shrinks.",
+        },
       ],
     },
   },
