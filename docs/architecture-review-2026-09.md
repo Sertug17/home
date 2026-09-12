@@ -43,17 +43,9 @@ Historical example: the retired per-action claim route exported `createClaimMone
 
 There is **no** `apps/web/lib/`. Cross-cutting auth is `apps/web/server/cdp/` plus `apps/web/server/money-actions/session.ts`.
 
-### 2. Injectable `MoneyActionStore`
+### 2. Thin action persistence
 
-> **Superseded by `docs/home-is-thin.md`.** The ledger/store contract below is historical.
-
-- Interface: `apps/web/server/money-actions/store.ts` (`issue`, `claim`, `get`, `list`, `recordSubmission`, `updateStatus`).
-- Test implementation: `MemoryMoneyActionStore` in the same file.
-- Runtime selection: `apps/web/server/money-actions/runtime-store.ts` constructs `PostgresMoneyActionStore` directly when `DATABASE_URL` and the verified-empty cutover assertion are present; otherwise it fails closed.
-- Test override: `setMoneyActionStoreForTests`.
-- Both adapters implement this interface without changing feature plan contracts (`docs/wallet-runtime-spike.md`). Never dual-write.
-
-Any new store method must land in **Memory + Postgres** in the same PR, with the shared `store-contract.ts` updated.
+> **Superseded by `docs/home-is-thin.md`.** The injectable store, runtime-store selection, Memory/Postgres parity contract, and atomic-claim machinery described in the September 8 review were deleted. Home now keeps only the thin `actions` and `user_settings` tables and derives execution status from provider handles and verified receipts.
 
 ### 3. Server-issued plans; client never authors calldata
 
@@ -170,18 +162,18 @@ Priority: **P0** = money-safety or “#2 will do the wrong thing in week 1.” *
 | ID | Priority | Problem | Why it hurts a 2-person team | Fix size | Owner lane |
 |---|---|---|---|---|---|
 | R1 | P0 | ~~Technical design / product scope presented as live architecture.~~ **Addressed in docs:** target design is [target-architecture.md](target-architecture.md); the 2026-09-07 plan is [archived](archive/implementation-plan-2026-09-07.md); old paths are stubs. Residual risk is someone ignoring the current-tree path. | Engineer #2 scaffolds `packages/*` or Neon mid-feature if they skip [docs/README.md](README.md). | S (done) | eng |
-| R2 | P0 | Default persistence is a single-node SQLite file + **in-process** sensitive swap calldata (`SqliteMoneyActionStore` / `MemoryMoneyActionStore` `sensitiveActions` map). Unique indexes on raw submission columns were **dropped**; only `verified_execution_key` is unique. | Two instances (or a premature Vercel deploy) split-brain claims. A second engineer adding “just Postgres” beside SQLite can double-dispatch. | L (Postgres adapter + cutover) / S (write the “do not deploy money actions multi-instance” rule) | eng |
-| R3 | P0 | Shared money-action kernel is small and load-bearing: `store.ts`, `sqlite-store.node.ts`, `issue.ts`, `handlers.ts`, `status-transitions.js`, the retired per-action claim route. Claim route always injects `validateTradeBeforeClaim`. | Two people editing claim/disposition/status in the same week can ship a second dispatch or block every feature. | S (ownership rule) | eng / TPM |
+| R2 | P0 | **Superseded:** the SQLite/Memory operation stores and cutover model were deleted. Current persistence risks and accepted failure modes are in `docs/home-is-thin.md`. | Historical only. | — | eng |
+| R3 | P0 | **Superseded:** the claim/disposition/status kernel and its routes were deleted. The load-bearing boundary is now server-authored calldata plus the owner-generation fence. | Historical only. | — | eng / TPM |
 | R4 | P1 | `parseAuthorizedSession` (or equivalent) is copied in portfolio, valuation, activity, funding, trading, morpho positions, plus a stricter `readAuthorizedMoneyActionSession`. | One loosened copy becomes an auth bypass; easy to miss in review. | M | eng |
 | R5 | P1 | No import-boundary enforcement. `eslint.config.mjs` is default Next only. Features already import `@/server/*` (types, Morpho config constants, Codex public contract). | A `"use client"` file that imports `server/cdp/provider` or a SQL client pulls secrets into the browser. No CI guard. | S–M | eng |
 | R6 | P1 | `cdp-client.tsx` (~2202 lines) and `home-experience.tsx` (~839 lines) are merge magnets. Almost every finance UI change touches one of them. | Parallel PRs conflict; reviews become “did we regress sign-out / claim / refresh?” | M | eng |
 | R7 | P1 | Vault addresses live in both `config/portfolio-assets.ts` (`portfolioVaults`) and `server/morpho/config.ts` (`MORPHO_V1_CANDIDATE_ADDRESSES`). Same three addresses today; no cross-file assertion. | Two people add a vault in one file only → valuation and savings disagree. | S | eng |
 | R8 | P1 | CI is `bun check` only. Playwright auth (7 mocked Chromium scenarios) and `scripts/probe-money-actions-sqlite.mjs` are manual. Memory-store tests can pass while SQLite races regress. | #2 will trust green CI as “money-action safe.” It is not the full local gate described in build-status. | S | eng |
 | R9 | P1 | `GET /api/transfer-receipt` requires auth but does **not** bind `hash`/`sender` to the session owner (`server/transfers/handler.ts`). Any signed-in user can probe an arbitrary tx. | Inconsistent with every other private route; a “small receipt helper” can become an enumeration API. | S | eng |
-| R10 | P1 | Trade intent store (`server/trading/sqlite-intent-store.node.ts`) is a **second** SQLite database, independent of money actions. Finalize reserves `actionId` then claim re-validates. | Engineer A changes finalize binding; engineer B changes claim validator → stranded swaps or skipped pre-claim checks. | M | eng |
+| R10 | P1 | **Superseded:** the trading intent store, preclaim, and intent-finalize machinery were deleted. The retained Permit2 signature verification is documented in `docs/home-is-thin.md`. | Historical only. | — | eng |
 | R11 | P1 | No `CONTRIBUTING`, no `SECURITY`, no documented feature-lane map. README says “design feedback and focused PRs are welcome” but not how to pick a slice. | #2 will start in a hotspot or add a generic `/api/actions/prepare`. | S | TPM / eng |
-| R12 | P2 | Status `included` exists in types and `status-transitions.js` but HTTP handlers never write it; receipt jumps toward `confirmed`. | Two people “completing” lifecycle semantics will fight the UI (`recent-operations.tsx`). | S | eng |
-| R13 | P2 | Pre-claim freshness exists for swaps only. Send/save/borrow are pinned at prepare (TTL 5–30 min). | Two tabs can claim a stale-but-unexpired plan. Safer than double-dispatch; still surprising in review. | M | eng |
+| R12 | P2 | **Superseded:** persisted operation status transitions were deleted; thin action status is derived at read time. | Historical only. | — | eng |
+| R13 | P2 | **Superseded:** atomic claim and pre-claim freshness semantics were deleted; current prepare/confirm expiry behavior is in `docs/home-is-thin.md`. | Historical only. | — | eng |
 | R14 | P2 | Funding is a hosted onramp session, not a money action. No webhook handler. | Easy to invent a second operation ledger for “pending add money.” | M | eng |
 | R15 | P2 | Activity is transfer-direction labels; Home operations are a separate list. Coverage is incomplete by design. | Pressure to “just show Morpho deposits in Activity” will double-count or mislabel. | S | design / eng |
 | R16 | P2 | Target stack (Neon, Drizzle, webhooks, CDP SQL as history source of record, `packages/*`) is still the right *production* destination — but it is a later cutover, not parallel scaffolding. | Building unused packages now creates two sources of truth. | L | eng / TPM |
