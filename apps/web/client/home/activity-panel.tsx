@@ -1,12 +1,18 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import {
   ActivityPanel,
   type ActivityPanelDensity,
   type FetchActivity,
 } from "@/client/activity";
-import { RecentMoneyActions } from "@/client/money-actions";
+import { activityOwnerKey, useActivity } from "@/client/activity/use-activity";
+import {
+  RecentMoneyActions,
+  dedupeRecentMoneyActions,
+  parseRecentMoneyActions,
+} from "@/client/money-actions";
+import { ownerQueryKey, ownerQueryMeta, useHomeQuery } from "@/client/query/query-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import type { RegionId } from "@/config/regions";
 import { ShimmerRows } from "./panel-shared";
@@ -64,24 +70,36 @@ export function ConnectedActivityPanel({
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
   regionId: RegionId;
 }) {
-  const [indexedTransactionHashes, setIndexedTransactionHashes] = useState<string[]>([]);
-  const [localActionCount, setLocalActionCount] = useState(0);
-  const updateIndexedTransactionHashes = useCallback((hashes: string[]) => {
-    setIndexedTransactionHashes((current) =>
-      current.length === hashes.length &&
-      current.every((hash, index) => hash === hashes[index])
-        ? current
-        : hashes,
-    );
-  }, []);
+  const ownerKey = activitySession?.smartAccount ? activityOwnerKey(activitySession) : null;
+  const activity = useActivity(activitySession, fetchActivity);
+  const actions = useHomeQuery({
+    queryKey: ownerKey
+      ? ownerQueryKey(ownerKey, "actions")
+      : ["unauthenticated", "actions-disabled"],
+    enabled: ownerKey !== null,
+    staleTime: 10_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    meta: ownerKey ? ownerQueryMeta(ownerKey, "owner") : undefined,
+    queryFn: ({ signal }) => fetchOperations(signal),
+    select: (value) => activitySession?.smartAccount
+      ? parseRecentMoneyActions(value, activitySession)
+      : [],
+  });
+  const indexedTransactionHashes = useMemo(() => activity.status === "ready"
+    ? new Set(activity.page.transfers.map((transfer) => transfer.transactionHash.toLowerCase()))
+    : new Set<string>(), [activity]);
+  const visibleActions = useMemo(() => dedupeRecentMoneyActions(
+    actions.data ?? [],
+    indexedTransactionHashes,
+  ), [actions.data, indexedTransactionHashes]);
 
   return (
     <ActivityPanel
       session={activitySession}
       fetchActivity={fetchActivity}
       regionId={regionId}
-      onTransactionHashesChange={updateIndexedTransactionHashes}
-      suppressEmpty={localActionCount > 0}
+      suppressEmpty={visibleActions.length > 0}
       density={density}
       header={header}
       leading={
@@ -91,7 +109,6 @@ export function ConnectedActivityPanel({
           excludeTransactionHashes={indexedTransactionHashes}
           embedded
           showUnavailableNotice={false}
-          onVisibleCountChange={setLocalActionCount}
         />
       }
     />

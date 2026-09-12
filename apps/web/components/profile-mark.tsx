@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { publicQueryKey, useHomeQuery } from "@/client/query/query-client";
 import {
   fetchBasenameProfile,
   profileGlyph,
@@ -45,29 +46,29 @@ function ProfileMarkButton({
   disabled?: boolean;
   onClick?: () => void;
 }) {
-  const [basename, setBasename] = useState<string | null>(null);
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [photoStatus, setPhotoStatus] = useState<"loading" | "ready" | "failed">(
-    status === "ready" && address ? "loading" : "ready",
-  );
-
-  useEffect(() => {
-    if (status !== "ready" || !address) return;
-    const controller = new AbortController();
-    void fetchBasenameProfile(address, fetch, controller.signal).then(
-      (profile) => {
-        if (controller.signal.aborted) return;
-        setBasename(profile?.name ?? null);
-        setPhotoUrl(profile?.avatarUrl ?? null);
-        setPhotoStatus(profile?.avatarUrl ? "loading" : "ready");
-      },
-    );
-    return () => controller.abort();
-  }, [address, status]);
+  const profile = useHomeQuery({
+    queryKey: address
+      ? publicQueryKey("basename", address.toLowerCase())
+      : publicQueryKey("basename", "disabled"),
+    enabled: status === "ready" && Boolean(address),
+    staleTime: 5 * 60_000,
+    retry: false,
+    queryFn: ({ signal }) => fetchBasenameProfile(address, fetch, signal),
+  });
+  const basename = profile.data?.name ?? null;
+  const photoUrl = profile.data?.avatarUrl ?? null;
+  const [photoState, setPhotoState] = useState<{
+    url: string | null;
+    status: "ready" | "failed";
+  }>({ url: null, status: "ready" });
+  const photoStatus = photoState.url === photoUrl
+    ? photoState.status
+    : photoUrl ? "loading" : "ready";
 
   const glyph = profileGlyph({ basename, ownerKey, address });
-  const showShimmer =
-    status === "loading" || Boolean(photoUrl && photoStatus === "loading");
+  const showShimmer = status === "loading" ||
+    (status === "ready" && Boolean(address) && profile.isPending) ||
+    Boolean(photoUrl && photoStatus === "loading");
   const showPhoto = Boolean(photoUrl && photoStatus !== "failed");
 
   return (
@@ -95,8 +96,8 @@ function ProfileMarkButton({
             alt=""
             draggable={false}
             hidden={photoStatus !== "ready"}
-            onLoad={() => setPhotoStatus("ready")}
-            onError={() => setPhotoStatus("failed")}
+            onLoad={() => setPhotoState({ url: photoUrl, status: "ready" })}
+            onError={() => setPhotoState({ url: photoUrl, status: "failed" })}
           />
         ) : null}
         {!showShimmer && !(showPhoto && photoStatus === "ready") ? (

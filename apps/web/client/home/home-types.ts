@@ -25,7 +25,6 @@ export type HomeExperienceProps = {
   initialSendFlow?: boolean;
   initialSendActionId?: string | null;
   applyInboundUrlIntent?: boolean;
-  onTransferConfirmed?: () => void;
   selectedRegionId?: RegionId;
   onRegionChange?: (region: RegionId) => void;
 };

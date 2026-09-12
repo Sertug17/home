@@ -96,17 +96,19 @@ function deferred<T>() {
 function HookHarness({
   owner,
   fetchActivity,
+  testId = "",
 }: {
   owner: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
+  testId?: string;
 }) {
   const activity = useActivity(owner, fetchActivity);
   return (
     <div>
-      <output data-testid="status">{activity.status}</output>
+      <output data-testid={`${testId}status`}>{activity.status}</output>
       {activity.status === "ready" ? (
         <>
-          <output data-testid="ids">
+          <output data-testid={`${testId}ids`}>
             {activity.page.transfers.map((item) => item.logId).join(",")}
           </output>
           <output data-testid="cursor">{activity.page.nextCursor ?? "end"}</output>
@@ -130,6 +132,25 @@ afterEach(() => {
 });
 
 describe("useActivity pagination", () => {
+  test("two hooks for one owner share one activity query", async () => {
+    const queries: string[] = [];
+    const fetchActivity: FetchActivity = async (query) => {
+      queries.push(query);
+      return page(query, WALLET_A, [], null);
+    };
+    const activeSession = session("subject-a", WALLET_A);
+    const view = render(
+      <>
+        <HookHarness owner={activeSession} fetchActivity={fetchActivity} testId="first-" />
+        <HookHarness owner={activeSession} fetchActivity={fetchActivity} testId="second-" />
+      </>,
+    );
+
+    await waitFor(() => expect(view.getByTestId("first-status").textContent).toBe("ready"));
+    expect(view.getByTestId("second-status").textContent).toBe("ready");
+    expect(queries).toHaveLength(1);
+  });
+
   test("keeps one fixed window, blocks concurrent loads, and appends deduplicated ordered pages", async () => {
     const pendingSecond = deferred<unknown>();
     const queries: string[] = [];

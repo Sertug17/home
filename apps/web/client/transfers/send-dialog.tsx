@@ -43,7 +43,7 @@ export function SendDialog({
   resumeActionId = null,
   onReview,
   onInvalidResume,
-  onTransferConfirmed,
+  onConfirmed,
   onClose,
   onClosed,
 }: {
@@ -58,7 +58,7 @@ export function SendDialog({
   immediate?: boolean;
   onReview?: (actionId: string) => void;
   onInvalidResume?: () => void;
-  onTransferConfirmed?: (transfer: ConfirmedTransfer) => void;
+  onConfirmed?: (transfer: ConfirmedTransfer) => void;
   onClose: () => void;
   onClosed?: () => void;
 }) {
@@ -137,7 +137,7 @@ export function SendDialog({
     try {
       const result = await executeMoneyAction(action);
       if (result.status === "confirmed" && result.transactionHash) {
-        onTransferConfirmed?.({ ...request, transactionHash: result.transactionHash });
+        onConfirmed?.({ ...request, transactionHash: result.transactionHash });
       }
       reset();
       onClose();

@@ -10,7 +10,7 @@ import type { PreparedMoneyAction } from "@/shared/money-actions/types";
 import type { MorphoVaultCandidate, MorphoVaultsResult } from "@/shared/savings/types";
 import { BASE_USDC_ADDRESS, MORPHO_V1_CANDIDATE_ADDRESSES } from "@/shared/savings/config";
 
-const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { act, cleanup, fireEvent, render } = await import("@testing-library/react");
 const { SavingsExperience } = await import("./savings-experience");
 
 const ADDRESS_A = "0x1111111111111111111111111111111111111111";
@@ -178,7 +178,7 @@ describe("Save simplify", () => {
     ]);
   });
 
-  test("refreshes positions and APY metadata after a confirmed savings action", async () => {
+  test("leaves post-action refresh to the shared query invalidation path", async () => {
     let positionReads = 0;
     let metadataReads = 0;
     render(
@@ -205,11 +205,13 @@ describe("Save simplify", () => {
     fireEvent.click(page().getByRole("button", { name: "1" }));
     fireEvent.click(page().getByRole("button", { name: "Continue" }));
     fireEvent.click(await page().findByRole("button", { name: "Deposit $1.00" }));
-
-    await waitFor(() => {
-      expect(positionReads).toBe(2);
-      expect(metadataReads).toBe(1);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
+
+    expect(positionReads).toBe(1);
+    expect(metadataReads).toBe(0);
   });
 
   test("funded hero sums vault card balances and opens Withdraw MoneyModal", async () => {

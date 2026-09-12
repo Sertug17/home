@@ -1,53 +1,69 @@
 import { describe, expect, test } from "bun:test";
-import { applyActionHandleEffects } from "./cdp-authenticated-transport";
+import {
+  afterActionScopes,
+  applyActionHandleEffects,
+  initialActivityWindowEnd,
+} from "@/client/query/after-action";
 
 const actionId = "11111111-1111-4111-8111-111111111111";
 const path = `/api/actions/${actionId}/handle`;
 const ownerKey = "subject\u00000x1111111111111111111111111111111111111111\u00008453\u0000cdp-embedded";
 
+function queryClientFixture() {
+  const data = new Map<string, unknown>();
+  const invalidations: unknown[][] = [];
+  return {
+    invalidations,
+    client: {
+      getQueryData: (queryKey: readonly unknown[]) => data.get(JSON.stringify(queryKey)),
+      setQueryData: (queryKey: readonly unknown[], value: unknown) => {
+        data.set(JSON.stringify(queryKey), value);
+        return value;
+      },
+      invalidateQueries: async ({ queryKey }: { queryKey?: readonly unknown[] }) => {
+        invalidations.push([...(queryKey ?? [])]);
+      },
+    },
+  };
+}
+
 describe("authenticated action handle effects", () => {
-  test("starts balance freshness when the provider handle is recorded", () => {
-    const invalidations: unknown[][] = [];
+  test("starts balance freshness when the provider handle is recorded", async () => {
+    const fixture = queryClientFixture();
     const freshness: string[] = [];
 
-    applyActionHandleEffects({
+    await applyActionHandleEffects({
       path,
       body: { providerHandle: `0x${"ab".repeat(32)}` },
       dataOwnerKey: ownerKey,
-      queryClient: {
-        invalidateQueries: async ({ queryKey }: { queryKey?: readonly unknown[] }) => {
-          invalidations.push([...(queryKey ?? [])]);
-        },
-      } as never,
+      queryClient: fixture.client as never,
       startBalanceFreshness: (id) => { freshness.push(id); },
     });
 
     expect(freshness).toEqual([actionId]);
-    expect(invalidations).toEqual([[ownerKey, "actions"]]);
+    expect(fixture.invalidations).toEqual([[ownerKey, "actions"]]);
   });
 
-  test("transaction hash recording invalidates action, activity, savings, and borrow queries", () => {
-    const invalidations: unknown[][] = [];
+  test("one transaction hash post advances Activity and invalidates all six scopes once", async () => {
+    const fixture = queryClientFixture();
     const freshness: string[] = [];
+    const initialWindow = initialActivityWindowEnd(Date.parse("2026-09-12T12:00:00.000Z"));
+    fixture.client.setQueryData([ownerKey, "activity-window"], initialWindow);
 
-    applyActionHandleEffects({
+    await applyActionHandleEffects({
       path,
       body: { transactionHash: `0x${"cd".repeat(32)}` },
       dataOwnerKey: ownerKey,
-      queryClient: {
-        invalidateQueries: async ({ queryKey }: { queryKey?: readonly unknown[] }) => {
-          invalidations.push([...(queryKey ?? [])]);
-        },
-      } as never,
+      queryClient: fixture.client as never,
       startBalanceFreshness: (id) => { freshness.push(id); },
     });
 
-    expect(invalidations).toEqual([
-      [ownerKey, "actions"],
-      [ownerKey, "activity"],
-      [ownerKey, "savings-positions"],
-      [ownerKey, "borrow"],
-    ]);
+    expect(fixture.invalidations).toEqual(
+      afterActionScopes.map((scope) => [ownerKey, scope]),
+    );
+    expect(new Set(fixture.invalidations.map((key) => key.join("\u0000"))).size).toBe(6);
+    expect(fixture.client.getQueryData([ownerKey, "activity-window"]))
+      .not.toBe(initialWindow);
     expect(freshness).toEqual([actionId]);
   });
 });

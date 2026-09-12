@@ -32,7 +32,6 @@ const mountedServerSnapshot = () => false;
 export type TransferActionsProps = {
   initialOpen?: boolean;
   initialActionId?: string | null;
-  onTransferConfirmed?: (transfer: ConfirmedTransfer) => void;
   availableByAsset?: Partial<Record<"usdc" | "eth", string>>;
 };
 
@@ -55,7 +54,6 @@ export function TransferActionsForWallet({
   wallet,
   initialOpen = false,
   initialActionId = null,
-  onTransferConfirmed,
   availableByAsset,
 }: TransferActionsProps & { wallet: TransferWallet }) {
   const [sendOpen, setSendOpen] = useState(false);
@@ -160,9 +158,8 @@ export function TransferActionsForWallet({
               resumeActionId={initialActionId}
               onReview={showReview}
               onInvalidResume={showFirstStep}
-              onTransferConfirmed={(transfer) => {
+              onConfirmed={(transfer) => {
                 setSuccess({ transfer, owner: boundary });
-                onTransferConfirmed?.(transfer);
               }}
               onClose={close}
               onClosed={finishClose}

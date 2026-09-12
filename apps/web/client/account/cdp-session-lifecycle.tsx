@@ -7,6 +7,7 @@ import { validateAccountSession, type SessionFetch, type VerifiedAccountSession 
 import { BASE_CHAIN_ID, type AccountProvider, type AccountProviderRequest } from "@/shared/account/session-types";
 import {
   clearOwnerQueryBoundary,
+  clearOwnerQueryMemory,
   OwnerQueryPersistence,
   browserHomeQueryClient,
   useHomeQueryClient,
@@ -21,9 +22,9 @@ export type OwnerGenerationIdentity = number;
 export type OwnerGenerationFence = {
   currentOwnerKeyRef: MutableRefObject<string | null>;
   generationRef: MutableRefObject<number>;
-  advance: () => number;
+  advance: (preserveOwnerKey?: string | null) => number;
   invalidateAuthorization: () => void;
-  updateAuthorizationBoundary: (boundary: string | null) => void;
+  updateAuthorizationBoundary: (boundary: string | null, persistedOwnerKey: string | null) => void;
   updateOwnerKey: (ownerKey: string | null) => void;
   capture: (...ignored: unknown[]) => number;
   isCurrent: (identity: number) => boolean;
@@ -33,21 +34,27 @@ export type OwnerGenerationFence = {
 
 function useOwnerGenerationFence(
   ownerKey: string | null,
-  onAdvance: () => void,
+  onAdvance: (preserveOwnerKey?: string | null) => void,
 ): OwnerGenerationFence {
   const currentOwnerKeyRef = useRef(ownerKey);
   const generationRef = useRef(0);
   const boundaryRef = useRef<string | null>(null);
-  const advance = useCallback(() => {
+  const advance = useCallback((preserveOwnerKey?: string | null) => {
     generationRef.current += 1;
-    onAdvance();
+    onAdvance(preserveOwnerKey);
     return generationRef.current;
   }, [onAdvance]);
-  const updateAuthorizationBoundary = useCallback((boundary: string | null) => {
+  const updateAuthorizationBoundary = useCallback((
+    boundary: string | null,
+    persistedOwnerKey: string | null,
+  ) => {
     if (boundaryRef.current !== boundary) {
+      const preserveVerifiedOwner = boundaryRef.current === null && boundary !== null
+        ? persistedOwnerKey
+        : undefined;
       boundaryRef.current = boundary;
       generationRef.current += 1;
-      onAdvance();
+      onAdvance(preserveVerifiedOwner);
     }
   }, [onAdvance]);
   const updateOwnerKey = useCallback((next: string | null) => { currentOwnerKeyRef.current = next; }, []);
@@ -108,11 +115,16 @@ export function AccountWalletSessionOwner({
   } = sdk;
   const queryClient = useHomeQueryClient(browserHomeQueryClient());
   const ownerBoundaryResetRef = useRef<() => void>(() => {});
-  const clearQueryBoundary = useCallback(() => {
+  const clearQueryBoundary = useCallback((preserveOwnerKey?: string | null) => {
     ownerBoundaryResetRef.current();
+    if (preserveOwnerKey === null) {
+      clearOwnerQueryMemory(queryClient);
+      return;
+    }
     clearOwnerQueryBoundary(
       queryClient,
       typeof window === "undefined" ? undefined : window.localStorage,
+      preserveOwnerKey,
     );
   }, [queryClient]);
   const fence = useOwnerGenerationFence(ownerKey, clearQueryBoundary);
@@ -128,7 +140,7 @@ export function AccountWalletSessionOwner({
   useLayoutEffect(() => {
     fence.updateOwnerKey(ownerKey);
     if (previousOwner.current !== ownerKey) {
-      fence.advance();
+      fence.advance(previousOwner.current === null && ownerKey !== null ? null : undefined);
       validationRef.current?.abort();
       setSession(null);
       setStatus(ownerKey ? "validating" : "signed-out");
@@ -253,7 +265,7 @@ export function AccountWalletSessionOwner({
 
   const beginSignIn = useCallback((provider: AccountProvider) => {
     if (cleanupRef.current) throw new Error("Sign-out is still finishing.");
-    fence.updateAuthorizationBoundary(null);
+    fence.updateAuthorizationBoundary(null, null);
     const generation = fence.advance();
     clearPrivate();
     providerRef.current = provider;
@@ -344,7 +356,9 @@ export function AccountWalletSessionOwner({
   const persistedOwnerKey = session?.smartAccount
     ? `${session.user.subject}\u0000${session.smartAccount.address.toLowerCase()}\u00008453\u0000${session.accountProvider}`
     : null;
-  useLayoutEffect(() => fence.updateAuthorizationBoundary(authorizationBoundary), [authorizationBoundary, fence]);
+  useLayoutEffect(() => {
+    fence.updateAuthorizationBoundary(authorizationBoundary, persistedOwnerKey);
+  }, [authorizationBoundary, fence, persistedOwnerKey]);
 
   const transport = useAuthenticatedTransport({ session, status, ownerKey, ownerFence: fence, getAccessToken, sessionFetch, authentication });
   const moneyActions = useMoneyActionExecution({
@@ -430,7 +444,10 @@ export function AccountWalletSessionOwner({
 
   return (
     <AccountWalletContext.Provider value={client}>
-      <OwnerQueryPersistence ownerKey={persistedOwnerKey} />
+      <OwnerQueryPersistence
+        key={persistedOwnerKey ?? "signed-out"}
+        ownerKey={persistedOwnerKey}
+      />
       {children}
     </AccountWalletContext.Provider>
   );

@@ -6,7 +6,6 @@ import { useMemo, useState } from "react";
 import { useAccountWallet } from "@/client/account/cdp-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import { MoneyActionReview } from "@/client/money-actions/review";
-import { useMoneyDataRefresh } from "@/client/money-actions/refresh";
 import type { OperationResult, PreparedMoneyAction } from "@/shared/money-actions/types";
 import { formatPresentationDate } from "@/shared/formatting";
 import {
@@ -45,7 +44,6 @@ type BorrowExperienceProps = {
   fetchAccountResource?: FetchAccountResource;
   prepareMoneyAction?: (kind: string, params: unknown) => Promise<PreparedMoneyAction>;
   executeMoneyAction?: (action: PreparedMoneyAction) => Promise<OperationResult>;
-  onActionConfirmed?: () => void;
   regionId?: RegionId;
 };
 
@@ -63,7 +61,6 @@ type PreviewState =
 
 export function AuthenticatedBorrowExperience() {
   const account = useAccountWallet();
-  const refreshMoneyData = useMoneyDataRefresh();
   const regionId = usePersistedPresentationRegion();
   return (
     <BorrowExperience
@@ -71,7 +68,6 @@ export function AuthenticatedBorrowExperience() {
       fetchAccountResource={account.fetchAccountResource}
       prepareMoneyAction={account.prepareMoneyAction}
       executeMoneyAction={account.executeMoneyAction}
-      onActionConfirmed={refreshMoneyData}
       regionId={regionId}
     />
   );
@@ -90,7 +86,6 @@ function BorrowExperienceInner({
   fetchAccountResource,
   prepareMoneyAction,
   executeMoneyAction,
-  onActionConfirmed,
   regionId = "GLOBAL",
 }: BorrowExperienceProps) {
   const owner = session?.smartAccount?.address ?? null;
@@ -282,8 +277,6 @@ function BorrowExperienceInner({
           onConfirmed={() => {
             setPreview({ status: "idle" });
             setAmount("");
-            void refresh();
-            onActionConfirmed?.();
           }}
         />
       ) : null}
