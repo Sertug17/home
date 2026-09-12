@@ -412,6 +412,7 @@ export function AccountWalletSessionOwner({
     fetchSavingsPositions: transport.fetchSavingsPositions,
     fetchAccountResource: transport.fetchAccountResource,
     prepareMoneyAction: moneyActions.prepareMoneyAction,
+    resumeMoneyAction: moneyActions.resumeMoneyAction,
     executeMoneyAction: moneyActions.executeMoneyAction,
     fetchOperations: moneyActions.fetchOperations,
     retrySessionValidation,

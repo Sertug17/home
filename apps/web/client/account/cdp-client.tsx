@@ -104,6 +104,7 @@ export type AccountWalletClient = {
   fetchSavingsPositions: (signal?: AbortSignal) => Promise<unknown>;
   fetchAccountResource: (path: string, options?: AccountResourceOptions) => Promise<unknown>;
   prepareMoneyAction: (kind: string, params: unknown) => Promise<PreparedMoneyAction>;
+  resumeMoneyAction: (id: string) => Promise<PreparedMoneyAction>;
   executeMoneyAction: (action: PreparedMoneyAction) => Promise<OperationResult>;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
   retrySessionValidation: () => Promise<void>;
@@ -161,6 +162,9 @@ export function createBlockedAccountWalletClient(
       throw new Error("Authenticated resource is unavailable.");
     },
     prepareMoneyAction: async () => {
+      throw new TransferExecutionError("unavailable");
+    },
+    resumeMoneyAction: async () => {
       throw new TransferExecutionError("unavailable");
     },
     executeMoneyAction: async () => {

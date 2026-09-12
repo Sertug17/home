@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useNestedAppChrome } from "@/components/app-chrome";
 import type { InvestAsset } from "@/config/invest-assets";
+import { commitClientUrl } from "@/config/shell-location";
 import type { AssetMarkResolution } from "@/client/asset-mark/presentation";
 import { unavailableMarketData, type MarketDataState } from "@/shared/invest/invest-market";
 import {
@@ -54,7 +54,6 @@ export function InvestExperience({
   onLoadMoreMemes,
   onRetryLoadMoreMemes,
 }: InvestExperienceProps = {}) {
-  const router = useRouter();
   const [view, setView] = useState<InvestView>(() => {
     if (typeof window !== "undefined") {
       const fromUrl = investViewFromSearch(
@@ -86,17 +85,17 @@ export function InvestExperience({
   const go = useCallback((next: InvestView) => {
     setView(next);
     setInAppChildDepth((depth) => depth + 1);
-    router.push(investHref(next), { scroll: false });
-  }, [router]);
+    commitClientUrl(investHref(next));
+  }, []);
 
   const leaveChild = useCallback((parent: InvestView) => {
     setView(parent);
     if (inAppChildDepth > 0) {
-      router.back();
+      window.history.back();
       return;
     }
-    router.replace(investHref(parent), { scroll: false });
-  }, [inAppChildDepth, router]);
+    commitClientUrl(investHref(parent), "replace");
+  }, [inAppChildDepth]);
 
   const chromeTitle =
     view.screen === "category"

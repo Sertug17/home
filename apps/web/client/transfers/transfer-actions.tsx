@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import { CopyableValue } from "@/components/copyable-value";
 import { formatAddress } from "@/shared/formatting";
@@ -8,6 +14,12 @@ import {
   useAccountWallet,
   type AccountWalletClient,
 } from "@/client/account/cdp-client";
+import {
+  commitClientUrl,
+  moneyFlowHref,
+  withoutMoneyFlowHref,
+} from "@/config/shell-location";
+import { markHomePerformance } from "@/client/observability/perf-marks";
 import { SendDialog } from "./send-dialog";
 import { TRANSFER_ASSETS, formatSendConfirmAmount } from "@/shared/transfers/transfer-helpers";
 import type { ConfirmedTransfer } from "@/shared/transfers/types";
@@ -18,6 +30,8 @@ const mountedClientSnapshot = () => true;
 const mountedServerSnapshot = () => false;
 
 export type TransferActionsProps = {
+  initialOpen?: boolean;
+  initialActionId?: string | null;
   onTransferConfirmed?: (transfer: ConfirmedTransfer) => void;
   availableByAsset?: Partial<Record<"usdc" | "eth", string>>;
 };
@@ -28,6 +42,7 @@ type TransferWallet = Pick<
   | "status"
   | "session"
   | "prepareMoneyAction"
+  | "resumeMoneyAction"
   | "executeMoneyAction"
 >;
 
@@ -38,6 +53,8 @@ export function TransferActions(props: TransferActionsProps) {
 
 export function TransferActionsForWallet({
   wallet,
+  initialOpen = false,
+  initialActionId = null,
   onTransferConfirmed,
   availableByAsset,
 }: TransferActionsProps & { wallet: TransferWallet }) {
@@ -47,6 +64,7 @@ export function TransferActionsForWallet({
     transfer: ConfirmedTransfer;
     owner: string | null;
   } | null>(null);
+  const openedInAppRef = useRef(false);
   const mounted = useSyncExternalStore(
     subscribeToMountedState,
     mountedClientSnapshot,
@@ -59,19 +77,56 @@ export function TransferActionsForWallet({
   const dropPrivate = modalOwner !== null && modalOwner !== boundary;
   const visibleSuccess = success && success.owner === boundary ? success.transfer : null;
 
+  useEffect(() => {
+    if (boundary) markHomePerformance("action:first-interactive");
+  }, [boundary]);
+
+  useEffect(() => {
+    if (!initialOpen || !boundary) return;
+    const frame = window.requestAnimationFrame(() => {
+      setSuccess(null);
+      setModalOwner(boundary);
+      setSendOpen(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [boundary, initialOpen]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const flow = new URLSearchParams(window.location.search).get("flow");
+      if (flow !== "send") setSendOpen(false);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   const openSend = () => {
     if (!boundary) return;
+    openedInAppRef.current = true;
     setSuccess(null);
     setModalOwner(boundary);
     setSendOpen(true);
+    commitClientUrl(moneyFlowHref("/dashboard"));
   };
   const close = () => {
     setSendOpen(false);
+    if (openedInAppRef.current) {
+      openedInAppRef.current = false;
+      window.history.back();
+    } else {
+      commitClientUrl(withoutMoneyFlowHref("/dashboard"), "replace");
+    }
   };
   const finishClose = () => {
     setSendOpen(false);
     setModalOwner(null);
   };
+  const showReview = useCallback((actionId: string) => {
+    commitClientUrl(moneyFlowHref("/dashboard", actionId), "replace");
+  }, []);
+  const showFirstStep = useCallback(() => {
+    commitClientUrl(moneyFlowHref("/dashboard"), "replace");
+  }, []);
 
   useEffect(() => {
     if (!success) return;
@@ -99,8 +154,12 @@ export function TransferActionsForWallet({
               immediate={dropPrivate}
               availableByAsset={availableByAsset}
               prepareMoneyAction={wallet.prepareMoneyAction}
+              resumeMoneyAction={wallet.resumeMoneyAction}
               executeMoneyAction={wallet.executeMoneyAction}
               ownerBoundary={boundary}
+              resumeActionId={initialActionId}
+              onReview={showReview}
+              onInvalidResume={showFirstStep}
               onTransferConfirmed={(transfer) => {
                 setSuccess({ transfer, owner: boundary });
                 onTransferConfirmed?.(transfer);

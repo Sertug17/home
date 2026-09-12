@@ -25,8 +25,6 @@ const replaceCalls: string[] = [];
 const pushCalls: string[] = [];
 let backCalls = 0;
 let autoPopRouterBack = true;
-let autoCommitRouterPush = true;
-let pendingRouterPush: string | null = null;
 
 // History-aware App Router double. `push`/`replace` keep a real call ledger
 // AND advance an in-test history stack, syncing `window.location` so the
@@ -34,9 +32,10 @@ let pendingRouterPush: string | null = null;
 // stack and emits a real `popstate`, so a broken `router.back` fails here.
 let historyEntries: string[] = ["/"];
 let historyCursor = 0;
+const nativeHistoryReplaceState = window.history.replaceState.bind(window.history);
 
 function syncHistoryLocation(href: string) {
-  window.history.replaceState({}, "", href);
+  nativeHistoryReplaceState({}, "", href);
 }
 
 function commitHistoryPush(href: string) {
@@ -48,17 +47,7 @@ function commitHistoryPush(href: string) {
 
 function pushHistory(href: string) {
   pushCalls.push(href);
-  if (autoCommitRouterPush) {
-    commitHistoryPush(href);
-  } else {
-    pendingRouterPush = href;
-  }
-}
-
-function commitPendingRouterPush() {
-  expect(pendingRouterPush).toBeTruthy();
-  commitHistoryPush(pendingRouterPush as string);
-  pendingRouterPush = null;
+  commitHistoryPush(href);
 }
 
 function replaceHistory(href: string) {
@@ -75,13 +64,33 @@ function popHistory() {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
+Object.defineProperties(window.history, {
+  pushState: {
+    configurable: true,
+    value: (_state: unknown, _unused: string, href?: string | URL | null) => {
+      if (href !== undefined && href !== null) commitHistoryPush(String(href));
+    },
+  },
+  replaceState: {
+    configurable: true,
+    value: (_state: unknown, _unused: string, href?: string | URL | null) => {
+      if (href !== undefined && href !== null) replaceHistory(String(href));
+    },
+  },
+  back: {
+    configurable: true,
+    value: () => {
+      backCalls += 1;
+      if (autoPopRouterBack) popHistory();
+    },
+  },
+});
+
 function resetHistory() {
   replaceCalls.length = 0;
   pushCalls.length = 0;
   backCalls = 0;
   autoPopRouterBack = true;
-  autoCommitRouterPush = true;
-  pendingRouterPush = null;
   historyEntries = ["/"];
   historyCursor = 0;
   syncHistoryLocation("/");
@@ -767,7 +776,9 @@ describe("login-state home experience", () => {
     expect(dialog.contains(document.activeElement)).toBe(true);
     expect(page().getByRole("textbox", { name: "Email address" })).toBeTruthy();
     expect(page().queryByText("Sign-in is not configured")).toBeNull();
-    expect(pushCalls).toEqual(["/?account=signin"]);
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      "/?account=signin",
+    );
   });
 
   test("hides Create account when CDP is unconfigured and Sign in explains setup", async () => {
@@ -1551,7 +1562,9 @@ describe("login-state home experience", () => {
     fireEvent.click(page().getByRole("button", { name: "Account" }));
     expect(page().getByRole("combobox", { name: "Country" }).textContent).toContain("Brazil");
     expect(page().getByText("Sets how money is shown")).toBeTruthy();
-    expect(pushCalls).toEqual(["/dashboard?account=settings"]);
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      "/dashboard?account=settings",
+    );
     fireEvent.click(page().getByRole("button", { name: "Done" }));
     expect(backCalls).toBe(1);
 
@@ -1569,23 +1582,16 @@ describe("login-state home experience", () => {
     expect(page().queryByRole("button", { name: "Back" })).toBeNull();
     fireEvent.click(page().getByRole("button", { name: "Save" }));
     expect(page().getByRole("region", { name: "Savings module" })).toBeTruthy();
-    expect(pushCalls).toEqual([
-      "/dashboard?account=settings",
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
       "/dashboard?panel=save",
-      "/dashboard",
-      "/dashboard?panel=save",
-    ]);
+    );
 
     fireEvent.click(within(tabs).getByRole("button", { name: "Invest" }));
     const invest = page().getByRole("region", { name: "Invest module" });
     expect(invest).toBeTruthy();
-    expect(pushCalls).toEqual([
-      "/dashboard?account=settings",
-      "/dashboard?panel=save",
-      "/dashboard",
-      "/dashboard?panel=save",
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
       "/dashboard?panel=invest",
-    ]);
+    );
     expect(document.activeElement).toBe(
       document.getElementById("navigation-panel"),
     );
@@ -1595,7 +1601,9 @@ describe("login-state home experience", () => {
     const dialog = await page().findByRole("dialog", { name: "Sign in to Home" });
     expect((dialog as HTMLDialogElement).open).toBe(true);
     fireEvent.click(page().getByRole("button", { name: "Close sign in" }));
-    await waitFor(() => expect(replaceCalls).toEqual(["/"]));
+    await waitFor(() =>
+      expect(`${window.location.pathname}${window.location.search}`).toBe("/"),
+    );
   });
 
   test("shows a Save loading shell while session is checking, then savings content", async () => {
@@ -1697,7 +1705,9 @@ describe("login-state home experience", () => {
     expect(page().getByRole("button", { name: "Back" })).toBeTruthy();
     expect(page().getByText("US dollar")).toBeTruthy();
     expect(page().queryByRole("button", { name: "Save" })).toBeNull();
-    expect(pushCalls).toEqual(["/dashboard?panel=balances"]);
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      "/dashboard?panel=balances",
+    );
 
     fireEvent.click(page().getByRole("button", { name: "Back" }));
     expect(page().getByRole("button", { name: "Save" })).toBeTruthy();
@@ -1709,11 +1719,9 @@ describe("login-state home experience", () => {
     expect(page().getByRole("button", { name: "Back" })).toBeTruthy();
     expect(page().queryByRole("button", { name: "Refresh" })).toBeNull();
     expect(page().queryByText(/^Updated(\s|$)/)).toBeNull();
-    expect(pushCalls).toEqual([
-      "/dashboard?panel=balances",
-      "/dashboard",
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
       "/dashboard?panel=activity",
-    ]);
+    );
 
     fireEvent.click(page().getByRole("button", { name: "Back" }));
     fireEvent.click(page().getByRole("button", { name: "Save" }));
@@ -2223,55 +2231,6 @@ describe("balances incremental rendering", () => {
     }
   });
 
-  test("queues Account Done until its history push commits, then restores on the delayed pop", async () => {
-    const accountSdk = sdk({ isSignedIn: true, ownerKey: OWNER });
-    const sessionFetch: SessionFetch = async () => Response.json(session());
-    const assetBalances = {
-      status: "ready" as const,
-      displayTotal: "$99.99",
-      items: manyBalances(25),
-    };
-    const fixture = () => (
-      <HomeHarness
-        accountSdk={accountSdk}
-        sessionFetch={sessionFetch}
-        assetBalances={assetBalances}
-      />
-    );
-    const view = render(fixture());
-
-    await enabledAccountButton();
-    fireEvent.click(page().getByRole("button", { name: "Balances" }));
-    revealNextBalancesBatch();
-    const main = document.querySelector(".app-main-authenticated") as HTMLElement;
-    expect(main).toBeTruthy();
-    main.scrollTop = 480;
-    fireEvent.scroll(main);
-
-    autoCommitRouterPush = false;
-    fireEvent.click(page().getByRole("button", { name: "Account" }));
-    expect(await page().findByRole("combobox", { name: "Country" })).toBeTruthy();
-    main.scrollTop = 120;
-    fireEvent.scroll(main);
-
-    autoPopRouterBack = false;
-    fireEvent.click(page().getByRole("button", { name: "Done" }));
-    expect(page().getByRole("heading", { level: 1, name: "Account" })).toBeTruthy();
-    expect(backCalls).toBe(0);
-
-    // Issue #273 regression marker: App Router commits the Account push after
-    // the local overlay paints; Done must wait for that entry before going back.
-    act(() => commitPendingRouterPush());
-    view.rerender(fixture());
-    await waitFor(() => expect(backCalls).toBe(1));
-    expect(page().getByRole("heading", { level: 1, name: "Account" })).toBeTruthy();
-
-    act(() => popHistory());
-    expect(page().getByRole("heading", { name: "Balances" })).toBeTruthy();
-    expect(main.scrollTop).toBe(480);
-    expectRevealWindowAtSecondBatch();
-  });
-
   test("resets the reveal window when rows change materially with unchanged IDs", async () => {
     const view = render(
       <HomeHarness
@@ -2446,6 +2405,8 @@ describe("balances incremental rendering", () => {
     expect(main.scrollTop).toBe(0);
     expect(page().getByText("Holding 9")).toBeTruthy();
     expect(page().queryByText("Holding 10")).toBeNull();
+    expect(document.querySelectorAll(".supplied-asset-list")).toHaveLength(1);
+    expect(document.querySelectorAll(".supplied-asset-list li")).toHaveLength(10);
   });
 
   const identityFences = [

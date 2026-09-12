@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AddressField } from "@/components/address";
 import { CopyableValue } from "@/components/copyable-value";
 import { formatAddress } from "@/shared/formatting";
@@ -35,8 +35,13 @@ export function SendDialog({
   address,
   availableByAsset,
   prepareMoneyAction,
+  resumeMoneyAction,
   executeMoneyAction,
+  ownerBoundary,
   immediate = false,
+  resumeActionId = null,
+  onReview,
+  onInvalidResume,
   onTransferConfirmed,
   onClose,
   onClosed,
@@ -45,9 +50,13 @@ export function SendDialog({
   address: `0x${string}` | null;
   availableByAsset?: Partial<Record<TransferAssetId, string>>;
   prepareMoneyAction: AccountWalletClient["prepareMoneyAction"];
+  resumeMoneyAction: AccountWalletClient["resumeMoneyAction"];
   executeMoneyAction: AccountWalletClient["executeMoneyAction"];
   ownerBoundary: string | null;
+  resumeActionId?: string | null;
   immediate?: boolean;
+  onReview?: (actionId: string) => void;
+  onInvalidResume?: () => void;
   onTransferConfirmed?: (transfer: ConfirmedTransfer) => void;
   onClose: () => void;
   onClosed?: () => void;
@@ -59,7 +68,36 @@ export function SendDialog({
   const [action, setAction] = useState<PreparedMoneyAction | null>(null);
   const [step, setStep] = useState<SendStep>("amount");
   const [error, setError] = useState<string | null>(null);
+  const resumedActionRef = useRef<string | null>(null);
   const pricing = useMoneyAssetPricing(TRANSFER_ASSETS[assetId].symbol);
+
+  useEffect(() => {
+    if (!open || !ownerBoundary || !resumeActionId) return;
+    if (resumedActionRef.current === resumeActionId) return;
+    resumedActionRef.current = resumeActionId;
+    let cancelled = false;
+    setStep("pending");
+    setError(null);
+    void resumeMoneyAction(resumeActionId).then((resumed) => {
+      if (cancelled) return;
+      const nextRequest = transferRequestFromResumedAction(resumed);
+      if (!nextRequest) throw new TransferExecutionError("unavailable");
+      setAssetId(nextRequest.assetId);
+      setRecipient(nextRequest.recipient);
+      setRequest(nextRequest);
+      setAction(resumed);
+      setStep("confirm");
+    }).catch(() => {
+      if (cancelled) return;
+      setRequest(null);
+      setAction(null);
+      setStep("amount");
+      onInvalidResume?.();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [onInvalidResume, open, ownerBoundary, resumeActionId, resumeMoneyAction]);
 
   function reset() {
     setAssetId("usdc"); setRecipient(""); setAmount(""); setRequest(null);
@@ -82,7 +120,9 @@ export function SendDialog({
       };
       assertTransferRequest(next);
       setRequest(next); setStep("pending"); setError(null);
-      setAction(await prepareMoneyAction("send", next));
+      const prepared = await prepareMoneyAction("send", next);
+      setAction(prepared);
+      onReview?.(prepared.id);
       setStep("confirm");
     } catch {
       setError("Enter a valid Base address and positive amount, then try again.");
@@ -136,6 +176,36 @@ export function SendDialog({
       {step === "error" ? <MoneyModalFooter primaryLabel="Try again" onPrimary={() => { setError(null); setStep("confirm"); }} secondaryLabel="Back" onSecondary={back} /> : null}
     </MoneyModal>
   );
+}
+
+function transferRequestFromResumedAction(
+  action: PreparedMoneyAction,
+): TransferRequest | null {
+  const amount = action.amounts.find(
+    (entry) => entry.direction === "spend" &&
+      (entry.assetId === "usdc" || entry.assetId === "eth"),
+  );
+  const recipient = action.warnings
+    .find((warning) => warning.startsWith("Recipient: "))
+    ?.slice("Recipient: ".length) ?? "";
+  if (
+    !amount ||
+    (amount.assetId !== "usdc" && amount.assetId !== "eth") ||
+    !isTransferRecipient(recipient)
+  ) {
+    return null;
+  }
+  const request: TransferRequest = {
+    assetId: amount.assetId,
+    recipient: normalizeTransferRecipient(recipient),
+    amountBaseUnits: amount.amountBaseUnits,
+  };
+  try {
+    assertTransferRequest(request);
+    return request;
+  } catch {
+    return null;
+  }
 }
 
 function messageForError(error: unknown): string {

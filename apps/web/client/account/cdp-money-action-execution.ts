@@ -128,6 +128,46 @@ export function useMoneyActionExecution({
     return value;
   }, [assertReady, fetchAccountResource, ownerFence]);
 
+  const resumeMoneyAction = useCallback(async (id: string) => {
+    const active = assertReady();
+    const generation = ownerFence.capture();
+    ownerFence.assertCurrent(generation);
+    const value = await fetchAccountResource(`/api/actions/${id}`);
+    ownerFence.assertCurrent(generation);
+    if (
+      !isRecord(value) ||
+      value.id !== id ||
+      !isRecord(value.summary) ||
+      typeof value.summary.title !== "string" ||
+      !Array.isArray(value.summary.amounts) ||
+      !Array.isArray(value.summary.warnings) ||
+      !Array.isArray(value.calls) ||
+      typeof value.expiresAt !== "string" ||
+      !active.smartAccount
+    ) {
+      throw new TransferExecutionError("unavailable");
+    }
+    const resumed: PreparedMoneyAction = {
+      id,
+      reviewHash: "resumed-owner-scoped-action",
+      owner: {
+        subject: active.user.subject,
+        address: active.smartAccount.address,
+        chainId: active.smartAccount.chainId,
+        accountProvider: active.accountProvider,
+      },
+      kind: "send",
+      title: value.summary.title,
+      calls: value.calls as PreparedMoneyAction["calls"],
+      amounts: value.summary.amounts as PreparedMoneyAction["amounts"],
+      warnings: value.summary.warnings as string[],
+      expiresAt: value.expiresAt,
+      createdAt: new Date().toISOString(),
+    };
+    preparedGeneration.current.set(id, generation);
+    return resumed;
+  }, [assertReady, fetchAccountResource, ownerFence]);
+
   const postHandle = useCallback(async (
     id: string,
     generation: number,
@@ -246,6 +286,7 @@ export function useMoneyActionExecution({
   return {
     fetchOperations,
     prepareMoneyAction,
+    resumeMoneyAction,
     executeMoneyAction,
     pendingTransfer: null,
     reset,
