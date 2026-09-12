@@ -2,8 +2,9 @@
 
 import { useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { RegionId } from "@/config/regions";
+import { commitClientUrl } from "@/config/shell-location";
 import { useAccountWallet } from "@/client/account/cdp-client";
 import { FundingExperienceForWallet } from "./funding-experience";
 
@@ -44,7 +45,6 @@ export function FundingActionsForWallet({
 }: FundingActionsProps & {
   wallet: Parameters<typeof FundingExperienceForWallet>[0]["wallet"];
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const [userOpen, setUserOpen] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -60,7 +60,7 @@ export function FundingActionsForWallet({
     setUserOpen(false);
     setDismissed(true);
     if (pathname === "/dashboard" && (initialOpen || returnedFromCoinbase)) {
-      router.replace("/dashboard", { scroll: false });
+      commitClientUrl("/dashboard", "replace");
     }
     onClosed?.();
   }

@@ -9,7 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   readAnonymousCountryPreference,
   writeAnonymousCountryPreference,
@@ -22,7 +22,12 @@ import {
   savePanelId,
   type ShellPanelId,
 } from "@/config/navigation";
-import { parseShellLocation, shellHref } from "@/config/shell-location";
+import {
+  commitClientUrl,
+  parseInboundUrlIntent,
+  parseShellLocation,
+  shellHref,
+} from "@/config/shell-location";
 import { AppChromeProvider, useOptionalAppChrome } from "@/components/app-chrome";
 import { PrimaryNavigation } from "@/components/primary-navigation";
 import { CurrencyMark } from "@/components/currency-mark";
@@ -86,6 +91,9 @@ export type HomeExperienceProps = {
   routeMode?: "landing" | "dashboard";
   initialAddMoney?: boolean;
   returnedFromCoinbase?: boolean;
+  initialSendFlow?: boolean;
+  initialSendActionId?: string | null;
+  applyInboundUrlIntent?: boolean;
   onTransferConfirmed?: () => void;
   selectedRegionId?: RegionId;
   onRegionChange?: (region: RegionId) => void;
@@ -223,6 +231,9 @@ function HomeExperienceView({
   routeMode = "landing",
   initialAddMoney = false,
   returnedFromCoinbase = false,
+  initialSendFlow = false,
+  initialSendActionId = null,
+  applyInboundUrlIntent = false,
   onTransferConfirmed,
   selectedRegionId,
   onRegionChange,
@@ -237,9 +248,13 @@ function HomeExperienceView({
   isBalancesRestoreArmed: () => boolean;
 }) {
   const router = useRouter();
-  const committedSearchParams = useSearchParams();
-  const committedSearchKey = committedSearchParams.toString();
   const account = useAccountWallet();
+  const pendingUrlIntentRef = useRef(
+    typeof window === "undefined"
+      ? parseInboundUrlIntent(new URLSearchParams())
+      : parseInboundUrlIntent(new URLSearchParams(window.location.search)),
+  );
+  const appliedUrlIntentRef = useRef(false);
   const initial = resolvePresentation({ detectedCountry });
   const [internalRegionId, setInternalRegionId] = useState<RegionId>(
     initial.region.id,
@@ -263,11 +278,6 @@ function HomeExperienceView({
   // mutate provenance. Balances consumes this marker exactly once.
   const pendingBalancesRestoreRef = useRef(false);
   const balancesReturnScrollRef = useRef(0);
-  // Account may paint before App Router commits its history entry. A Done click
-  // in that window is queued until useSearchParams observes the committed URL;
-  // only the ensuing pop is allowed to close the overlay.
-  const pendingAccountCloseRef = useRef(false);
-  const accountCloseInFlightRef = useRef(false);
   // Balances restoration is denied by default. A direct Invest entry may hold
   // a candidate only until actual asset-detail chrome proves the return path;
   // the explicitly supported Account overlay path arms independently.
@@ -275,9 +285,21 @@ function HomeExperienceView({
   const explicitLogoutRef = useRef(false);
   const [isPreferenceReady, setIsPreferenceReady] = useState(false);
   const [preferenceMessage, setPreferenceMessage] = useState("");
-  const [isAccountOpen, setIsAccountOpen] = useState(initialAccountOpen);
+  const [isAccountOpen, setIsAccountOpen] = useState(
+    initialAccountOpen ||
+      (routeMode === "landing" &&
+        pendingUrlIntentRef.current.location.account === "signin"),
+  );
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(
     initialAccountSettingsOpen,
+  );
+  const [urlAddMoney, setUrlAddMoney] = useState(initialAddMoney);
+  const [urlReturnedFromCoinbase, setUrlReturnedFromCoinbase] = useState(
+    returnedFromCoinbase,
+  );
+  const [urlSendFlow, setUrlSendFlow] = useState(initialSendFlow);
+  const [urlSendActionId, setUrlSendActionId] = useState<string | null>(
+    initialSendActionId,
   );
   const [settingsOpenedInApp, setSettingsOpenedInApp] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
@@ -305,29 +327,33 @@ function HomeExperienceView({
 
   const closeAccount = useCallback(() => {
     setIsAccountOpen(false);
-    if (initialAccountOpen) {
-      router.replace("/", { scroll: false });
+    const location = parseShellLocation(new URLSearchParams(window.location.search));
+    if (initialAccountOpen || location.account === "signin") {
+      commitClientUrl("/", "replace");
       return;
     }
-    router.back();
-  }, [initialAccountOpen, router]);
+    window.history.back();
+  }, [initialAccountOpen]);
 
   useEffect(() => {
     const onPopState = () => {
       navigationIntentRef.current = "pop";
-      const location = parseShellLocation(
+      const intent = parseInboundUrlIntent(
         new URLSearchParams(window.location.search),
       );
+      const location = intent.location;
       const restoresBalances =
         location.panel === balancesPanelId && isBalancesRestoreArmed();
       pendingBalancesRestoreRef.current = restoresBalances;
-      pendingAccountCloseRef.current = false;
-      accountCloseInFlightRef.current = false;
       setActiveNavigation(location.panel);
       if (location.panel === balancesPanelId) setBalancesMounted(true);
       setIsAccountSettingsOpen(location.account === "settings");
       if (location.account !== "settings") setSettingsOpenedInApp(false);
       setIsAccountOpen(location.account === "signin");
+      setUrlAddMoney(intent.addMoney || intent.returnTo === "coinbase");
+      setUrlReturnedFromCoinbase(intent.returnTo === "coinbase");
+      setUrlSendFlow(intent.flow === "send");
+      setUrlSendActionId(intent.actionId);
       if (location.panel === balancesPanelId && !restoresBalances) {
         setBalancesRevealReset((resetSignal) => resetSignal + 1);
       }
@@ -341,17 +367,6 @@ function HomeExperienceView({
     navigationIntentRef.current = "push";
     pendingBalancesRestoreRef.current = false;
   }, [forwardRequest]);
-
-  useEffect(() => {
-    if (!pendingAccountCloseRef.current) return;
-    const location = parseShellLocation(
-      new URLSearchParams(window.location.search),
-    );
-    if (location.account !== "settings") return;
-    pendingAccountCloseRef.current = false;
-    accountCloseInFlightRef.current = true;
-    router.back();
-  }, [committedSearchKey, router]);
 
   useEffect(() => {
     const persistedCountry = readAnonymousCountryPreference(
@@ -380,6 +395,33 @@ function HomeExperienceView({
   const isChecking =
     account.status === "restoring" || account.status === "validating";
   const isVerified = account.status === "verified";
+  useEffect(() => {
+    if (
+      !applyInboundUrlIntent ||
+      routeMode !== "dashboard" ||
+      !isVerified ||
+      !account.session?.smartAccount ||
+      appliedUrlIntentRef.current
+    ) {
+      return;
+    }
+    appliedUrlIntentRef.current = true;
+    const intent = pendingUrlIntentRef.current;
+    setActiveNavigation(intent.location.panel);
+    if (intent.location.panel === balancesPanelId) setBalancesMounted(true);
+    setIsAccountSettingsOpen(intent.location.account === "settings");
+    setSettingsOpenedInApp(false);
+    setUrlAddMoney(intent.addMoney || intent.returnTo === "coinbase");
+    setUrlReturnedFromCoinbase(intent.returnTo === "coinbase");
+    setUrlSendFlow(intent.flow === "send");
+    setUrlSendActionId(intent.actionId);
+    setNavigationRequest((request) => request + 1);
+  }, [
+    account.session?.smartAccount,
+    applyInboundUrlIntent,
+    isVerified,
+    routeMode,
+  ]);
   const isUnavailable = account.status === "unavailable";
   const isSignedOut =
     account.status === "signed-out" || account.status === "signout-error";
@@ -482,8 +524,6 @@ function HomeExperienceView({
   }
 
   function navigateTo(nextNavigation: ShellPanelId) {
-    pendingAccountCloseRef.current = false;
-    accountCloseInFlightRef.current = false;
     const skipHistory =
       activeNavigation === nextNavigation && !isAccountSettingsOpen;
     setIsAccountSettingsOpen(false);
@@ -506,14 +546,10 @@ function HomeExperienceView({
     if (nextNavigation === balancesPanelId) setBalancesMounted(true);
     setNavigationRequest((request) => request + 1);
     if (skipHistory) return;
-    router.push(shellHref(shellPath, { panel: nextNavigation }), {
-      scroll: false,
-    });
+    commitClientUrl(shellHref(shellPath, { panel: nextNavigation }));
   }
 
   function openAccountSettings() {
-    pendingAccountCloseRef.current = false;
-    accountCloseInFlightRef.current = false;
     setForwardRequest((request) => request + 1);
     if (activeNavigation === balancesPanelId && !isAccountSettingsOpen) {
       balancesReturnScrollRef.current = mainRef.current?.scrollTop ?? 0;
@@ -527,14 +563,13 @@ function HomeExperienceView({
     const current = parseShellLocation(
       new URLSearchParams(window.location.search),
     );
-    router.push(
+    commitClientUrl(
       shellHref(shellPath, {
         panel: activeNavigation,
         account: "settings",
         shelf: current.shelf,
         asset: current.asset,
       }),
-      { scroll: false },
     );
   }
 
@@ -550,21 +585,12 @@ function HomeExperienceView({
     ) {
       return;
     }
-    router.push(shellHref("/", { account: "signin" }), { scroll: false });
+    commitClientUrl(shellHref("/", { account: "signin" }));
   }
 
   function closeAccountSettings() {
     if (settingsOpenedInApp) {
-      if (accountCloseInFlightRef.current) return;
-      const location = parseShellLocation(
-        new URLSearchParams(window.location.search),
-      );
-      if (location.account !== "settings") {
-        pendingAccountCloseRef.current = true;
-        return;
-      }
-      accountCloseInFlightRef.current = true;
-      router.back();
+      window.history.back();
       return;
     }
     setIsAccountSettingsOpen(false);
@@ -574,19 +600,17 @@ function HomeExperienceView({
     const current = parseShellLocation(
       new URLSearchParams(window.location.search),
     );
-    router.replace(
+    commitClientUrl(
       shellHref(shellPath, {
         panel: activeNavigation,
         shelf: current.shelf,
         asset: current.asset,
       }),
-      { scroll: false },
+      "replace",
     );
   }
 
   function signOut() {
-    pendingAccountCloseRef.current = false;
-    accountCloseInFlightRef.current = false;
     setIsAccountSettingsOpen(false);
     setForwardRequest((request) => request + 1);
     disarmBalancesRestore();
@@ -730,8 +754,10 @@ function HomeExperienceView({
                       onOpenSave={() => navigateTo(savePanelId)}
                       onOpenBalances={() => navigateTo(balancesPanelId)}
                       onOpenActivity={() => navigateTo(activityPanelId)}
-                      initialAddMoney={initialAddMoney}
-                      returnedFromCoinbase={returnedFromCoinbase}
+                      initialAddMoney={urlAddMoney}
+                      returnedFromCoinbase={urlReturnedFromCoinbase}
+                      initialSendFlow={urlSendFlow}
+                      initialSendActionId={urlSendActionId}
                       regionId={regionId}
                     />
                   ) : null}
@@ -1024,6 +1050,8 @@ function HomePanel({
   onOpenActivity,
   initialAddMoney = false,
   returnedFromCoinbase = false,
+  initialSendFlow = false,
+  initialSendActionId = null,
   regionId,
 }: {
   assetBalances?: HomeAssetBalancesPresentation;
@@ -1037,6 +1065,8 @@ function HomePanel({
   onOpenActivity: () => void;
   initialAddMoney?: boolean;
   returnedFromCoinbase?: boolean;
+  initialSendFlow?: boolean;
+  initialSendActionId?: string | null;
   regionId: RegionId;
 }) {
   const isLoading = assetBalances?.status === "loading";
@@ -1095,6 +1125,8 @@ function HomePanel({
           regionId={regionId}
         />
         <TransferActions
+          initialOpen={initialSendFlow}
+          initialActionId={initialSendActionId}
           onTransferConfirmed={onTransferConfirmed}
           availableByAsset={availableSendBalances(balanceItems)}
         />

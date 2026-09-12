@@ -34,9 +34,10 @@ let pendingRouterPush: string | null = null;
 // stack and emits a real `popstate`, so a broken `router.back` fails here.
 let historyEntries: string[] = ["/"];
 let historyCursor = 0;
+const nativeHistoryReplaceState = window.history.replaceState.bind(window.history);
 
 function syncHistoryLocation(href: string) {
-  window.history.replaceState({}, "", href);
+  nativeHistoryReplaceState({}, "", href);
 }
 
 function commitHistoryPush(href: string) {
@@ -74,6 +75,28 @@ function popHistory() {
   }
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
+
+Object.defineProperties(window.history, {
+  pushState: {
+    configurable: true,
+    value: (_state: unknown, _unused: string, href?: string | URL | null) => {
+      if (href !== undefined && href !== null) commitHistoryPush(String(href));
+    },
+  },
+  replaceState: {
+    configurable: true,
+    value: (_state: unknown, _unused: string, href?: string | URL | null) => {
+      if (href !== undefined && href !== null) replaceHistory(String(href));
+    },
+  },
+  back: {
+    configurable: true,
+    value: () => {
+      backCalls += 1;
+      if (autoPopRouterBack) popHistory();
+    },
+  },
+});
 
 function resetHistory() {
   replaceCalls.length = 0;
@@ -767,7 +790,9 @@ describe("login-state home experience", () => {
     expect(dialog.contains(document.activeElement)).toBe(true);
     expect(page().getByRole("textbox", { name: "Email address" })).toBeTruthy();
     expect(page().queryByText("Sign-in is not configured")).toBeNull();
-    expect(pushCalls).toEqual(["/?account=signin"]);
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      "/?account=signin",
+    );
   });
 
   test("hides Create account when CDP is unconfigured and Sign in explains setup", async () => {
@@ -1551,7 +1576,9 @@ describe("login-state home experience", () => {
     fireEvent.click(page().getByRole("button", { name: "Account" }));
     expect(page().getByRole("combobox", { name: "Country" }).textContent).toContain("Brazil");
     expect(page().getByText("Sets how money is shown")).toBeTruthy();
-    expect(pushCalls).toEqual(["/dashboard?account=settings"]);
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      "/dashboard?account=settings",
+    );
     fireEvent.click(page().getByRole("button", { name: "Done" }));
     expect(backCalls).toBe(1);
 
@@ -1569,23 +1596,16 @@ describe("login-state home experience", () => {
     expect(page().queryByRole("button", { name: "Back" })).toBeNull();
     fireEvent.click(page().getByRole("button", { name: "Save" }));
     expect(page().getByRole("region", { name: "Savings module" })).toBeTruthy();
-    expect(pushCalls).toEqual([
-      "/dashboard?account=settings",
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
       "/dashboard?panel=save",
-      "/dashboard",
-      "/dashboard?panel=save",
-    ]);
+    );
 
     fireEvent.click(within(tabs).getByRole("button", { name: "Invest" }));
     const invest = page().getByRole("region", { name: "Invest module" });
     expect(invest).toBeTruthy();
-    expect(pushCalls).toEqual([
-      "/dashboard?account=settings",
-      "/dashboard?panel=save",
-      "/dashboard",
-      "/dashboard?panel=save",
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
       "/dashboard?panel=invest",
-    ]);
+    );
     expect(document.activeElement).toBe(
       document.getElementById("navigation-panel"),
     );
@@ -1595,7 +1615,9 @@ describe("login-state home experience", () => {
     const dialog = await page().findByRole("dialog", { name: "Sign in to Home" });
     expect((dialog as HTMLDialogElement).open).toBe(true);
     fireEvent.click(page().getByRole("button", { name: "Close sign in" }));
-    await waitFor(() => expect(replaceCalls).toEqual(["/"]));
+    await waitFor(() =>
+      expect(`${window.location.pathname}${window.location.search}`).toBe("/"),
+    );
   });
 
   test("shows a Save loading shell while session is checking, then savings content", async () => {
@@ -1697,7 +1719,9 @@ describe("login-state home experience", () => {
     expect(page().getByRole("button", { name: "Back" })).toBeTruthy();
     expect(page().getByText("US dollar")).toBeTruthy();
     expect(page().queryByRole("button", { name: "Save" })).toBeNull();
-    expect(pushCalls).toEqual(["/dashboard?panel=balances"]);
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      "/dashboard?panel=balances",
+    );
 
     fireEvent.click(page().getByRole("button", { name: "Back" }));
     expect(page().getByRole("button", { name: "Save" })).toBeTruthy();
@@ -1709,11 +1733,9 @@ describe("login-state home experience", () => {
     expect(page().getByRole("button", { name: "Back" })).toBeTruthy();
     expect(page().queryByRole("button", { name: "Refresh" })).toBeNull();
     expect(page().queryByText(/^Updated(\s|$)/)).toBeNull();
-    expect(pushCalls).toEqual([
-      "/dashboard?panel=balances",
-      "/dashboard",
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
       "/dashboard?panel=activity",
-    ]);
+    );
 
     fireEvent.click(page().getByRole("button", { name: "Back" }));
     fireEvent.click(page().getByRole("button", { name: "Save" }));
