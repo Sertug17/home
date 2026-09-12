@@ -50,7 +50,7 @@ export function ShellHeader({
         ) : routeMode === "dashboard" && activeNavigation === "invest" ? (
           <h1 className="app-header-lead-title">Invest</h1>
         ) : (
-          <HomeMark onClick={isVerified ? onHome : undefined} />
+          <HomeMark onClick={() => { if (isVerified) onHome(); }} />
         )}
       </div>
       <span className="app-header-title-slot" aria-hidden="true" />

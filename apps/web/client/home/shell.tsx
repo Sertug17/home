@@ -12,7 +12,6 @@ import { AccountSignInSheet } from "@/client/account/account-screen";
 import { useAccountWallet } from "@/client/account/cdp-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import {
-  activityPanelId,
   balancesPanelId,
   isHomeNestedPanelId,
   nestedHomePanelTitle,

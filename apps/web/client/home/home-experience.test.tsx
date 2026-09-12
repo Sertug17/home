@@ -99,7 +99,7 @@ function sdk(overrides: Partial<AccountWalletSdkBoundary> = {}): AccountWalletSd
 }
 
 function session(
-  address = ADDRESS,
+  address: `0x${string}` = ADDRESS,
   subject = "subject-home",
 ): VerifiedAccountSession {
   return {
