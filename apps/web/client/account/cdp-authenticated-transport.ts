@@ -102,10 +102,11 @@ export function useAuthenticatedTransport({
 }) {
   const queryClient = useHomeQueryClient(browserHomeQueryClient());
   const freshnessRuns = useRef(new Map<string, () => void>());
-  useEffect(() => () => {
+  const reset = useCallback(() => {
     for (const cancel of freshnessRuns.current.values()) cancel();
     freshnessRuns.current.clear();
   }, []);
+  useEffect(() => reset, [reset]);
 
   const fetchVerifiedResource = useCallback(
     async (
@@ -349,6 +350,7 @@ export function useAuthenticatedTransport({
     fetchSavingsPositions,
     fetchAccountResource,
     fetchMoneyActionApi,
+    reset,
   };
 }
 
