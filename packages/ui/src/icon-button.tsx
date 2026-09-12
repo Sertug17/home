@@ -3,7 +3,7 @@ import { Button, type ButtonProps } from "./button";
 
 export type IconButtonProps = Omit<
   ButtonProps,
-  "children" | "aria-label" | "aria-labelledby" | "dangerouslySetInnerHTML"
+  "children" | "aria-label" | "aria-labelledby" | "dangerouslySetInnerHTML" | "hapticFeedback"
 > & {
   /** A concrete, non-empty action name (not the icon's shape). */
   "aria-label": string;

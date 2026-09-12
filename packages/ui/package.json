@@ -8,6 +8,8 @@
     "./text": "./src/text.tsx",
     "./button": "./src/button.tsx",
     "./icon-button": "./src/icon-button.tsx",
+    "./haptic": "./src/haptic.ts",
+    "./layout": "./src/layout.tsx",
     "./icons": "./src/icons.ts",
     "./tokens.css": "./src/tokens.css",
     "./styles.css": "./src/styles.css",

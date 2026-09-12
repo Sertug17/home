@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button, Heading, IconButton, Text, type TextStyle } from "@home/ui";
+import { Bleed, Button, Heading, IconButton, Inline, Inset, Stack, Text, type TextStyle } from "@home/ui";
 import { ArrowRightIcon, CheckIcon, PlusIcon, XIcon } from "@home/ui/icons";
 
 const textStyles: TextStyle[] = [
@@ -92,6 +92,7 @@ export function FoundationCatalog() {
             <Button {...state} ref={primaryRef} onClick={activate}>Primary</Button>
             <Button {...state} variant="secondary" onClick={activate}>Secondary</Button>
             <Button {...state} variant="quiet" onClick={activate}>Quiet</Button>
+            <Button {...state} hapticFeedback="selection" onClick={activate}>Confirm</Button>
           </div>
           <Button {...state} variant="secondary" onClick={activate}>A long button label that must stay readable at narrow widths and enlarged text</Button>
           <Text as="div" textStyle="secondary"><output aria-live="polite">Activations: {activations}</output></Text>
@@ -106,6 +107,52 @@ export function FoundationCatalog() {
             <IconButton {...state} icon={ArrowRightIcon} iconSize={24} variant="secondary" aria-label="Next example" onClick={activate} />
             <IconButton {...state} icon={CheckIcon} iconSize={24} variant="primary" aria-label="Select example" onClick={activate} />
           </div>
+        </section>
+
+        <section className="catalog-section bg-home-ui-surface" aria-labelledby="layout-title">
+          <Heading id="layout-title" level={2} textStyle="section-title">Layout</Heading>
+          <Stack space="3" data-layout="stack">
+            <Text>Stack item</Text>
+            <Text>Stack item</Text>
+          </Stack>
+          <Inline space="2" data-layout="inline">
+            <Text as="span">Inline item</Text>
+            <Text as="span">Inline item</Text>
+            <Text as="span">Inline item</Text>
+          </Inline>
+          <Inset space="3" className="catalog-layout-frame" data-layout="inset">
+            <Stack space="2">
+              <Text>Inset content</Text>
+              <Bleed space="3" className="catalog-layout-bleed" data-layout="bleed">
+                <Text>Bleed content</Text>
+              </Bleed>
+            </Stack>
+          </Inset>
+          <Inline space={{ custom: "18px" }} data-layout="custom">
+            <Text as="span">Custom gap</Text>
+            <Text as="span">18px</Text>
+          </Inline>
+        </section>
+
+        <section className="catalog-section bg-home-ui-surface" aria-labelledby="surfaces-title">
+          <Heading id="surfaces-title" level={2} textStyle="section-title">Surfaces</Heading>
+          <Inline space="3" className="catalog-surfaces">
+            {[
+              ["surface-primary", "Primary"],
+              ["surface-secondary", "Secondary"],
+              ["surface-accent", "Accent"],
+              ["surface-accent surface-tinted", "Tinted accent"],
+            ].map(([className, label]) => (
+              <Inset key={label} space="3" className={`${className} catalog-surface`} data-surface={label.toLowerCase().replace(" ", "-")}>
+                <Stack space="2">
+                  <Heading level={3} textStyle="row-label">{label}</Heading>
+                  <Text>Default text</Text>
+                  <Text tone="muted">Muted text</Text>
+                  <span className="catalog-separator" aria-hidden="true" />
+                </Stack>
+              </Inset>
+            ))}
+          </Inline>
         </section>
 
         <section className="catalog-section bg-home-ui-surface" aria-labelledby="amounts-title">

@@ -1,4 +1,5 @@
-import type { ComponentPropsWithRef } from "react";
+import type { ComponentPropsWithRef, MouseEvent } from "react";
+import { haptic, type HapticFeedback } from "./haptic";
 
 export type ButtonProps = ComponentPropsWithRef<"button"> & {
   variant?: "primary" | "secondary" | "quiet";
@@ -6,6 +7,8 @@ export type ButtonProps = ComponentPropsWithRef<"button"> & {
    * Blocks native activation and preserves the original accessible name/size.
    */
   loading?: boolean;
+  /** Opt in only for actions that commit a user decision. */
+  hapticFeedback?: HapticFeedback;
 };
 
 export function Button({
@@ -15,12 +18,22 @@ export function Button({
   disabled = false,
   className,
   children,
+  hapticFeedback,
+  onClick,
   "aria-busy": ariaBusy,
   ...props
 }: ButtonProps) {
+  const handleClick = hapticFeedback
+    ? (event: MouseEvent<HTMLButtonElement>) => {
+        onClick?.(event);
+        if (!event.defaultPrevented) haptic(hapticFeedback);
+      }
+    : onClick;
+
   return (
     <button
       {...props}
+      onClick={handleClick}
       type={type}
       disabled={disabled || loading}
       aria-busy={loading ? true : ariaBusy}

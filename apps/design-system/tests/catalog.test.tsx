@@ -18,6 +18,14 @@ test("catalog renders real package exports and deterministic specimen controls",
     expect(Array.from(specimens).every((sample) => sample.getAttribute("data-text-style") === role)).toBe(true);
   }
   expect(container.querySelectorAll("[data-font-coverage]").length).toBe(3);
+  expect(container.querySelector("[data-layout='stack']")?.classList.contains("home-ui-stack")).toBe(true);
+  expect(container.querySelector("[data-layout='inline']")?.classList.contains("home-ui-inline")).toBe(true);
+  expect(container.querySelector("[data-layout='inset']")?.classList.contains("home-ui-inset")).toBe(true);
+  expect(container.querySelector("[data-layout='bleed']")?.classList.contains("home-ui-bleed")).toBe(true);
+  expect(container.querySelector("[data-layout='custom']")?.getAttribute("data-space")).toBe("custom");
+  expect(container.querySelectorAll("[data-surface]")).toHaveLength(4);
+  expect(container.querySelector("[data-surface='tinted-accent']")?.classList.contains("surface-tinted")).toBe(true);
+  expect(page.getByRole("button", { name: "Confirm" }).hasAttribute("hapticfeedback")).toBe(false);
   fireEvent.click(button);
   expect(page.getByRole("status").textContent).toBe("Activations: 1");
   fireEvent.click(page.getByRole("checkbox", { name: "Disabled" }));

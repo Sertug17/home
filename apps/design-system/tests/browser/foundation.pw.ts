@@ -132,6 +132,44 @@ test("narrow normal-size icon buttons retain shared 44px geometry", async ({ pag
   }
 });
 
+test("shared radii, press motion, layout spacing, and surface colors render from the package", async ({ page }) => {
+  await page.goto("/");
+  const primary = page.getByRole("button", { name: "Primary", exact: true });
+  const iconButton = page.getByRole("button", { name: "Add example" });
+  await expect(primary).toHaveCSS("border-radius", "6px");
+  await expect(iconButton).toHaveCSS("border-radius", "6px");
+
+  for (const button of [primary, iconButton]) {
+    await button.hover();
+    await page.mouse.down();
+    await expect(button).toHaveCSS("transform", "matrix(0.97, 0, 0, 0.97, 0, 0)");
+    await page.mouse.up();
+    await expect(button).toHaveCSS("transform", "none");
+  }
+
+  await expect(page.locator("[data-layout='stack']")).toHaveCSS("gap", "12px");
+  await expect(page.locator("[data-layout='inline']")).toHaveCSS("gap", "8px");
+  await expect(page.locator("[data-layout='inset']")).toHaveCSS("padding", "12px");
+  await expect(page.locator("[data-layout='bleed']")).toHaveCSS("margin", "-12px");
+  await expect(page.locator("[data-layout='custom']")).toHaveCSS("gap", "18px");
+
+  const primarySurface = page.locator("[data-surface='primary']");
+  const accentSurface = page.locator("[data-surface='accent']");
+  const tintedSurface = page.locator("[data-surface='tinted-accent']");
+  await expect(primarySurface).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(primarySurface.getByText("Default text")).toHaveCSS("color", "rgb(10, 11, 13)");
+  await expect(accentSurface).toHaveCSS("background-color", "rgb(0, 82, 255)");
+  await expect(accentSurface.getByText("Default text")).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(accentSurface.getByText("Muted text")).toHaveCSS("color", "rgb(217, 229, 255)");
+  await expect(accentSurface.locator(".catalog-separator")).toHaveCSS("background-color", "rgb(112, 156, 255)");
+  await expect(tintedSurface).toHaveCSS("background-color", "rgb(232, 240, 255)");
+  await expect(tintedSurface.getByText("Default text")).toHaveCSS("color", "rgb(0, 58, 184)");
+
+  await page.getByRole("combobox", { name: "Text size" }).selectOption("200");
+  await expect(page.locator("[data-layout='stack']")).toHaveCSS("gap", "24px");
+  await expectNoOverflow(page);
+});
+
 test("native keyboard activation, focus, pressed presentation, and disabled/loading safety", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -298,16 +336,19 @@ test("uncovered numeric currencies and scripts use platform glyph fallback, not 
   }
 });
 
-test("reduced motion removes spinner animation and press movement", async ({ page }) => {
+test("reduced motion uses opacity-only press feedback and removes spinner animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.getByText("Motion: reduced", { exact: true })).toBeVisible();
   const primary = page.getByRole("button", { name: "Primary", exact: true });
   await expect(primary).toHaveCSS("transition-duration", "0s");
+  await expect(primary).toHaveCSS("opacity", "1");
   await primary.hover();
   await page.mouse.down();
   await expect(primary).toHaveCSS("transform", "none");
+  await expect(primary).toHaveCSS("opacity", "0.72");
   await page.mouse.up();
+  await expect(primary).toHaveCSS("opacity", "1");
   await page.getByRole("checkbox", { name: "Loading", exact: true }).check();
   await expect(primary.locator(".home-ui-button__spinner")).toHaveCSS("animation-name", "none");
 });

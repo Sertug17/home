@@ -1,7 +1,40 @@
 /* Scoped component styles; usable without Tailwind or any global reset. */
+.surface-primary,
+.surface-secondary,
+.surface-accent {
+  color: var(--fg);
+}
+.surface-primary {
+  --fg: var(--home-ui-color-text);
+  --fg-muted: var(--home-ui-color-muted);
+  --separator: var(--home-ui-color-border);
+  --fg-on-accent: var(--home-ui-color-on-action);
+  background-color: var(--home-ui-color-surface);
+}
+.surface-secondary {
+  --fg: var(--home-ui-color-text);
+  --fg-muted: var(--home-ui-color-muted);
+  --separator: var(--home-ui-color-border);
+  --fg-on-accent: var(--home-ui-color-on-action);
+  background-color: var(--home-ui-color-canvas);
+}
+.surface-accent {
+  --fg: var(--home-ui-color-on-action);
+  --fg-muted: var(--home-ui-color-accent-muted);
+  --separator: var(--home-ui-color-accent-separator);
+  --fg-on-accent: var(--home-ui-color-on-action);
+  background-color: var(--home-ui-color-action);
+}
+.surface-accent.surface-tinted {
+  --fg: var(--home-ui-color-accent-tint-text);
+  --fg-muted: var(--home-ui-color-accent-tint-muted);
+  --separator: var(--home-ui-color-accent-tint-separator);
+  background-color: var(--home-ui-color-accent-tint);
+}
+
 .home-ui-text {
   margin: 0;
-  color: var(--home-ui-color-text);
+  color: var(--fg, var(--home-ui-color-text));
   font-family: var(--home-ui-font-family);
   font-size: var(--home-ui-type-body-size);
   font-weight: var(--home-ui-type-weight-regular);
@@ -10,7 +43,7 @@
   overflow-wrap: anywhere;
 }
 
-.home-ui-text[data-tone="muted"] { color: var(--home-ui-color-muted); }
+.home-ui-text[data-tone="muted"] { color: var(--fg-muted, var(--home-ui-color-muted)); }
 /* Equal-width ASCII digits come from DM Mono's metrics, not a DM Sans feature.
    Keep the numeric fallback monospaced when the opt-in font is unavailable. */
 .home-ui-text:is([data-text-style="amount"], [data-text-style="row-value"]) {
@@ -65,11 +98,12 @@
   min-inline-size: var(--home-ui-target-min);
   min-block-size: var(--home-ui-target-min);
   max-inline-size: 100%;
+  margin: 0;
   padding: var(--home-ui-space-3) var(--home-ui-space-4);
   border: 1px solid transparent;
   border-radius: var(--home-ui-radius-control);
   background: var(--home-ui-color-action);
-  color: var(--home-ui-color-on-action);
+  color: var(--fg-on-accent, var(--home-ui-color-on-action));
   font-family: var(--home-ui-font-family);
   font-size: var(--home-ui-type-control-size);
   font-weight: var(--home-ui-type-weight-strong);
@@ -81,14 +115,16 @@
   overflow-wrap: anywhere;
   cursor: pointer;
   touch-action: manipulation;
-  transition: background-color var(--home-ui-motion-press), transform var(--home-ui-motion-press);
+  transition:
+    background-color var(--home-ui-motion-press) ease-out,
+    transform var(--home-ui-motion-release) cubic-bezier(0.22, 1.4, 0.36, 1);
 }
 
 .home-ui-button__label { grid-area: 1 / 1; min-inline-size: 0; }
 .home-ui-button[data-variant="secondary"] {
   background: var(--home-ui-color-surface);
   color: var(--home-ui-color-text);
-  border-color: var(--home-ui-color-border);
+  border-color: var(--separator, var(--home-ui-color-border));
 }
 .home-ui-button[data-variant="quiet"] {
   background: transparent;
@@ -105,7 +141,11 @@
 .home-ui-button[data-variant="secondary"][aria-pressed="true"]:enabled,
 .home-ui-button[data-variant="quiet"]:enabled:active,
 .home-ui-button[data-variant="quiet"][aria-pressed="true"]:enabled { background: var(--home-ui-color-subtle-pressed); }
-.home-ui-button:enabled:active { transform: translateY(1px); }
+.home-ui-button:enabled:active {
+  transform: scale(0.97);
+  transition-duration: var(--home-ui-motion-press);
+  transition-timing-function: ease-out;
+}
 .home-ui-button[aria-pressed="true"]:enabled { box-shadow: inset 0 0 0 2px currentColor; }
 .home-ui-button:focus-visible {
   outline: 2px solid var(--home-ui-color-focus);
@@ -131,10 +171,31 @@
 }
 .home-ui-icon-button { padding: var(--home-ui-space-2); }
 .home-ui-icon-button svg { display: block; }
+
+.home-ui-stack,
+.home-ui-inline,
+.home-ui-inset,
+.home-ui-bleed {
+  box-sizing: border-box;
+  min-inline-size: 0;
+}
+.home-ui-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--home-ui-layout-space);
+}
+.home-ui-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--home-ui-layout-space);
+}
+.home-ui-inset { padding: var(--home-ui-layout-space); }
+.home-ui-bleed { margin: calc(-1 * var(--home-ui-layout-space)); }
 @keyframes home-ui-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .home-ui-button { transition: none; }
-  .home-ui-button:enabled:active { transform: none; }
+  .home-ui-button { transition: opacity var(--home-ui-motion-press); }
+  .home-ui-button:enabled:active { transform: none; opacity: 0.72; }
   .home-ui-button__spinner { animation: none; }
 }
 @media (forced-colors: active) {

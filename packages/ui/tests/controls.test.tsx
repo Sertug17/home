@@ -3,10 +3,13 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createRef } from "react";
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Button, Heading, IconButton, Text } from "@home/ui";
+import { Bleed, Button, Heading, IconButton, Inline, Inset, Stack, Text, haptic } from "@home/ui";
 import { PlusIcon } from "@home/ui/icons";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  Reflect.deleteProperty(navigator, "vibrate");
+});
 
 const page = () => within(document.body);
 
@@ -74,6 +77,28 @@ describe("native controls", () => {
   test("blank labels fail rather than rendering an unnamed icon control", () => {
     expect(() => renderToStaticMarkup(<IconButton icon={PlusIcon} aria-label=" " />)).toThrow("non-empty aria-label");
   });
+
+  test("haptic feedback is explicit and canceled actions stay silent", () => {
+    const vibrate = mock(() => true);
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: vibrate });
+    render(<>
+      <Button>Regular</Button>
+      <Button hapticFeedback="selection">Confirm</Button>
+      <Button hapticFeedback="error" onClick={(event) => event.preventDefault()}>Canceled</Button>
+    </>);
+    fireEvent.click(page().getByRole("button", { name: "Regular" }));
+    expect(vibrate).not.toHaveBeenCalled();
+    fireEvent.click(page().getByRole("button", { name: "Confirm" }));
+    expect(vibrate).toHaveBeenCalledWith(10);
+    fireEvent.click(page().getByRole("button", { name: "Canceled" }));
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    haptic("success");
+    haptic("error");
+    expect(vibrate).toHaveBeenNthCalledWith(2, [10, 30, 20]);
+    expect(vibrate).toHaveBeenNthCalledWith(3, [20, 30, 20, 30, 20]);
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: undefined });
+    expect(haptic("selection")).toBe(false);
+  });
 });
 
 test("visual roles never decide semantic elements or heading levels", () => {
@@ -84,8 +109,29 @@ test("visual roles never decide semantic elements or heading levels", () => {
   expect(page().getAllByRole("heading")).toHaveLength(1);
 });
 
+test("layout primitives forward native props and own token or custom spacing", () => {
+  const ref = createRef<HTMLDivElement>();
+  const { container } = render(
+    <Stack ref={ref} id="stack" className="example" space="2">
+      <Inline space="0"><Text>Inline</Text></Inline>
+      <Inset space="6"><Bleed space={{ custom: "18px" }}>Bleed</Bleed></Inset>
+    </Stack>,
+  );
+  const stack = container.querySelector("#stack") as HTMLDivElement;
+  expect(ref.current).toBe(stack);
+  expect(stack.className).toContain("home-ui-stack");
+  expect(stack.className).toContain("example");
+  expect(stack.getAttribute("data-space")).toBe("2");
+  expect(stack.style.getPropertyValue("--home-ui-layout-space")).toBe("var(--home-ui-space-2)");
+  expect(container.querySelector(".home-ui-inline")?.getAttribute("data-space")).toBe("0");
+  expect(container.querySelector(".home-ui-inset")?.getAttribute("data-space")).toBe("6");
+  const bleed = container.querySelector(".home-ui-bleed") as HTMLDivElement;
+  expect(bleed.getAttribute("data-space")).toBe("custom");
+  expect(bleed.style.getPropertyValue("--home-ui-layout-space")).toBe("18px");
+});
+
 test("all core exports render to static HTML without a provider", () => {
-  const html = renderToStaticMarkup(<><Heading level={2}>Server heading</Heading><Text textStyle="amount">€1.234.567,89</Text><Button loading>Keep name</Button><IconButton icon={PlusIcon} aria-label="Add example" /></>);
+  const html = renderToStaticMarkup(<><Heading level={2}>Server heading</Heading><Text textStyle="amount">€1.234.567,89</Text><Button loading>Keep name</Button><IconButton icon={PlusIcon} aria-label="Add example" /><Stack><Inline><Inset><Bleed>Layout</Bleed></Inset></Inline></Stack></>);
   expect(html).toContain("<h2");
   expect(html).toContain("€1.234.567,89");
   expect(html).toContain('aria-label="Add example"');
