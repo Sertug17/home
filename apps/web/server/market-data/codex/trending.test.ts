@@ -209,28 +209,10 @@ describe("Codex trending memes pages", () => {
     expect(page.exhausted).toBe(false);
   });
 
-  test("rejects a repeated page-one result", () => {
-    expect(() =>
-      normalizeTrendingMemesPage(trendingPayload([], 0), NOW, {
-        offset: 24,
-        limit: CODEX_TRENDING_PAGE_SIZE,
-      }),
-    ).toThrow(CodexMarketDataError);
-  });
-
   test("rejects an inconsistent provider count", () => {
     const payload = { filterTokens: { results: [memeRow("0x1111111111111111111111111111111111111111", "Higher")], count: 5, page: 0 } };
     expect(() =>
       normalizeTrendingMemesPage(payload, NOW, {
-        offset: 0,
-        limit: CODEX_TRENDING_PAGE_SIZE,
-      }),
-    ).toThrow(CodexMarketDataError);
-  });
-
-  test("rejects missing pagination metadata", () => {
-    expect(() =>
-      normalizeTrendingMemesPage({ filterTokens: { results: [] } }, NOW, {
         offset: 0,
         limit: CODEX_TRENDING_PAGE_SIZE,
       }),

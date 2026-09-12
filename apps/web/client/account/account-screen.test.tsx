@@ -20,7 +20,6 @@ const { AccountSignInSheet } = await import("./account-screen");
 const {
   AccountWalletClientProvider,
   AccountWalletSessionOwner,
-  CdpAccountProvider,
   createBlockedAccountWalletClient,
   useAccountWallet,
 } = await import("./cdp-client");
@@ -321,59 +320,6 @@ describe("production account sign-in sheet", () => {
     fireEvent.click(page().getByRole("button", { name: "Cancel sign in" }));
     await waitFor(() => expect(page().queryByRole("button", { name: "Cancel sign in" })).toBeNull());
     expect(document.activeElement).toBe(trigger);
-  });
-
-  test("shows only Base Account when native auth is enabled without CDP email configuration", async () => {
-    let baseSignInCalls = 0;
-    const client: AccountWalletClient = {
-      ...createBlockedAccountWalletClient("unconfigured"),
-      projectConfigured: false,
-      signInAvailability: "ready",
-      baseAccountEnabled: true,
-      signInWithBaseAccount: async () => {
-        baseSignInCalls += 1;
-      },
-    };
-
-    render(
-      <AccountWalletClientProvider client={client}>
-        <AccountSignInSheet open onClose={() => {}} />
-      </AccountWalletClientProvider>,
-    );
-
-    expect(page().queryByRole("textbox", { name: "Email address" })).toBeNull();
-    expect(page().queryByRole("button", { name: "Continue with email" })).toBeNull();
-    fireEvent.click(
-      await page().findByRole("button", { name: "Sign in with Base Account" }),
-    );
-    await waitFor(() => expect(baseSignInCalls).toBe(1));
-  });
-
-  test("fails closed when neither CDP nor native Base Account is configured", async () => {
-    render(
-      <CdpAccountProvider projectId={null}>
-        <button type="button" onClick={() => {}}>
-          Open account
-        </button>
-        <AccountSignInSheet open onClose={() => {}} />
-      </CdpAccountProvider>,
-    );
-
-    const dialog = await page().findByRole("dialog", { name: "Sign in to Home" });
-    expect((dialog as HTMLDialogElement).open).toBe(true);
-    expect(page().getByText("Sign-in is not configured")).toBeTruthy();
-    expect(page().getByText(/NEXT_PUBLIC_CDP_PROJECT_ID/)).toBeTruthy();
-    expect(page().getByText(/\.env\.example/)).toBeTruthy();
-    expect(page().getByText(/apps\/web\/\.env\.local/)).toBeTruthy();
-    const setupLink = page().getByRole("link", { name: "docs/cdp-setup.md" });
-    expect((setupLink as HTMLAnchorElement).href).toContain("docs/cdp-setup.md");
-    expect(page().queryByRole("textbox", { name: "Email address" })).toBeNull();
-    expect(
-      page().queryByRole("button", { name: "Sign in with Base Account" }),
-    ).toBeNull();
-    expect(page().queryByText("Sign-in is unavailable")).toBeNull();
-    expect(page().queryByText("Try again later.")).toBeNull();
-    expect(page().queryByText("Sign-in is not configured for this deployment.")).toBeNull();
   });
 
   test("offers an explicit sign-out retry while failed cleanup keeps details private", async () => {

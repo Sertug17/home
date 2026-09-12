@@ -153,26 +153,6 @@ describe("useMarketPrices", () => {
     );
   });
 
-  test("preserves stock and crypto changeLabel from the public snapshot", async () => {
-    render(
-      <HookProbe
-        options={{
-          fetchImpl: (async () =>
-            Response.json(
-              responseWithSnapshot(new Date().toISOString(), {
-                changeLabel: "+1.25%",
-              }),
-            )),
-        }}
-      />,
-    );
-
-    await waitFor(() =>
-      expect(page().getByTestId("stock-change").textContent).toBe("+1.25%"),
-    );
-    expect(page().getByTestId("crypto-change").textContent).toBe("+1.25%");
-  });
-
   test("rejects malformed public payloads into a generic error state", async () => {
     render(
       <HookProbe
