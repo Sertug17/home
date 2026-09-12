@@ -184,6 +184,21 @@ test("ambiguous handle response retries without a second wallet dispatch", async
   await expect(page.getByText(/Pending/)).toBeVisible();
 });
 
+test("reload resumes an unconfirmed send review from its URL action", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page);
+  await signIn(page);
+
+  await page.goto(`/dashboard?flow=send&action=${ACTION_ID}`);
+  await page.reload();
+
+  const review = page.getByRole("dialog", { name: "Confirm" });
+  await expect(review).toBeVisible();
+  await expect(review.getByText("You're sending USDC")).toBeVisible();
+  await expect(review.getByRole("button", { name: "Send $1.00" })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`flow=send.*action=${ACTION_ID}`));
+});
+
 test("send modal leaves action-row trigger styling at 390px", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
   await installApiFixtures(page);
