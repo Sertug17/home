@@ -22,6 +22,7 @@ import {
   isTransferRecipient,
   normalizeTransferRecipient,
   parseTransferAmount,
+  transferRequestFromAction,
 } from "@/shared/transfers/transfer-helpers";
 import { TransferExecutionError, type ConfirmedTransfer, type TransferAssetId, type TransferRequest } from "@/shared/transfers/types";
 import type { PreparedMoneyAction } from "@/shared/money-actions/types";
@@ -80,7 +81,7 @@ export function SendDialog({
     setError(null);
     void resumeMoneyAction(resumeActionId).then((resumed) => {
       if (cancelled) return;
-      const nextRequest = transferRequestFromResumedAction(resumed);
+      const nextRequest = transferRequestFromAction(resumed);
       if (!nextRequest) throw new TransferExecutionError("unavailable");
       setAssetId(nextRequest.assetId);
       setRecipient(nextRequest.recipient);
@@ -141,6 +142,17 @@ export function SendDialog({
       reset();
       onClose();
     } catch (caught) {
+      if (isUnavailableReview(caught)) {
+        setAssetId("usdc");
+        setRecipient("");
+        setAmount("");
+        setRequest(null);
+        setAction(null);
+        setError("This review is no longer available — start again.");
+        setStep("amount");
+        onInvalidResume?.();
+        return;
+      }
       setError(messageForError(caught));
       setStep("error");
     }
@@ -178,34 +190,10 @@ export function SendDialog({
   );
 }
 
-function transferRequestFromResumedAction(
-  action: PreparedMoneyAction,
-): TransferRequest | null {
-  const amount = action.amounts.find(
-    (entry) => entry.direction === "spend" &&
-      (entry.assetId === "usdc" || entry.assetId === "eth"),
-  );
-  const recipient = action.warnings
-    .find((warning) => warning.startsWith("Recipient: "))
-    ?.slice("Recipient: ".length) ?? "";
-  if (
-    !amount ||
-    (amount.assetId !== "usdc" && amount.assetId !== "eth") ||
-    !isTransferRecipient(recipient)
-  ) {
-    return null;
-  }
-  const request: TransferRequest = {
-    assetId: amount.assetId,
-    recipient: normalizeTransferRecipient(recipient),
-    amountBaseUnits: amount.amountBaseUnits,
-  };
-  try {
-    assertTransferRequest(request);
-    return request;
-  } catch {
-    return null;
-  }
+function isUnavailableReview(error: unknown): boolean {
+  if (!(error instanceof TransferExecutionError) || error.reason !== "unavailable") return false;
+  const status = (error as TransferExecutionError & { status?: unknown }).status;
+  return status === 404 || status === 410;
 }
 
 function messageForError(error: unknown): string {

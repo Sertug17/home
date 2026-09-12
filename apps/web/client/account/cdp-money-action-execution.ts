@@ -137,6 +137,7 @@ export function useMoneyActionExecution({
     if (
       !isRecord(value) ||
       value.id !== id ||
+      value.kind !== "send" ||
       !isRecord(value.summary) ||
       typeof value.summary.title !== "string" ||
       !Array.isArray(value.summary.amounts) ||
@@ -156,7 +157,7 @@ export function useMoneyActionExecution({
         chainId: active.smartAccount.chainId,
         accountProvider: active.accountProvider,
       },
-      kind: "send",
+      kind: value.kind,
       title: value.summary.title,
       calls: value.calls as PreparedMoneyAction["calls"],
       amounts: value.summary.amounts as PreparedMoneyAction["amounts"],

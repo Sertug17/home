@@ -42,6 +42,7 @@ export function createGetActionHandler(dependencies: {
     if (!row.confirmed_at) {
       return privateJson({
         id: row.id,
+        kind: row.kind,
         summary: row.summary,
         calls: row.pending?.calls ?? [],
         expiresAt: row.summary.expiresAt,
