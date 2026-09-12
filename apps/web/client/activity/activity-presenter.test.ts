@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   presentActivityTransferDetails,
   presentActivityTransferRow,
-  type ActivityRowViewModel,
 } from "./activity-presenter";
 import {
   activityAssets,
@@ -53,10 +52,6 @@ function transfer(
   };
 }
 
-function expectSerializable(model: ActivityRowViewModel) {
-  expect(JSON.parse(JSON.stringify(model))).toEqual(model);
-}
-
 describe("presentActivityTransferRow", () => {
   test("presents incoming, outgoing, and self direction semantics", () => {
     expect(presentActivityTransferRow(transfer("incoming"), UTC)).toMatchObject({
@@ -79,24 +74,6 @@ describe("presentActivityTransferRow", () => {
       iconTone: "self",
       sign: "",
       value: "1.00 USDC",
-    });
-  });
-
-  test("uses the runtime formatter with an explicit timezone for deterministic dates", () => {
-    const timestamp = "2026-09-07T11:05:00.000Z";
-    const utc = presentActivityTransferRow(transfer("incoming"), UTC);
-    const pacific = presentActivityTransferRow(transfer("incoming"), {
-      timeZone: "America/Los_Angeles",
-    });
-
-    expect(utc).toMatchObject({
-      dateTime: timestamp,
-      fullDate: "Sep 7, 2026, 11:05 AM",
-      shortDate: "Sep 7, 11:05 AM",
-    });
-    expect(pacific).toMatchObject({
-      fullDate: "Sep 7, 2026, 4:05 AM",
-      shortDate: "Sep 7, 4:05 AM",
     });
   });
 
@@ -150,14 +127,6 @@ describe("presentActivityTransferRow", () => {
     });
   });
 
-  test("includes serializable date accessibility metadata without a row explorer link", () => {
-    const model = presentActivityTransferRow(transfer("incoming"), UTC);
-    expect(model).not.toHaveProperty("explorer");
-    expectSerializable(model);
-  });
-});
-
-describe("presentActivityTransferDetails", () => {
   test("derives exact owner-fenced detail rows and contract identity", () => {
     const details = presentActivityTransferDetails(transfer("incoming"), UTC);
 

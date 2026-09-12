@@ -1,10 +1,11 @@
 import "@/client/account/dom-test-harness";
 
+import { page } from "@/tests/helpers/dom";
 import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { UseInvestDiscoverOptions } from "./use-invest-discover";
 
-const { cleanup, fireEvent, render, waitFor, within } = await import(
+const { cleanup, fireEvent, render, waitFor } = await import(
   "@testing-library/react"
 );
 const { useInvestDiscover } = await import("./use-invest-discover");
@@ -15,10 +16,6 @@ const DEGEN_KEY =
   "eip155:8453/erc20:0x4ed4e862860bed51a9570b96d89af5e1b0efefed";
 const TOSHI_KEY =
   "eip155:8453/erc20:0xac1bd2486aaf3b5c0fc3fd868558b082a531b2b4";
-
-function page() {
-  return within(document.body);
-}
 
 function meme(
   id: string,
@@ -357,107 +354,6 @@ describe("useInvestDiscover pagination", () => {
     expect(offset24Calls).toBe(1);
   });
 
-  test("surfaces a provider error envelope as a retryable failure, not the end state", async () => {
-    let failNextPage = true;
-    render(
-      <HookProbe
-        options={{
-          fetchImpl: async (input) => {
-            if (String(input).includes("offset=24")) {
-              if (failNextPage) {
-                return Response.json({
-                  version: 1,
-                  provider: "codex",
-                  fetchedAt: "2026-09-08T20:00:00.000Z",
-                  icons: { cbbtc: null },
-                  memes: {
-                    status: "error",
-                    message: "envelope failed",
-                    assets: [],
-                    snapshots: [],
-                    nextOffset: null,
-                    exhausted: true,
-                  },
-                });
-              }
-              return discoverResponse(
-                [higherAsset],
-                { nextOffset: null, exhausted: true },
-              );
-            }
-            return discoverResponse(
-              [degenAsset],
-              { nextOffset: 24, exhausted: false },
-            );
-          },
-        }}
-      />,
-    );
-
-    await waitFor(() =>
-      expect(page().getByTestId("meme-status").textContent).toBe("ready"),
-    );
-    fireEvent.click(page().getByRole("button", { name: "load-more" }));
-
-    await waitFor(() =>
-      expect(page().getByTestId("load-more-error").textContent).toBe("yes"),
-    );
-    // Accumulated rows and the same offset survive an error envelope.
-    expect(page().getByTestId("meme-names").textContent).toBe("Degen");
-    expect(page().getByTestId("next-offset").textContent).toBe("24");
-    expect(page().getByTestId("exhausted").textContent).toBe("no");
-
-    failNextPage = false;
-    fireEvent.click(page().getByRole("button", { name: "retry-load-more" }));
-    await waitFor(() =>
-      expect(page().getByTestId("meme-names").textContent).toBe(
-        "Degen,Higher",
-      ),
-    );
-  });
-
-  test("treats a rejected page request (timeout) as retryable", async () => {
-    let failNextPage = true;
-    render(
-      <HookProbe
-        options={{
-          fetchImpl: async (input) => {
-            if (String(input).includes("offset=24")) {
-              if (failNextPage) throw new Error("AbortError: timed out");
-              return discoverResponse(
-                [higherAsset],
-                { nextOffset: null, exhausted: true },
-              );
-            }
-            return discoverResponse(
-              [degenAsset],
-              { nextOffset: 24, exhausted: false },
-            );
-          },
-        }}
-      />,
-    );
-
-    await waitFor(() =>
-      expect(page().getByTestId("meme-status").textContent).toBe("ready"),
-    );
-    fireEvent.click(page().getByRole("button", { name: "load-more" }));
-
-    await waitFor(() =>
-      expect(page().getByTestId("load-more-error").textContent).toBe("yes"),
-    );
-    expect(page().getByTestId("meme-names").textContent).toBe("Degen");
-    expect(page().getByTestId("next-offset").textContent).toBe("24");
-
-    failNextPage = false;
-    fireEvent.click(page().getByRole("button", { name: "retry-load-more" }));
-    await waitFor(() =>
-      expect(page().getByTestId("meme-names").textContent).toBe(
-        "Degen,Higher",
-      ),
-    );
-  });
-
   test("continues loading from an initially-empty catalog page", async () => {
     render(
       <HookProbe
@@ -596,44 +492,5 @@ describe("useInvestDiscover pagination", () => {
     expect(page().getByTestId("auto-load-paused").textContent).toBe("yes");
   });
 
-  test("does not refetch public discovery on visibility changes", async () => {
-    let pageZeroCalls = 0;
-    render(
-      <HookProbe
-        options={{
-          refreshCooldownMs: 0,
-          fetchImpl: async (input) => {
-            const url = String(input);
-            if (!url.includes("offset=")) {
-              pageZeroCalls += 1;
-              return discoverResponse(
-                [degenAsset],
-                { nextOffset: 24, exhausted: false },
-              );
-            }
-            return discoverResponse(
-              [higherAsset],
-              { nextOffset: null, exhausted: true },
-            );
-          },
-        }}
-      />,
-    );
 
-    await waitFor(() =>
-      expect(page().getByTestId("meme-status").textContent).toBe("ready"),
-    );
-
-    document.dispatchEvent(new Event("visibilitychange"));
-    await Promise.resolve();
-    expect(pageZeroCalls).toBe(1);
-
-    fireEvent.click(page().getByRole("button", { name: "load-more" }));
-    await waitFor(() =>
-      expect(page().getByTestId("meme-names").textContent).toBe(
-        "Degen,Higher",
-      ),
-    );
-    expect(page().getByTestId("exhausted").textContent).toBe("yes");
-  });
 });

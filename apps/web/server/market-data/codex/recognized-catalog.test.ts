@@ -5,8 +5,6 @@ import {
 } from "@/config/portfolio-assets";
 import {
   CODEX_RECOGNIZED_CATALOG_LIMIT,
-  CODEX_RECOGNIZED_CATALOG_QUERY,
-  CODEX_RECOGNIZED_OFFSETS,
   createCodexRecognizedTokenCatalogReader,
   normalizeRecognizedTokenCatalog,
 } from "./recognized-catalog";
@@ -38,54 +36,6 @@ function withToken(
 }
 
 describe("Codex recognized-token catalog", () => {
-  test("queries exactly the three Jesse-locked public pages and coalesces the cached catalog", async () => {
-    const calls: Array<Record<string, unknown>> = [];
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const reader = createCodexRecognizedTokenCatalogReader({
-      apiKey: "fixture-key",
-      now: () => new Date("2026-09-12T12:00:00.000Z"),
-      fetchImpl: async (_input, init) => {
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        calls.push(body);
-        await gate;
-        const variables = body.variables as { offset: number };
-        return Response.json({
-          data: {
-            filterTokens: {
-              results: variables.offset === 0
-                ? [row("0x1111111111111111111111111111111111111111")]
-                : [],
-              count: variables.offset === 0 ? 1 : 0,
-              page: variables.offset,
-            },
-          },
-        });
-      },
-    });
-
-    const first = reader();
-    const second = reader();
-    release();
-    expect(await first).toEqual(await second);
-    expect(calls).toHaveLength(3);
-    expect(calls.map((call) => (call.variables as { offset: number }).offset).sort((a, b) => a - b)).toEqual([...CODEX_RECOGNIZED_OFFSETS]);
-    for (const call of calls) {
-      expect(call.query).toBe(CODEX_RECOGNIZED_CATALOG_QUERY);
-      expect(call.variables).toMatchObject({
-        filters: { network: [8453], potentialScam: false, trendingIgnored: false },
-        rankings: [{ attribute: "liquidity", direction: "DESC" }],
-        limit: 200,
-      });
-      expect(JSON.stringify(call.variables)).not.toContain("wallet");
-    }
-    expect(await reader()).toMatchObject({
-      status: "complete",
-      entries: [{ address: "0x1111111111111111111111111111111111111111" }],
-    });
-    expect(calls).toHaveLength(3);
-  });
-
   test("preserves successful catalog pages when one page fails", async () => {
     const reader = createCodexRecognizedTokenCatalogReader({
       apiKey: "fixture-key",

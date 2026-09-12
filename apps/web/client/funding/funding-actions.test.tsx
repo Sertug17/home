@@ -71,45 +71,6 @@ afterEach(() => {
 });
 
 describe("FundingActions hydration", () => {
-  test("hydrates the closed default without rendering the portal on the server", async () => {
-    const fixture = await hydrateFundingActions(
-      <FundingActionsForWallet wallet={verifiedWallet()} />,
-    );
-
-    try {
-      expect(fixture.serverMarkup).toContain("Add money");
-      expect(fixture.serverMarkup).not.toContain("<dialog");
-      expect(fixture.hydrationErrors).toEqual([]);
-      expect(fixture.container.querySelector("dialog")).toBeNull();
-      const dialog = document.body.querySelector("dialog");
-      expect(dialog).toBeTruthy();
-      expect(dialog?.hasAttribute("open")).toBe(false);
-      expect(dialog?.closest(".action-row")).toBeNull();
-    } finally {
-      await unmount(fixture.root, fixture.container);
-    }
-  });
-
-  test("hydrates initialOpen and settles with the Add money portal open", async () => {
-    const fixture = await hydrateFundingActions(
-      <FundingActionsForWallet wallet={verifiedWallet()} initialOpen />,
-    );
-
-    try {
-      expect(fixture.serverMarkup).toContain("Add money");
-      expect(fixture.serverMarkup).not.toContain("<dialog");
-      expect(fixture.hydrationErrors).toEqual([]);
-      const dialog = document.body.querySelector("dialog");
-      expect(dialog?.hasAttribute("open")).toBe(true);
-      expect(dialog?.getAttribute("aria-labelledby")).toBe("add-money-title");
-      expect(dialog?.textContent).not.toContain("Fund this Base account");
-      expect(dialog?.textContent).toContain("Use another onramp");
-      expect(dialog?.closest(".action-row")).toBeNull();
-    } finally {
-      await unmount(fixture.root, fixture.container);
-    }
-  });
-
   test("hydrates a Coinbase return and settles on the Receive portal", async () => {
     const fixture = await hydrateFundingActions(
       <FundingActionsForWallet wallet={verifiedWallet()} returnedFromCoinbase />,

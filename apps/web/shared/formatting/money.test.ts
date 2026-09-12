@@ -71,9 +71,8 @@ const localeCases = [
 ];
 
 describe("presentation money formatting", () => {
-  test.each(localeCases)(
-    "formats amounts, compact values, signs, percentages, tiny prices, and dates for $regionId",
-    (entry) => {
+  test("formats amounts, signs, percentages, prices, and dates for every locale", () => {
+    for (const entry of localeCases) {
       expect(
         formatFiatAmount(BigInt("123456"), 2, entry.currency, {
           regionId: entry.regionId,
@@ -110,8 +109,8 @@ describe("presentation money formatting", () => {
           style: "activity-full",
         }),
       ).toBe(entry.date);
-    },
-  );
+    }
+  });
 
   test("derives locale and currency metadata from presentation regions", () => {
     expect(presentationMoneyMetadata()).toMatchObject({

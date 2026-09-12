@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { page } from "@/tests/helpers/dom";
 import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
@@ -7,7 +8,7 @@ import type { PreparedMoneyAction } from "@/shared/money-actions/types";
 import { BASE_USDC_ADDRESS, MORPHO_V1_CANDIDATE_ADDRESSES } from "@/shared/savings/config";
 import type { MorphoVaultCandidate } from "@/shared/savings/types";
 
-const { cleanup, fireEvent, render, within } = await import("@testing-library/react");
+const { cleanup, fireEvent, render } = await import("@testing-library/react");
 const { SavingsMoneyDialog } = await import("./savings-actions");
 
 const ACCOUNT = "0x1111111111111111111111111111111111111111" as const;
@@ -50,7 +51,6 @@ function prepared(kind: "save-deposit" | "save-withdraw" = "save-deposit"): Prep
     owner: { subject: "subject-a", address: ACCOUNT, chainId: 8453, accountProvider: "cdp-embedded" },
   };
 }
-function page() { return within(document.body); }
 function typeAmount(digits: string) {
   for (const digit of digits) fireEvent.click(page().getByRole("button", { name: digit === "." ? "Decimal point" : digit }));
 }
@@ -94,12 +94,12 @@ describe("SavingsMoneyDialog", () => {
     expect(executions).toBe(2);
   });
 
-  for (const failure of [
+  test("surfaces typed prepare errors", async () => {
+    for (const failure of [
     { name: "limit", error: Object.assign(new Error("limit"), { status: 409 }), message: "exceeds the current onchain account balance or vault limit" },
     { name: "rate limit", error: Object.assign(new Error("limited"), { status: 429, code: "SAVINGS_ACTION_RATE_LIMITED", serverMessage: "Base RPC is rate limited. Try again shortly." }), message: "Base RPC is rate limited. Try again shortly. No transaction was submitted." },
     { name: "RPC", error: Object.assign(new Error("unavailable"), { status: 502, code: "SAVINGS_ACTION_RPC", serverMessage: "Base RPC rejected a savings state read: execution reverted" }), message: "Base RPC rejected a savings state read: execution reverted (SAVINGS_ACTION_RPC) No transaction was submitted." },
-  ]) {
-    test(`surfaces the typed ${failure.name} prepare error`, async () => {
+    ]) {
       render(
         <SavingsMoneyDialog
           open mode="deposit" session={session} candidate={candidate}
@@ -111,6 +111,7 @@ describe("SavingsMoneyDialog", () => {
       typeAmount("5");
       fireEvent.click(page().getByRole("button", { name: "Continue" }));
       expect((await page().findByRole("alert")).textContent).toContain(failure.message);
-    });
-  }
+      cleanup();
+    }
+  });
 });

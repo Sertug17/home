@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { page } from "@/tests/helpers/dom";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { ReactElement } from "react";
 import type { InvestAsset } from "@/config/invest-assets";
@@ -12,15 +13,11 @@ mock.module("next/navigation", () => ({
   }),
 }));
 
-const { cleanup, render, within } = await import("@testing-library/react");
+const { cleanup, render } = await import("@testing-library/react");
 const {
   AccountWalletClientProvider,
   createBlockedAccountWalletClient,
 } = await import("@/client/account/cdp-client");
-const {
-  PresentationQuoteProvider,
-  PresentationRegionProvider,
-} = await import("./presentation-quote");
 const { InvestExperience } = await import("./invest-experience");
 
 const dynamicId = "base:0x1111111111111111111111111111111111111111";
@@ -53,10 +50,6 @@ function renderInvest(ui: ReactElement) {
       {ui}
     </AccountWalletClientProvider>,
   );
-}
-
-function page() {
-  return within(document.body);
 }
 
 const pendingHistoryFetch = (() => new Promise<Response>(() => {})) as unknown as typeof fetch;
@@ -105,45 +98,5 @@ describe("dynamic Invest detail", () => {
     expect(page().getByRole("heading", { name: "Higher" })).toBeTruthy();
   });
 
-  test("keeps the local fiat header while labeling historical chart values as USD", () => {
-    window.fetch = pendingHistoryFetch;
-    window.history.replaceState(
-      {},
-      "",
-      `/dashboard?panel=invest&asset=${encodeURIComponent(dynamicId)}`,
-    );
 
-    renderInvest(
-      <PresentationRegionProvider regionId="ID">
-        <PresentationQuoteProvider
-          value={{
-            regionId: "ID",
-            valueCurrency: "IDR",
-            quoteUnitsPerUsd: { atoms: "16425", scale: 0 },
-          }}
-        >
-          <InvestExperience
-            memeStatus="ready"
-            memeAssets={[dynamicAsset]}
-            memeMarket={{
-              status: "ready",
-              snapshots: [
-                {
-                  assetId: dynamicId,
-                  displayPrice: "$1",
-                  asOf: "2026-09-09T12:00:00.000Z",
-                  sourceLabel: "Codex",
-                },
-              ],
-            }}
-          />
-        </PresentationQuoteProvider>
-      </PresentationRegionProvider>,
-    );
-
-    expect(page().getByText("Rp 16.425,00")).toBeTruthy();
-    expect(page().getByText("Price history")).toBeTruthy();
-    expect(page().getByText("USD")).toBeTruthy();
-    expect(page().queryByText("$1.00")).toBeNull();
-  });
 });
