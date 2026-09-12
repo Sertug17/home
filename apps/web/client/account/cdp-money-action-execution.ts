@@ -22,10 +22,23 @@ type ConfirmedPlan = {
 
 type GenerationGuard = Pick<OwnerGenerationFence, "assertCurrent">;
 
-type ResolutionState = {
-  status: "pending" | "complete" | "failed";
+/**
+ * Provider operation status folded to what Home acts on. `unavailable` means the
+ * status could not be read at all: stop polling, never announce a failure.
+ */
+export type ResolutionState = {
+  status: "pending" | "complete" | "failed" | "unavailable";
   transactionHash?: string;
   reason?: string;
+};
+
+const CDP_STATUS_MAP: Record<string, ResolutionState["status"]> = {
+  pending: "pending",
+  signed: "pending",
+  broadcast: "pending",
+  complete: "complete",
+  failed: "failed",
+  dropped: "failed",
 };
 
 export type ResolutionClock = {
@@ -105,6 +118,10 @@ export function pollTransactionResolution(input: {
     }
     if (state.status === "failed") {
       input.onFailedWithoutHash(state.reason ?? "The wallet operation failed.");
+      finish();
+      return;
+    }
+    if (state.status === "unavailable") {
       finish();
       return;
     }
@@ -287,7 +304,7 @@ export function useMoneyActionExecution({
       check: async () => {
         if (action.owner.accountProvider === "cdp-embedded") {
           if (!sdkGetUserOperation || !hashPattern.test(providerHandle)) {
-            return { status: "failed", reason: "Operation status is unavailable." };
+            return { status: "unavailable" };
           }
           const result = await sdkGetUserOperation({
             userOperationHash: providerHandle as `0x${string}`,
@@ -298,7 +315,7 @@ export function useMoneyActionExecution({
         }
         const connection = baseConnection.current;
         if (!connection?.getCallsStatus) {
-          return { status: "failed", reason: "Operation status is unavailable." };
+          return { status: "unavailable" };
         }
         return normalizeResolutionState(await connection.getCallsStatus(action.id));
       },
@@ -397,16 +414,17 @@ export function useMoneyActionExecution({
   };
 }
 
-function normalizeResolutionState(value: unknown): ResolutionState {
-  if (!isRecord(value) || !["pending", "complete", "failed"].includes(String(value.status))) {
-    throw new Error("Invalid operation status.");
-  }
+export function normalizeResolutionState(value: unknown): ResolutionState {
+  const status = isRecord(value) ? CDP_STATUS_MAP[String(value.status)] : undefined;
+  if (!isRecord(value) || !status) throw new Error("Invalid operation status.");
+  const reason = failureReason(value)
+    ?? (value.status === "dropped" ? "The operation was dropped before it was included." : null);
   return {
-    status: value.status as ResolutionState["status"],
+    status,
     ...(typeof value.transactionHash === "string" && hashPattern.test(value.transactionHash)
       ? { transactionHash: value.transactionHash }
       : {}),
-    ...(failureReason(value) ? { reason: failureReason(value)! } : {}),
+    ...(reason ? { reason } : {}),
   };
 }
 

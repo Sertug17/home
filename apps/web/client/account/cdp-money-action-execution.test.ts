@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { MfaError } from "@coinbase/cdp-core";
 import {
   executeActionOnce,
+  normalizeResolutionState,
   pollTransactionResolution,
   type ResolutionClock,
 } from "./cdp-money-action-execution";
@@ -156,6 +157,43 @@ describe("thin action dispatch", () => {
     expect(posts).toEqual([]);
     expect(failures).toEqual(["Bundler rejected the operation."]);
     expect(fake.pending()).toBe(0);
+  });
+
+  test("stops silently when the operation status cannot be read", async () => {
+    const fake = fakeClock();
+    const posts: string[] = [];
+    const failures: string[] = [];
+    const run = pollTransactionResolution({
+      generation: 2,
+      fence: { assertCurrent: () => {} },
+      check: async () => ({ status: "unavailable" }),
+      recordTransactionHash: async (hash) => { posts.push(hash); },
+      onFailedWithoutHash: (reason) => { failures.push(reason); },
+      clock: fake.clock,
+    });
+
+    await fake.advance(1_500);
+    await run.result;
+
+    expect(posts).toEqual([]);
+    expect(failures).toEqual([]);
+    expect(fake.pending()).toBe(0);
+  });
+
+  test.each([
+    ["pending", "pending"],
+    ["signed", "pending"],
+    ["broadcast", "pending"],
+    ["complete", "complete"],
+    ["failed", "failed"],
+    ["dropped", "failed"],
+  ] as const)("folds CDP status %s to %s", (cdpStatus, expected) => {
+    expect(normalizeResolutionState({ status: cdpStatus }).status).toBe(expected);
+  });
+
+  test("rejects unknown provider statuses so the poller retries instead of guessing", () => {
+    expect(() => normalizeResolutionState({ status: "mystery" })).toThrow();
+    expect(normalizeResolutionState({ status: "dropped" }).reason).toMatch(/dropped/);
   });
 
   test("stops resolution after an owner switch without posting", async () => {
