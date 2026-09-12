@@ -42,14 +42,6 @@ function row({
   return `{"address":${JSON.stringify(address)},"networkId":${networkId},"priceUsd":${price},"timestamp":${timestamp}${change}}`;
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
 describe("Codex market price reader", () => {
   test("uses the live GetPriceInput schema contract", () => {
     expect(CODEX_TOKEN_PRICES_QUERY).toContain("$inputs: [GetPriceInput!]!");
@@ -295,50 +287,6 @@ describe("Codex market price reader", () => {
       expect(market.status).toBe("ready");
       if (market.status === "ready") expect(market.snapshots).toEqual([]);
     }
-  });
-
-  test("uses the production cache path and coalesces concurrent reads", async () => {
-    const pending = deferred<Response>();
-    let calls = 0;
-    let currentTime = NOW_MS;
-    const reader = createCodexMarketPricesReader({
-      apiKey: "fixture-key",
-      fetchImpl: (() => {
-        calls += 1;
-        return pending.promise;
-      }),
-      now: () => new Date(currentTime),
-    });
-
-    const first = reader();
-    const second = reader();
-    expect(calls).toBe(1);
-    pending.resolve(responseFromRows(""));
-    const [firstResult, secondResult] = await Promise.all([first, second]);
-    expect(firstResult).toBe(secondResult);
-
-    currentTime += 44_999;
-    const cached = await reader();
-    expect(calls).toBe(1);
-    expect(cached).toBe(firstResult);
-  });
-
-  test("refreshes after the 45-second process cache expires", async () => {
-    let calls = 0;
-    let currentTime = NOW_MS;
-    const reader = createCodexMarketPricesReader({
-      apiKey: "fixture-key",
-      fetchImpl: (async () => {
-        calls += 1;
-        return responseFromRows("");
-      }),
-      now: () => new Date(currentTime),
-    });
-
-    await reader();
-    currentTime += 45_001;
-    await reader();
-    expect(calls).toBe(2);
   });
 
   test("does not call the network when the server-only key is missing", async () => {

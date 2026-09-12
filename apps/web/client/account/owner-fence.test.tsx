@@ -192,8 +192,9 @@ afterEach(() => {
 });
 
 describe("owner generation fence", () => {
-  test.each(triggerRows)("blocks a prepared action after $name", async ({ initialProvider, trigger }) => {
-    const provider = new ProviderFixture();
+  test("blocks prepared actions after every owner-generation trigger", async () => {
+    for (const { initialProvider, trigger } of triggerRows) {
+      const provider = new ProviderFixture();
     let activeSession = session(initialProvider);
     let verificationLost = false;
     let serverPostsAfterPrepare = 0;
@@ -241,8 +242,15 @@ describe("owner generation fence", () => {
       });
     });
 
-    await expect(currentClient().executeMoneyAction(action)).rejects.toMatchObject({ reason: "stale-session" });
-    expect(cdpDispatches + provider.walletDispatches).toBe(0);
-    expect(serverPostsAfterPrepare).toBe(0);
+      await expect(currentClient().executeMoneyAction(action)).rejects.toMatchObject({
+        reason: "stale-session",
+      });
+      expect(cdpDispatches + provider.walletDispatches).toBe(0);
+      expect(serverPostsAfterPrepare).toBe(0);
+      cleanup();
+      observedClient = null;
+      window.sessionStorage.clear();
+      window.localStorage.clear();
+    }
   });
 });

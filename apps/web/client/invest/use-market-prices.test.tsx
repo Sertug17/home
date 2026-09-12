@@ -1,5 +1,6 @@
 import "@/client/account/dom-test-harness";
 
+import { page } from "@/tests/helpers/dom";
 import { getHomeQueryClient } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
@@ -8,12 +9,8 @@ import {
 } from "@/shared/invest/public-contract";
 import type { UseMarketPricesOptions } from "./use-market-prices";
 
-const { cleanup, render, waitFor, within } = await import("@testing-library/react");
+const { cleanup, render, waitFor } = await import("@testing-library/react");
 const { useMarketPrices } = await import("./use-market-prices");
-
-function page() {
-  return within(document.body);
-}
 
 function responseWithSnapshot(
   asOf: string,

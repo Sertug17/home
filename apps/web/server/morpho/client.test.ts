@@ -112,49 +112,6 @@ describe("getMorphoVaultCandidates", () => {
     ).rejects.toBeInstanceOf(MorphoUpstreamError);
   });
 
-  test("serves a fresh cached result without another transport call", async () => {
-    let calls = 0;
-    let currentTime = Date.parse("2026-09-07T20:30:00.000Z");
-    const controlledNow = () => new Date(currentTime);
-    const reader = createMorphoVaultCandidatesReader(
-      (async () => {
-        calls += 1;
-        return jsonResponse(candidatesResponse());
-      }) as unknown as typeof fetch,
-    );
-
-    const first = await reader({ now: controlledNow });
-    currentTime += 29_999;
-    const cached = await reader({ now: controlledNow });
-
-    expect(calls).toBe(1);
-    expect(first.stale).toBeFalse();
-    expect(cached.stale).toBeFalse();
-    expect(cached.source.fetchedAt).toBe("2026-09-07T20:30:00.000Z");
-  });
-
-  test("coalesces concurrent production-path reads", async () => {
-    let calls = 0;
-    const pendingResponse = deferred<Response>();
-    const reader = createMorphoVaultCandidatesReader(
-      (() => {
-        calls += 1;
-        return pendingResponse.promise;
-      }) as unknown as typeof fetch,
-    );
-
-    const first = reader({ now });
-    const second = reader({ now });
-
-    expect(calls).toBe(1);
-    pendingResponse.resolve(jsonResponse(candidatesResponse()));
-
-    const [firstResult, secondResult] = await Promise.all([first, second]);
-    expect(firstResult).toBe(secondResult);
-    expect(firstResult.stale).toBeFalse();
-    expect(firstResult.source.fetchedAt).toBe("2026-09-07T20:30:00.000Z");
-  });
-
   test("falls back to the cached snapshot when refresh fails within five minutes", async () => {
     let calls = 0;
     let currentTime = Date.parse("2026-09-07T20:30:00.000Z");

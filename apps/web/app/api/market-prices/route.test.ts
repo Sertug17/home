@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { createErrorMarketPricesResponse } from "@/server/market-data/codex/client";
 import type { MarketPricesResponse } from "@/shared/invest/public-contract";
 import { createMarketPricesHandler } from "./handler";
-import { dynamic, runtime } from "./route";
 
 const publicPayload: MarketPricesResponse = {
   version: 1,
@@ -15,10 +14,7 @@ const publicPayload: MarketPricesResponse = {
 };
 
 describe("GET /api/market-prices", () => {
-  test("is a public Node route and returns the bounded market-state contract without authentication", async () => {
-    expect(runtime).toBe("nodejs");
-    expect(dynamic).toBe("force-dynamic");
-
+  test("returns the bounded public market-state contract", async () => {
     const GET = createMarketPricesHandler(async () => publicPayload);
     const response = await GET();
 

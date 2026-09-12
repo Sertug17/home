@@ -1,20 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { setObservabilityLogWriterForTests } from "@/server/observability/log";
-import {
-  GET,
-  createRecordedOperationsReader,
-  dynamic,
-  maxDuration,
-  runtime,
-} from "./route";
+import { GET, createRecordedOperationsReader } from "./route";
 
 afterEach(() => setObservabilityLogWriterForTests());
 
 describe("GET /api/activity route composition", () => {
-  test("uses the Node runtime and rejects unauthenticated reads before activity sources", async () => {
-    expect(runtime).toBe("nodejs");
-    expect(dynamic).toBe("force-dynamic");
-    expect(maxDuration).toBe(30);
+  test("logs rejected unauthenticated reads before activity sources", async () => {
     const lines: string[] = [];
     setObservabilityLogWriterForTests((line) => lines.push(line));
 

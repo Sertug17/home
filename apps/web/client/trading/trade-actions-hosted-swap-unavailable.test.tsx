@@ -1,10 +1,11 @@
 import "@/client/account/dom-test-harness";
 
+import { page } from "@/tests/helpers/dom";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { AccountWalletClient } from "@/client/account/cdp-client";
 import { cryptoAssets } from "@/config/invest-assets";
 
-const { cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
+const { cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const {
   AccountWalletClientProvider,
   createBlockedAccountWalletClient,
@@ -13,10 +14,6 @@ const { TradeActions } = await import("./trade-actions");
 
 const ADDRESS = "0x1111111111111111111111111111111111111111" as const;
 const bitcoin = cryptoAssets.find((asset) => asset.id === "cbbtc")!;
-
-function page() {
-  return within(document.body);
-}
 
 afterEach(cleanup);
 

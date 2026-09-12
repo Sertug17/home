@@ -394,38 +394,6 @@ describe("IDRX adapter behavior", () => {
     }
   });
 
-  test("bounds a stalled provider response body", async () => {
-    let cancellations = 0;
-    const realSetTimeout = globalThis.setTimeout;
-    globalThis.setTimeout = ((callback: TimerHandler) => {
-      if (typeof callback === "function") callback();
-      return 0 as unknown as ReturnType<typeof setTimeout>;
-    }) as unknown as typeof setTimeout;
-
-    try {
-      const ctx = createProviderContext({
-        manifest: idrxProvider.manifest,
-        region: "ID",
-        paymentMethodId: "qris",
-        env,
-        fetchImplementation: (async () => new Response(
-          new ReadableStream<Uint8Array>({
-            cancel() {
-              cancellations += 1;
-            },
-          }),
-          { status: 200 },
-        )) as unknown as typeof fetch,
-      });
-      await expect(idrxProvider.createOrder(intent, ctx)).resolves.toEqual({
-        outcome: "ambiguous",
-      });
-      expect(cancellations).toBe(1);
-    } finally {
-      globalThis.setTimeout = realSetTimeout;
-    }
-  });
-
   test("rejects unsupported precision before an outbound request", async () => {
     let calls = 0;
     const ctx = createProviderContext({

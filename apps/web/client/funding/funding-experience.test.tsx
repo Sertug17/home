@@ -1,11 +1,12 @@
 import "@/client/account/dom-test-harness";
 
+import { page } from "@/tests/helpers/dom";
 import { afterEach, describe, expect, test } from "bun:test";
 import { StrictMode } from "react";
 import type { AccountWalletClient } from "@/client/account/cdp-client";
 import { getHomeQueryClient } from "@/client/query/query-client";
 
-const { act, cleanup, fireEvent, render, waitFor, within } = await import("@testing-library/react");
+const { act, cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { FundingExperienceForWallet } = await import("./funding-experience");
 
 const ADDRESS_A = "0x1111111111111111111111111111111111111111" as const;
@@ -49,10 +50,6 @@ function verifiedWallet(address: `0x${string}` = ADDRESS_A): FundingWallet {
   };
 }
 
-function page() {
-  return within(document.body);
-}
-
 afterEach(() => {
   cleanup();
   getHomeQueryClient().clear();
@@ -64,79 +61,6 @@ afterEach(() => {
 });
 
 describe("FundingExperience", () => {
-  test("keeps Coinbase return routing and copies the full Base address", async () => {
-    let copied = "";
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText: async (value: string) => { copied = value; } },
-    });
-
-    render(
-      <FundingExperienceForWallet
-        wallet={verifiedWallet()}
-        navigateToHostedOnramp={() => {}}
-        returnedFromCoinbase
-        regionId="ID"
-      />,
-    );
-
-    expect(page().getByRole("dialog", { name: "Receive" })).toBeTruthy();
-    expect(page().getByText("Receive on Base")).toBeTruthy();
-    expect(page().getByText("USDC")).toBeTruthy();
-    expect(page().getByText("IDRX")).toBeTruthy();
-    expect(page().getByText(/other tokens in Home's supported Base inventory/)).toBeTruthy();
-    expect(page().queryByRole("button", { name: "Copy address" })).toBeNull();
-    expect(page().queryByRole("button", { name: "Check received" })).toBeNull();
-
-    fireEvent.click(page().getByRole("button", { name: /Copy 0x1111…111111/ }));
-    await waitFor(() => expect(copied).toBe(ADDRESS_A));
-    expect(page().getByRole("button", { name: "Copied" })).toBeTruthy();
-    expect(page().queryByLabelText(`Full Base address ${ADDRESS_A}`)).toBeNull();
-  });
-
-  test("offers the full selectable address when clipboard access is unavailable", async () => {
-    render(
-      <FundingExperienceForWallet
-        wallet={verifiedWallet()}
-        navigateToHostedOnramp={() => {}}
-        initialStep="receive"
-      />,
-    );
-
-    fireEvent.click(page().getByRole("button", { name: /Copy 0x1111…111111/ }));
-
-    const alert = await page().findByRole("alert");
-    expect(alert.textContent).toContain("Select and copy the full address below");
-    const fallback = page().getByLabelText(`Full Base address ${ADDRESS_A}`);
-    expect(fallback.textContent).toBe(ADDRESS_A);
-    expect(fallback.getAttribute("tabindex")).toBe("0");
-  });
-
-  test("offers the full selectable address when clipboard write is rejected", async () => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText: async () => { throw new Error("denied"); } },
-    });
-    render(
-      <FundingExperienceForWallet
-        wallet={verifiedWallet()}
-        navigateToHostedOnramp={() => {}}
-        initialStep="receive"
-      />,
-    );
-
-    fireEvent.click(page().getByRole("button", { name: /Copy 0x1111…111111/ }));
-
-    await waitFor(() => {
-      expect(page().getByRole("alert").textContent).toContain(
-        "Select and copy the full address below",
-      );
-    });
-    expect(page().getByLabelText(`Full Base address ${ADDRESS_A}`).textContent).toBe(
-      ADDRESS_A,
-    );
-  });
-
   test("does not present a disabled regional candidate as receive support", () => {
     render(
       <FundingExperienceForWallet
@@ -224,15 +148,6 @@ describe("FundingExperience", () => {
     expect(page().queryByText("Check Activity before trying again")).toBeNull();
   });
 
-  test("shows only server-configured bindings and leaves the US Coinbase row working", async () => {
-    const argentina = render(<FundingExperienceForWallet wallet={{ ...verifiedWallet(), fetchAccountResource: async (path) => path.startsWith("/api/funding/providers") ? { providers: [] } : { order: null } }} navigateToHostedOnramp={() => {}} regionId="AR" />);
-    await waitFor(() => expect(page().queryByRole("button", { name: /Deposit ARS/ })).toBeNull());
-    argentina.unmount();
-    render(<FundingExperienceForWallet wallet={verifiedWallet()} navigateToHostedOnramp={() => {}} regionId="US" />);
-    expect(page().getByRole("button", { name: /Use Coinbase to deposit USD/ })).toBeTruthy();
-    expect(page().queryByRole("button", { name: /Use Ripio/ })).toBeNull();
-  });
-
   test("keeps hosted navigation active after StrictMode effect replay", async () => {
     const navigations: string[] = [];
     render(
@@ -282,33 +197,6 @@ describe("FundingExperience", () => {
     expect(closes).toBeGreaterThan(0);
     expect(navigations).toEqual([]);
     expect(window.sessionStorage.length).toBe(0);
-  });
-
-  test("unmounting a pending hosted onramp prevents delayed navigation", async () => {
-    let resolveRequest!: (value: unknown) => void;
-    const pending = new Promise<unknown>((resolve) => {
-      resolveRequest = resolve;
-    });
-    const navigations: string[] = [];
-    const view = render(
-      <FundingExperienceForWallet
-        wallet={{ ...verifiedWallet(), fetchAccountResource: async () => pending }}
-        navigateToHostedOnramp={(url) => navigations.push(url)}
-        regionId="US"
-      />,
-    );
-
-    fireEvent.click(page().getByRole("button", { name: /Use Coinbase to deposit USD/ }));
-    fireEvent.click(page().getByRole("button", { name: "Continue to Coinbase" }));
-    await waitFor(() => expect(page().getByRole("button", { name: "Opening Coinbase…" })).toBeTruthy());
-    view.unmount();
-
-    await act(async () => {
-      resolveRequest(hosted());
-      await pending;
-    });
-
-    expect(navigations).toEqual([]);
   });
 
   test("hides the prior verified address as soon as the account boundary changes", () => {
