@@ -10,6 +10,7 @@ Start with [Home is thin](home-is-thin.md) for the current action and client con
 | [Balances inventory architecture](balances-inventory-architecture.md) | Bounded wallet and savings inventory decisions. |
 | [Base Account](base-account.md) | Optional Base Account configuration. |
 | [Build status](build-status.md) | Local-app scope and validation boundary. |
+| [Checkpoint 2026-09-12](checkpoint-2026-09-12.md) | State of main after the Home-is-thin reset; decisions, open items, how to resume. |
 | [CDP error reporting](cdp-error-reporting.md) | Default CDP error-reporting policy. |
 | [CDP setup](cdp-setup.md) | CDP project, sessions, and allowed origins. |
 | [CDP SQL](cdp-sql.md) | Indexed Base-history adapter notes. |
