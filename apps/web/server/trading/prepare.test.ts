@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import { BASE_USDC } from "@/shared/trading/assets";
-import { MemoryTradeIntentStore } from "./intent-store";
 import { hashTypedData } from "viem";
 import { PERMIT2_ADDRESS } from "./permit2";
 import {
@@ -95,17 +94,15 @@ function request() {
   });
 }
 
-function dependencies(tradeQuote: TradeQuote, store = new MemoryTradeIntentStore()) {
+function dependencies(tradeQuote: TradeQuote) {
   const quoteRequests: TradeQuoteRequest[] = [];
   return {
     quoteRequests,
-    store,
     value: {
       quoteClient: { async createSwapQuote(value: TradeQuoteRequest) { quoteRequests.push(value); return tradeQuote; } },
       readBalance: async (_address: `0x${string}`, token: `0x${string}`) => balance(token),
       readPermit2State: async () => ({ blockNumber: BigInt(101), used: false }),
       resolveSigner: async () => ({ smartAccount: SMART, signerAddress: SIGNER, ownerIndex: 0 as const, deployed: true }),
-      intentStore: store,
       now: () => NOW,
     },
   };
@@ -125,14 +122,6 @@ describe("Permit2 trade intent preparation", () => {
     expect(review.permit.message.spender).toBe(ROUTER_SPENDER);
     expect(review.receive.minimumAmountBaseUnits).toBe("99000");
     expect(review.expiresAt).toBe("2026-09-08T04:03:00.000Z");
-    const stored = await fixture.store.get({
-      subject: "trade-user", address: SMART, chainId: 8453, accountProvider: "cdp-embedded",
-    }, review.id);
-    expect(stored?.draft.calls[0].approval).toEqual({ assetId: "usdc", spender: PERMIT2_ADDRESS });
-    expect(stored?.draft.calls[0].data).toContain(PERMIT2_ADDRESS.slice(2));
-    expect(stored?.permit.message.spender).toBe(ROUTER_SPENDER);
-    expect(stored?.intentHash).toBe(review.intentHash);
-    expect(stored?.finalActionId).toBeUndefined();
   });
 
   test("rejects provider hash, token/amount, and nonce tampering before storing an intent", async () => {
@@ -143,8 +132,7 @@ describe("Permit2 trade intent preparation", () => {
       { quote: quote(), reason: "permit-used", used: true },
     ];
     for (const item of cases) {
-      const store = new MemoryTradeIntentStore();
-      const fixture = dependencies(item.quote, store);
+      const fixture = dependencies(item.quote);
       fixture.value.readPermit2State = async () => ({ blockNumber: BigInt(101), used: Boolean(item.used) });
       await expect(prepareTradeAction(fixture.value, {
         httpRequest: request(), session,
@@ -176,10 +164,5 @@ describe("Permit2 trade intent preparation", () => {
     });
     expect(review.status).toBe("signature-required");
     expect(review.permit.primaryType).toBe("PermitTransferFrom");
-    const stored = await fixture.store.get({
-      subject: "trade-user", address: SMART, chainId: 8453, accountProvider: "base-account",
-    }, review.id);
-    expect(stored?.owner.accountProvider).toBe("base-account");
-    expect(stored?.intentHash).toBe(review.intentHash);
   });
 });

@@ -35,10 +35,18 @@ export function SmokeFixtureAccountProvider({ children }: { children: ReactNode 
     }),
     verifySiweSignature: async () => {},
     getAccessToken: async () => ownerKey ? "playwright-smoke-token" : null,
-    sendUserOperation: async () => {
+    sendUserOperation: () => {
       const count = Number(window.sessionStorage.getItem(DISPATCH_COUNT_KEY) ?? "0") + 1;
       window.sessionStorage.setItem(DISPATCH_COUNT_KEY, String(count));
-      return { userOperationHash: USER_OPERATION_HASH };
+      if (count === 1) {
+        return {
+          then(resolve: (value: { userOperationHash: typeof USER_OPERATION_HASH }) => void) {
+            resolve({ userOperationHash: USER_OPERATION_HASH });
+            throw new Error("fixture transport threw after resolving");
+          },
+        } as unknown as Promise<{ userOperationHash: typeof USER_OPERATION_HASH }>;
+      }
+      return Promise.resolve({ userOperationHash: USER_OPERATION_HASH });
     },
     getUserOperation: async () => ({
       network: "base",

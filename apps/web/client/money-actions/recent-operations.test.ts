@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
-import { visibleActivityMoneyActions } from "@/shared/money-actions/activity-visibility";
 import {
   dedupeRecentMoneyActions,
   parseRecentMoneyActions,
@@ -14,70 +13,46 @@ const session: VerifiedAccountSession = {
 };
 const transactionHash = `0x${"a".repeat(64)}` as const;
 
-function operation(address = session.smartAccount!.address): RecentMoneyActionOperation {
+function row(address = session.smartAccount!.address, status = "confirmed") {
   return {
-    action: {
-      id: "11111111-1111-4111-8111-111111111111",
-      reviewHash: "b".repeat(64),
-      owner: { subject: "subject-a", address, chainId: 8453, accountProvider: "cdp-embedded" },
-      kind: "send",
+    id: "11111111-1111-4111-8111-111111111111",
+    provider: "cdp-embedded",
+    kind: "send",
+    summary: {
       title: "Send USDC",
-      calls: [{ to: "0x2222222222222222222222222222222222222222", data: "0x", value: "0" }],
       amounts: [{ assetId: "usdc", symbol: "USDC", decimals: 6, amountBaseUnits: "1", direction: "spend" }],
       warnings: ["Network fee shown by wallet."],
-      createdAt: "2026-09-08T05:00:00.000Z",
-      expiresAt: "2026-09-08T05:10:00.000Z",
+      expiresAt: "2026-09-12T05:10:00.000Z",
     },
-    status: "confirmed",
-    attemptCount: 1,
+    status,
     transactionHash,
-    createdAt: "2026-09-08T05:00:00.000Z",
-    updatedAt: "2026-09-08T05:02:00.000Z",
+    createdAt: "2026-09-12T05:00:00.000Z",
+    confirmedAt: "2026-09-12T05:02:00.000Z",
+    owner: { subject: "subject-a", address, chainId: 8453, accountProvider: "cdp-embedded" },
   };
 }
 
-describe("recent Home operation activity", () => {
+function operation(): RecentMoneyActionOperation {
+  return parseRecentMoneyActions({ actions: [row()] }, session)[0]!;
+}
+
+describe("recent Home action activity", () => {
   test("accepts only the full verified owner tuple", () => {
-    expect(parseRecentMoneyActions({ operations: [operation()] }, session)).toHaveLength(1);
-    expect(parseRecentMoneyActions({ operations: [operation("0x3333333333333333333333333333333333333333")] }, session)).toEqual([]);
+    expect(parseRecentMoneyActions({ actions: [row()] }, session)).toHaveLength(1);
+    expect(parseRecentMoneyActions({ actions: [row("0x3333333333333333333333333333333333333333")] }, session)).toEqual([]);
   });
 
-  test("deduplicates a Home operation after indexed activity exposes the same transaction hash", () => {
+  test("deduplicates a Home action after indexed activity exposes the same transaction hash", () => {
     expect(dedupeRecentMoneyActions([operation()], new Set())).toHaveLength(1);
     expect(dedupeRecentMoneyActions([operation()], new Set([transactionHash]))).toEqual([]);
   });
 
-  test("keeps an unresolved send without submission refs and accepts compact ISO timestamps", () => {
-    const unresolved = {
-      ...operation(),
-      status: "submitting" as const,
-      attemptCount: 1,
-      transactionHash: "",
-      userOperationHash: "",
-      createdAt: "2026-09-08T05:00:00Z",
-      updatedAt: "2026-09-08T05:02:00Z",
-    };
-    const parsed = parseRecentMoneyActions({ operations: [unresolved] }, session);
+  test("keeps pending rows without transaction hashes and rejects non-derived statuses", () => {
+    const pending = { ...row(undefined, "pending"), transactionHash: undefined };
+    const parsed = parseRecentMoneyActions({ actions: [pending] }, session);
     expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.status).toBe("submitting");
+    expect(parsed[0]?.status).toBe("pending");
     expect(parsed[0]?.transactionHash).toBeUndefined();
-  });
-
-  test("hides Rejected and other pre-chain terminals after parse", () => {
-    const rejected = { ...operation(), status: "rejected" as const, transactionHash: undefined };
-    const expired = {
-      ...operation(),
-      action: { ...operation().action, id: "22222222-2222-4222-8222-222222222222" },
-      status: "expired" as const,
-      transactionHash: undefined,
-    };
-    const failedOnchain = {
-      ...operation(),
-      action: { ...operation().action, id: "33333333-3333-4333-8333-333333333333" },
-      status: "failed" as const,
-    };
-    const parsed = parseRecentMoneyActions({ operations: [rejected, expired, failedOnchain] }, session);
-    expect(parsed.map((row) => row.status)).toEqual(["rejected", "expired", "failed"]);
-    expect(visibleActivityMoneyActions(parsed).map((row) => row.status)).toEqual(["failed"]);
+    expect(parseRecentMoneyActions({ actions: [{ ...row(), status: "rejected" }] }, session)).toEqual([]);
   });
 });

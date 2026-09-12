@@ -88,7 +88,7 @@ Open `http://localhost:3000`. Use the canonical `localhost` origin rather than `
 
 You can browse public product surfaces without credentials. Email sign-in, authenticated balances, and money actions require your own CDP project and allowed local origin; follow [CDP setup](docs/cdp-setup.md). Never commit secrets or expose server keys with a `NEXT_PUBLIC_` prefix.
 
-Money actions require PostgreSQL via `DATABASE_URL` and `MONEY_ACTION_POSTGRES_CUTOVER=verified-empty` after unresolved legacy SQLite actions and references are verified empty. Apply the migrations and read [Vercel deploy](docs/vercel-deploy.md). Trading intents use a separate persistence boundary documented in [build status](docs/build-status.md).
+Home actions require PostgreSQL via `DATABASE_URL`. Apply the `actions` and `user_settings` migrations and read [Vercel deploy](docs/vercel-deploy.md).
 
 ### Useful commands
 

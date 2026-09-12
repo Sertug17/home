@@ -22,8 +22,6 @@ export {
   parseRecentMoneyActions,
 } from "./recent-operations";
 export type {
-  CheckRecentMoneyAction,
   FetchRecentMoneyActions,
-  ReadRecentMoneyAction,
   RecentMoneyActionOperation,
 } from "./recent-operations";

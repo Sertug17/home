@@ -9,7 +9,7 @@ const USER_OPERATION_HASH = `0x${"ab".repeat(32)}`;
 const CREATED_AT = new Date().toISOString();
 const EXPIRES_AT = new Date(Date.now() + 10 * 60_000).toISOString();
 
-type OperationStatus = "prepared" | "submitting" | "submitted";
+type ActionStatus = "unconfirmed" | "pending";
 
 function action() {
   const amount = "1000000";
@@ -28,19 +28,6 @@ function action() {
     warnings: [`Recipient: ${RECIPIENT}`, "Network fee shown by wallet."],
     createdAt: CREATED_AT,
     expiresAt: EXPIRES_AT,
-  };
-}
-
-function operation(status: OperationStatus) {
-  const prepared = action();
-  return {
-    action: prepared,
-    status,
-    attemptCount: status === "prepared" ? 0 : 1,
-    ...(status === "prepared" ? {} : { claimedAt: prepared.createdAt }),
-    ...(status === "submitted" ? { userOperationHash: USER_OPERATION_HASH } : {}),
-    createdAt: prepared.createdAt,
-    updatedAt: prepared.createdAt,
   };
 }
 
@@ -95,7 +82,9 @@ async function json(route: Route, body: unknown) {
 }
 
 async function installApiFixtures(page: Page) {
-  let status: OperationStatus = "prepared";
+  let status: ActionStatus = "unconfirmed";
+  let handleRecorded = false;
+  let failHandleResponseOnce = true;
   let fundingStatusReads = 0;
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -104,13 +93,17 @@ async function installApiFixtures(page: Page) {
     if (path === "/api/session") return json(route, { user: { subject: "playwright-smoke-subject" }, smartAccount: { address: OWNER, chainId: 8453 }, accountProvider: "cdp-embedded" });
     if (path === "/api/portfolio/valuation") return json(route, valuation());
     if (path === "/api/portfolio") return json(route, { walletAddress: OWNER, chainId: 8453, blockNumber: "16", blockHash: `0x${"cd".repeat(32)}`, blockTimestamp: "100", fetchedAt: new Date().toISOString(), assets: [{ id: "usdc", symbol: "USDC", decimals: 6, kind: "erc20", tokenAddress: USDC, balanceBaseUnits: "12340000" }, { id: "eth", symbol: "ETH", decimals: 18, kind: "native", balanceBaseUnits: "0" }] });
-    if (path === "/api/actions/operations") return json(route, url.searchParams.get("scope") === "unresolved-send"
-      ? { scope: "unresolved-send", operations: status === "prepared" ? [] : [operation(status)] }
-      : { operations: status === "prepared" ? [] : [operation(status)] });
-    if (path === "/api/actions/send/prepare") { status = "prepared"; return json(route, action()); }
-    if (path === `/api/actions/${ACTION_ID}/claim`) { status = "submitting"; return json(route, { action: action(), disposition: "dispatch", operation: operation(status) }); }
-    if (path === `/api/actions/${ACTION_ID}/submission`) { status = "submitted"; return json(route, { operation: operation(status) }); }
-    if (path === `/api/actions/${ACTION_ID}`) return json(route, { operation: operation(status) });
+    if (path === "/api/actions/prepare" && request.method() === "POST") { status = "unconfirmed"; return json(route, action()); }
+    if (path === `/api/actions/${ACTION_ID}/confirm`) { status = "pending"; return json(route, { id: ACTION_ID, calls: action().calls, summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, expiresAt: EXPIRES_AT }); }
+    if (path === `/api/actions/${ACTION_ID}/handle`) {
+      handleRecorded = true;
+      if (failHandleResponseOnce) { failHandleResponseOnce = false; return route.abort("failed"); }
+      return json(route, { action: { id: ACTION_ID, status: "pending", providerHandle: USER_OPERATION_HASH } });
+    }
+    if (path === `/api/actions/${ACTION_ID}`) return json(route, status === "unconfirmed"
+      ? { id: ACTION_ID, summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, calls: action().calls, expiresAt: EXPIRES_AT }
+      : { action: { id: ACTION_ID, status: "pending", providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined } });
+    if (path === "/api/actions") return json(route, { actions: status === "pending" ? [{ id: ACTION_ID, provider: "cdp-embedded", kind: "send", summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, status: "pending", createdAt: CREATED_AT, confirmedAt: CREATED_AT, providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined, owner: action().owner }] : [] });
     if (path === "/api/activity") return json(route, { version: 1, walletAddress: OWNER, chainId: 8453, from: "2026-09-01T00:00:00.000Z", to: new Date().toISOString(), transfers: [], nextCursor: null, source: { provider: "Playwright", method: "fixture", fetchedAt: new Date().toISOString() } });
     if (path === "/api/funding/providers") return json(route, url.searchParams.get("region") === "ID" ? { providers: [{ providerId: "idrx", displayName: "IDRX", region: "ID", assetId: "base:idrx", assetSymbol: "IDRX", assetDecimals: 2, currency: "IDR", paymentMethods: [{ id: "bank-va-mandiri", label: "Bank transfer · Mandiri" }], quotes: false, kyc: null }] } : { providers: [] });
     if (path === "/api/funding/quotes") return json(route, { quoteToken: "fixture-signed-quote", quote: { fiatAmount: "20000", tokenAmountAtomic: "2000000", fees: [], expiresAt: EXPIRES_AT } });
@@ -163,7 +156,7 @@ async function amountMetrics(page: Page) {
   });
 }
 
-test("signed-in send survives reload without a second wallet dispatch", async ({ page }) => {
+test("ambiguous handle response retries without a second wallet dispatch", async ({ page }) => {
   parsePortfolioValuationSnapshot(valuation(), {
     subject: "playwright-smoke-subject",
     smartAccountAddress: OWNER,
@@ -172,25 +165,23 @@ test("signed-in send survives reload without a second wallet dispatch", async ({
   await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
   await installApiFixtures(page);
   await signIn(page);
-  await expect(page.getByText("$12.34", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByRole("button", { name: "1", exact: true }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("textbox", { name: "To" }).fill(RECIPIENT);
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("dialog", { name: "Confirm" })).toBeVisible();
   await page.getByRole("button", { name: "Send $1.00" }).click();
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("home:playwright-smoke:dispatch-count"))).toBe("1");
 
-  await page.reload();
+  const confirmDialog = page.getByRole("dialog", { name: "Confirm" });
+  await confirmDialog.getByRole("button", { name: "Try again" }).click();
+  await confirmDialog.getByRole("button", { name: "Send $1.00" }).click();
+  await expect(confirmDialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("home:playwright-smoke:dispatch-count"))).toBe("1");
+  await page.getByRole("button", { name: "Activity" }).click();
   await expect(page.getByText("Send USDC", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Check status" })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("home:playwright-smoke:dispatch-count"))).toBe("1");
-
-  await page.getByRole("button", { name: "Account" }).click();
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByText("$12.34", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Pending/)).toBeVisible();
 });
 
 test("send modal leaves action-row trigger styling at 390px", async ({ page }) => {

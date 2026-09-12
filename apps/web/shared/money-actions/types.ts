@@ -57,6 +57,7 @@ export type PreparedMoneyAction = MoneyActionDraft & {
 };
 
 export type MoneyActionOperationStatus =
+  | "pending"
   | "prepared"
   | "submitting"
   | "submitted"

@@ -118,25 +118,6 @@ export function findTransferBalance(
   return readBaseUnits(asset.balanceBaseUnits);
 }
 
-export function buildTransferCall(request: TransferRequest): {
-  to: `0x${string}`;
-  value: bigint;
-  data: `0x${string}`;
-} {
-  assertTransferRequest(request);
-  const amount = readBaseUnits(request.amountBaseUnits, true);
-
-  if (request.assetId === "eth") {
-    return { to: request.recipient, value: amount, data: "0x" };
-  }
-
-  return {
-    to: PORTFOLIO_BASE_USDC_ADDRESS,
-    value: BigInt(0),
-    data: encodeUsdcTransfer(request.recipient, amount),
-  };
-}
-
 export function encodeUsdcTransfer(
   recipient: `0x${string}`,
   amountBaseUnits: bigint,

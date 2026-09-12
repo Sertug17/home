@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { CopyableValue } from "@/components/copyable-value";
 import { formatAddress } from "@/shared/formatting";
@@ -8,7 +8,6 @@ import {
   useAccountWallet,
   type AccountWalletClient,
 } from "@/client/account/cdp-client";
-import { releaseMoneyActionAdmission } from "@/client/money-actions/client";
 import { SendDialog } from "./send-dialog";
 import { TRANSFER_ASSETS, formatSendConfirmAmount } from "@/shared/transfers/transfer-helpers";
 import type { ConfirmedTransfer } from "@/shared/transfers/types";
@@ -28,11 +27,9 @@ type TransferWallet = Pick<
   | "ownerKey"
   | "status"
   | "session"
-  | "pendingTransfer"
-  | "sendTransfer"
-  | "checkPendingTransfer"
-  | "startNewTransfer"
-> & Partial<Pick<AccountWalletClient, "prepareMoneyAction" | "checkMoneyAction" | "executeMoneyAction" | "fetchAccountResource">>;
+  | "prepareMoneyAction"
+  | "executeMoneyAction"
+>;
 
 export function TransferActions(props: TransferActionsProps) {
   const wallet = useAccountWallet();
@@ -61,27 +58,6 @@ export function TransferActionsForWallet({
   const visibleSend = modalOwner === boundary && sendOpen;
   const dropPrivate = modalOwner !== null && modalOwner !== boundary;
   const visibleSuccess = success && success.owner === boundary ? success.transfer : null;
-  const fetchUnresolvedSends = useMemo(() => {
-    const fetchAccountResource = wallet.fetchAccountResource;
-    return fetchAccountResource
-      ? (signal?: AbortSignal) => fetchAccountResource(
-          "/api/actions/operations?scope=unresolved-send&limit=50",
-          { signal },
-        )
-      : undefined;
-  }, [wallet.fetchAccountResource]);
-  const releaseAdmission = useMemo(() => {
-    const fetchAccountResource = wallet.fetchAccountResource;
-    return fetchAccountResource
-      ? (id: string) => releaseMoneyActionAdmission(
-          (path, init = {}) => fetchAccountResource(path, {
-            method: init.method === "POST" ? "POST" : "GET",
-            ...(init.body === undefined ? {} : { body: JSON.parse(String(init.body)) }),
-          }),
-          id,
-        )
-      : undefined;
-  }, [wallet.fetchAccountResource]);
 
   const openSend = () => {
     if (!boundary) return;
@@ -121,16 +97,9 @@ export function TransferActionsForWallet({
               open={visibleSend}
               address={verifiedAddress}
               immediate={dropPrivate}
-              pendingTransfer={wallet.pendingTransfer}
               availableByAsset={availableByAsset}
-              sendTransfer={wallet.sendTransfer}
-              checkPendingTransfer={wallet.checkPendingTransfer}
-              startNewTransfer={wallet.startNewTransfer}
               prepareMoneyAction={wallet.prepareMoneyAction}
-              checkMoneyAction={wallet.checkMoneyAction}
               executeMoneyAction={wallet.executeMoneyAction}
-              fetchUnresolvedSends={fetchUnresolvedSends}
-              releaseAdmission={releaseAdmission}
               ownerBoundary={boundary}
               onTransferConfirmed={(transfer) => {
                 setSuccess({ transfer, owner: boundary });

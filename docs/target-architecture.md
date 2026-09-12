@@ -294,7 +294,7 @@ Token amounts remain decimal integer strings at API boundaries and losslessly st
 
 Browser requests go to same-origin Next.js route handlers with a CDP access token. A shared wrapper validates the token through CDP, resolves the Home user and allowed wallet, then invokes a feature service. No second login. Ownership is enforced for every user-scoped read/write; never authorize using a client-supplied user ID or unverified wallet address. Keep provider keys and database credentials server-only.
 
-Suggested resources: `GET /api/capabilities`, `GET /api/portfolio`, `POST /api/actions/prepare`, `POST /api/actions/:id/claim`, `POST /api/actions/:id/execution-reference`, `GET /api/operations/:id`, and `POST /api/webhooks/:provider`. Provider commands execute through the authorized service after the claim; wallet actions return the bound plan for client signing. Version payload schemas and return structured errors. Use TanStack Query for private activity polling, refresh after writes and back off when idle.
+Current action resources are `POST /api/actions/prepare`, `GET /api/actions/:id`, `POST /api/actions/:id/confirm`, `POST /api/actions/:id/handle`, and `GET /api/actions`. The server returns an owner-bound call plan; the fenced browser dispatches it directly through the selected wallet provider and records provider evidence. Version payload schemas and return structured errors. Use private activity polling, refresh after writes, and back off when idle.
 
 ### CDP webhook coverage
 

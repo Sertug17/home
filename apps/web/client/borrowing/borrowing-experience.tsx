@@ -8,7 +8,7 @@ import { useAccountWallet } from "@/client/account/cdp-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import { MoneyActionReview } from "@/client/money-actions/review";
 import { useMoneyDataRefresh } from "@/client/money-actions/refresh";
-import type { PreparedMoneyAction } from "@/shared/money-actions/types";
+import type { OperationResult, PreparedMoneyAction } from "@/shared/money-actions/types";
 import {
   formatAddress,
   formatPresentationDate,
@@ -47,6 +47,8 @@ type FetchAccountResource = (
 type BorrowExperienceProps = {
   session: VerifiedAccountSession | null;
   fetchAccountResource?: FetchAccountResource;
+  prepareMoneyAction?: (kind: string, params: unknown) => Promise<PreparedMoneyAction>;
+  executeMoneyAction?: (action: PreparedMoneyAction) => Promise<OperationResult>;
   onActionConfirmed?: () => void;
   regionId?: RegionId;
 };
@@ -71,6 +73,8 @@ export function AuthenticatedBorrowExperience() {
     <BorrowExperience
       session={account.status === "verified" ? account.session : null}
       fetchAccountResource={account.fetchAccountResource}
+      prepareMoneyAction={account.prepareMoneyAction}
+      executeMoneyAction={account.executeMoneyAction}
       onActionConfirmed={refreshMoneyData}
       regionId={regionId}
     />
@@ -88,6 +92,8 @@ export function BorrowExperience(props: BorrowExperienceProps) {
 function BorrowExperienceInner({
   session,
   fetchAccountResource,
+  prepareMoneyAction,
+  executeMoneyAction,
   onActionConfirmed,
   regionId = "GLOBAL",
 }: BorrowExperienceProps) {
@@ -148,29 +154,15 @@ function BorrowExperienceInner({
 
   async function submitPreview(event: React.FormEvent) {
     event.preventDefault();
-    if (!snapshot || !fetchAccountResource) return;
+    if (!snapshot || !prepareMoneyAction) return;
     setPreview({ status: "loading" });
     try {
-      const value = await fetchAccountResource("/api/borrow", {
-        method: "POST",
-        body: {
-          operation,
-          amount,
-          snapshotBlockHash: snapshot.source.blockHash,
-        },
+      const action = await prepareMoneyAction("borrow", {
+        operation,
+        amount,
+        snapshotBlockHash: snapshot.source.blockHash,
       });
-      const response = parsePreviewResponse(value, owner!);
-      if (!response) {
-        setPreview({ status: "error", message: "The borrowing preview response was invalid." });
-        return;
-      }
-      if (response.status === "prepared") {
-        setState({ status: "ready", snapshot: response.snapshot });
-        setPreview({ status: "prepared", action: response.action });
-      } else {
-        setState({ status: "ready", snapshot: response.snapshot });
-        setPreview({ status: "preview-only", response });
-      }
+      setPreview({ status: "prepared", action });
     } catch (error) {
       setPreview({
         status: "error",
@@ -332,6 +324,7 @@ function BorrowExperienceInner({
       {preview.status === "prepared" ? (
         <MoneyActionReview
           action={preview.action}
+          execute={executeMoneyAction}
           onClose={() => setPreview({ status: "idle" })}
           onConfirmed={() => {
             setPreview({ status: "idle" });
@@ -399,23 +392,6 @@ function parseSnapshot(value: unknown, expectedOwner: `0x${string}`): BorrowMark
   if (value.position.healthFactorWad !== null && (typeof value.position.healthFactorWad !== "string" || !/^\d+$/.test(value.position.healthFactorWad))) return null;
   if (value.position.liquidationPriceRaw !== null && (typeof value.position.liquidationPriceRaw !== "string" || !/^\d+$/.test(value.position.liquidationPriceRaw))) return null;
   return value as BorrowMarketSnapshot;
-}
-
-function parsePreviewResponse(value: unknown, expectedOwner: `0x${string}`): BorrowPreviewResponse | null {
-  if (!isRecord(value) || (value.status !== "prepared" && value.status !== "preview-only")) return null;
-  const snapshot = parseSnapshot(value.snapshot, expectedOwner);
-  if (!snapshot) return null;
-  if (value.status === "prepared") {
-    if (!isPreparedAction(value.action, expectedOwner)) return null;
-    return { status: "prepared", action: value.action, snapshot };
-  }
-  if (!isRecord(value.preview) || value.preview.execution !== "disabled" || typeof value.preview.title !== "string" || typeof value.preview.disabledReason !== "string" || !isRecord(value.preview.amount) || typeof value.preview.amount.amountBaseUnits !== "string" || !/^\d+$/.test(value.preview.amount.amountBaseUnits) || !Array.isArray(value.preview.warnings) || value.preview.warnings.some((item) => typeof item !== "string")) return null;
-  return value as BorrowPreviewResponse;
-}
-
-function isPreparedAction(value: unknown, expectedOwner: `0x${string}`): value is PreparedMoneyAction {
-  if (!isRecord(value) || !isRecord(value.owner) || typeof value.owner.address !== "string" || value.owner.address.toLowerCase() !== expectedOwner.toLowerCase() || value.owner.chainId !== 8453) return false;
-  return typeof value.id === "string" && typeof value.reviewHash === "string" && typeof value.title === "string" && typeof value.expiresAt === "string" && Array.isArray(value.calls) && value.calls.length > 0 && value.calls.every((call) => isRecord(call) && typeof call.to === "string" && /^0x[0-9a-fA-F]{40}$/.test(call.to) && typeof call.data === "string" && /^0x[0-9a-fA-F]+$/.test(call.data) && call.value === "0") && Array.isArray(value.amounts) && Array.isArray(value.warnings);
 }
 
 function formatUnits(raw: string, decimals: number) {

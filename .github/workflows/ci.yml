@@ -105,7 +105,7 @@ jobs:
         run: node --test scripts/delivery/tests/*.test.mjs
 
   postgres-store-contract:
-    name: real PostgreSQL money-action contract (PostgreSQL 14)
+    name: real PostgreSQL actions and funding contracts (PostgreSQL 14)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -123,7 +123,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      MONEY_ACTION_PG_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/home_test
+      ACTION_PG_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/home_test
+      FUNDING_PG_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/home_test
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -136,5 +137,5 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Test production money and attempt stores against disposable PostgreSQL
-        run: bun test scripts/delivery/tests/postgres-money-action*.test.ts
+      - name: Test actions schema and funding stores against disposable PostgreSQL
+        run: bun test apps/web/server/actions/store.postgres.test.ts apps/web/server/funding/core/postgres-store.integration.test.ts

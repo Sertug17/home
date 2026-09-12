@@ -1,13 +1,11 @@
 "use client";
 
-import { signEvmTypedData } from "@coinbase/cdp-core";
 import {
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
-import { BaseAccountConnectorError } from "@/client/account/base-account-connector";
 import { useAccountWallet } from "@/client/account/cdp-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import { MoneyActionReview } from "@/client/money-actions/review";
@@ -165,38 +163,8 @@ export function TradeActions({
 
   async function signAndFinalize() {
     if (!visibleIntent || !activeBoundary || accountBoundary(account) !== activeBoundary) return;
-    setSigning(true);
-    setError(null);
-    try {
-      const signature = account.session?.accountProvider === "base-account"
-        ? await account.signTypedData(visibleIntent.permit)
-        : (await signEvmTypedData({
-            evmAccount: visibleIntent.signerAddress,
-            typedData: visibleIntent.signingTypedData,
-            idempotencyKey: visibleIntent.signingRequestId,
-          })).signature;
-      const payload = await account.fetchAccountResource(
-        `/api/trades/${encodeURIComponent(visibleIntent.id)}/finalize`,
-        {
-          method: "POST",
-          body: { intentHash: visibleIntent.intentHash, signature },
-        },
-      );
-      const unavailableReason = parseUnavailableReason(payload);
-      if (unavailableReason) throw new TradeClientError(codeForUnavailableReason(unavailableReason));
-      const prepared = parsePreparedTradeAction(payload, account.session);
-      if (!prepared) throw new TradeClientError("TRADE_UNAVAILABLE");
-      setIntent(null);
-      setAction(prepared);
-    } catch (caught) {
-      if (caught instanceof BaseAccountConnectorError && caught.reason === "cancelled") {
-        setError("The wallet request was rejected.");
-      } else {
-        setError(messageForTradeError(caught));
-      }
-    } finally {
-      setSigning(false);
-    }
+    setSigning(false);
+    setError("Swaps aren’t available right now. No trade was submitted. Try again later.");
   }
 
   return (
@@ -469,24 +437,6 @@ function isExactSigningTypes(value: unknown): boolean {
   ]) && JSON.stringify(value.CoinbaseSmartWalletMessage) === JSON.stringify([
     { name: "hash", type: "bytes32" },
   ]);
-}
-
-function parsePreparedTradeAction(value: unknown, session: VerifiedAccountSession | null): PreparedMoneyAction | null {
-  if (!session?.smartAccount || !isRecord(value) || value.kind !== "swap") return null;
-  if (
-    typeof value.id !== "string" || typeof value.reviewHash !== "string" || typeof value.title !== "string" ||
-    typeof value.createdAt !== "string" || typeof value.expiresAt !== "string" || !Array.isArray(value.calls) ||
-    value.calls.length < 1 || value.calls.length > 2 || !Array.isArray(value.amounts) || value.amounts.length !== 2 ||
-    !Array.isArray(value.warnings) || !isRecord(value.owner) || value.owner.subject !== session.user.subject ||
-    value.owner.address !== session.smartAccount.address || value.owner.chainId !== 8453 ||
-    value.owner.accountProvider !== session.accountProvider
-  ) return null;
-  if (!value.calls.every((call) => isRecord(call) && typeof call.to === "string" && /^0x[0-9a-f]{40}$/.test(call.to) &&
-    typeof call.data === "string" && /^0x[0-9a-fA-F]+$/.test(call.data) && typeof call.value === "string" && /^(?:0|[1-9]\d*)$/.test(call.value)) ||
-    !value.warnings.every((warning) => typeof warning === "string") || !Number.isFinite(Date.parse(value.createdAt)) ||
-    !Number.isFinite(Date.parse(value.expiresAt)) || Date.parse(value.expiresAt) <= Date.now()
-  ) return null;
-  return value as unknown as PreparedMoneyAction;
 }
 
 function parseUnavailableReason(value: unknown): TradeUnavailableReason | null {

@@ -20,6 +20,7 @@ export function labelForOperationStatus(
   status: MoneyActionOperationStatus,
 ): string {
   switch (status) {
+    case "pending": return "Pending";
     case "prepared": return "Ready for review";
     case "submitting": return "Wallet submission unresolved";
     case "submitted": return "Submitted";

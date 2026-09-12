@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { SqlExecutor } from "@/server/money-actions/postgres-sql";
+import type { SqlExecutor } from "@/server/db/sql";
 import {
   reconcileRipioOrder,
   transactionMatchesOrder,

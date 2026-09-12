@@ -5,7 +5,6 @@ export {
 } from "./transfer-actions";
 export {
   TRANSFER_ASSETS,
-  buildTransferCall,
   encodeUsdcTransfer,
   formatSendConfirmAmount,
   formatTransferAmount,

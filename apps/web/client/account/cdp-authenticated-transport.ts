@@ -9,7 +9,8 @@ import type { OwnerGenerationFence } from "./cdp-session-lifecycle";
 import type { SessionFetch, VerifiedAccountSession } from "./session-client";
 import { ACCOUNT_PROVIDER_HEADER } from "@/shared/account/session-types";
 import { TransferExecutionError } from "@/shared/transfers/types";
-import type { MoneyActionApiFetch } from "@/client/money-actions/client";
+
+type MoneyActionApiFetch = (path: string, init?: RequestInit) => Promise<unknown>;
 
 export function accountAuthorizationBoundary(
   ownerKey: string,

@@ -8,7 +8,7 @@ import type {
   PreparedMoneyAction,
 } from "@/shared/money-actions/types";
 import { getDirectPortfolioAssets } from "@/config/portfolio-assets";
-import { getMoneyActionStore } from "./runtime-store";
+import { getActionsStore } from "@/server/actions/store";
 import { moneyActionOwner } from "./session";
 
 const addressPattern = /^0x[0-9a-fA-F]{40}$/;
@@ -89,18 +89,20 @@ export async function issueMoneyAction(
       .update(stableStringify(withoutHash))
       .digest("hex"),
   };
-  const durableAction = sensitivePayloadExpiry === null
-    ? action
-    : {
-        ...action,
-        calls: action.calls.map((call) => ({ ...call, data: "0x" as const })),
-      };
-  await (await getMoneyActionStore()).issue(durableAction, sensitivePayloadExpiry === null
-    ? undefined
-    : {
-        sensitiveAction: action,
-        sensitivePayloadExpiresAt: new Date(sensitivePayloadExpiry).toISOString(),
-      });
+  await getActionsStore().insert({
+    id: action.id,
+    owner,
+    kind: storedActionKind(action.kind),
+    summary: {
+      title: action.title,
+      amounts: action.amounts,
+      warnings: action.warnings,
+      expiresAt: action.expiresAt,
+      ...(action.quoteId ? { quoteId: action.quoteId } : {}),
+    },
+    pending: { calls: action.calls },
+    createdAt: action.createdAt,
+  });
   return action;
 }
 
@@ -274,6 +276,13 @@ function stableStringify(value: unknown): string {
       .join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+function storedActionKind(kind: MoneyActionDraft["kind"]): string {
+  if (kind === "save-deposit") return "savings-deposit";
+  if (kind === "save-withdraw") return "savings-withdraw";
+  if (kind === "swap") return "trade";
+  return kind;
 }
 
 function isKind(value: unknown): value is MoneyActionDraft["kind"] {

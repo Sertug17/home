@@ -76,9 +76,7 @@ Changing a vault or market address is not enough: adapters check chain, exact co
 
 The running app is a **local finance spike**, not a production-approved deployment. See [build status](build-status.md) and [wallet runtime](wallet-runtime-spike.md).
 
-Money actions have no local SQLite fallback: in local and hosted runtimes, they require PostgreSQL through `DATABASE_URL` plus `MONEY_ACTION_POSTGRES_CUTOVER=verified-empty`. Set the cutover value only after verifying no unresolved legacy SQLite money actions remain; otherwise money actions fail closed. CI runs the real PostgreSQL money/attempt contract against disposable PostgreSQL 14.
-
-This is limited to money actions. The separate trading intent runtime uses local SQLite only when neither `VERCEL` nor `DATABASE_URL` is set; it fails closed for hosted or database-configured trading and does not provide multi-instance swap readiness. Public Base RPC remains the local default; operators should configure `BASE_RPC_URL`. Do not point a fork at someone else's database or CDP project. Bun monorepo Vercel settings are in [Vercel deploy](vercel-deploy.md).
+Home actions require PostgreSQL through `DATABASE_URL` and use the thin disposable schema in [Home is thin](home-is-thin.md). Public Base RPC remains the local default; operators should configure `BASE_RPC_URL`. Do not point a fork at someone else's database or CDP project. Bun monorepo Vercel settings are in [Vercel deploy](vercel-deploy.md).
 
 Venice/agent inference, Rain cards, unrestricted assets, and broader borrow markets are not implemented; additional funding providers use the checked-in provider seam. Stock trading and external Base-account trading remain gated.
 

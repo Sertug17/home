@@ -48,12 +48,7 @@ import type {
   OperationResult,
   PreparedMoneyAction,
 } from "@/shared/money-actions/types";
-import {
-  TransferExecutionError,
-  type ConfirmedTransfer,
-  type PendingTransfer,
-  type TransferRequest,
-} from "@/shared/transfers/types";
+import { TransferExecutionError } from "@/shared/transfers/types";
 import {
   AccountWalletContext,
   AccountWalletSessionOwner,
@@ -108,16 +103,14 @@ export type AccountWalletClient = {
   fetchActivity: (query: string, signal?: AbortSignal) => Promise<unknown>;
   fetchSavingsPositions: (signal?: AbortSignal) => Promise<unknown>;
   fetchAccountResource: (path: string, options?: AccountResourceOptions) => Promise<unknown>;
-  prepareMoneyAction: (endpoint: string, input: unknown) => Promise<PreparedMoneyAction>;
-  checkMoneyAction: (action: PreparedMoneyAction) => Promise<OperationResult>;
+  prepareMoneyAction: (kind: string, params: unknown) => Promise<PreparedMoneyAction>;
   executeMoneyAction: (action: PreparedMoneyAction) => Promise<OperationResult>;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  pendingTransfer: PendingTransfer | null;
-  sendTransfer: (request: TransferRequest, intentId: string) => Promise<ConfirmedTransfer>;
-  checkPendingTransfer: () => Promise<ConfirmedTransfer>;
-  startNewTransfer: () => void;
   retrySessionValidation: () => Promise<void>;
-  signTypedData: (typedData: unknown) => Promise<`0x${string}`>;
+  signTypedData: (
+    typedData: unknown,
+    options?: { evmAccount: `0x${string}`; idempotencyKey: string },
+  ) => Promise<`0x${string}`>;
   signOut: () => Promise<void>;
 };
 
@@ -170,23 +163,12 @@ export function createBlockedAccountWalletClient(
     prepareMoneyAction: async () => {
       throw new TransferExecutionError("unavailable");
     },
-    checkMoneyAction: async () => {
-      throw new TransferExecutionError("unavailable");
-    },
     executeMoneyAction: async () => {
       throw new TransferExecutionError("unavailable");
     },
     fetchOperations: async () => {
       throw new Error("Operations are unavailable.");
     },
-    pendingTransfer: null,
-    sendTransfer: async () => {
-      throw new TransferExecutionError("unavailable");
-    },
-    checkPendingTransfer: async () => {
-      throw new TransferExecutionError("unavailable");
-    },
-    startNewTransfer: () => {},
     retrySessionValidation: async () => {},
     signTypedData: async () => {
       throw new BaseAccountConnectorError("invalid-provider-response");
