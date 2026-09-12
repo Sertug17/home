@@ -40,7 +40,7 @@
 }
 
 .sheet {
-  position: absolute;
+  position: fixed;
   top: auto;
   right: 0;
   bottom: 0;

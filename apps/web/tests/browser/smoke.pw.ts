@@ -655,7 +655,10 @@ test("account sign-in and settings stay reachable at 390px, 320px, and 200% text
 type MoneySheetMotionSample = {
   t: number;
   y: number;
+  bottom: number;
   height: number;
+  translateY: number;
+  viewportHeight: number;
   owner: string;
   state: string;
 };
@@ -675,47 +678,179 @@ function expectMonotonic(values: number[], direction: "up" | "down") {
   }
 }
 
+const MONEY_SHEET_ANCHOR_TOLERANCE = 1.5;
+// The spring writes its exact final target and closes the native dialog in the
+// same callback, so requestAnimationFrame can be one painted frame behind.
+const MONEY_SHEET_CLOSE_FRAME_TOLERANCE = 24;
+
+async function beginMoneySheetTrace(page: Page) {
+  await page.evaluate(() => {
+    const debug = globalThis as typeof globalThis & {
+      moneySheetDebug?: { samples: MoneySheetMotionSample[]; stop: boolean };
+    };
+    const trace = { samples: [] as MoneySheetMotionSample[], stop: false };
+    debug.moneySheetDebug = trace;
+    const started = performance.now();
+    const sample = () => {
+      const sheet = document.querySelector<HTMLElement>("dialog[open] [data-money-sheet]");
+      if (sheet) {
+        const rect = sheet.getBoundingClientRect();
+        const transform = getComputedStyle(sheet).transform;
+        const translateY = transform === "none" ? 0 : new DOMMatrixReadOnly(transform).m42;
+        trace.samples.push({
+          t: performance.now() - started,
+          y: rect.y,
+          bottom: rect.bottom,
+          height: rect.height,
+          translateY,
+          viewportHeight: window.innerHeight,
+          owner: sheet.dataset.positionOwner ?? "missing",
+          state: sheet.dataset.state ?? "missing",
+        });
+      }
+      if (!trace.stop) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+}
+
+async function endMoneySheetTrace(page: Page) {
+  return page.evaluate(() => {
+    const debug = globalThis as typeof globalThis & {
+      moneySheetDebug?: { samples: MoneySheetMotionSample[]; stop: boolean };
+    };
+    if (!debug.moneySheetDebug) return [];
+    debug.moneySheetDebug.stop = true;
+    return debug.moneySheetDebug.samples;
+  });
+}
+
+async function waitForMoneySheetIdle(page: Page) {
+  await expect.poll(() => page.locator(
+    "dialog[open] [data-money-sheet]",
+  ).getAttribute("data-position-owner")).toBe("idle");
+}
+
+function expectUntransformedAnchor(samples: MoneySheetMotionSample[]) {
+  expect(samples.length).toBeGreaterThan(0);
+  for (const sample of samples) {
+    expect(Math.abs(sample.bottom - sample.translateY - sample.viewportHeight))
+      .toBeLessThanOrEqual(MONEY_SHEET_ANCHOR_TOLERANCE);
+  }
+}
+
+function expectIdleAnchor(sample: MoneySheetMotionSample) {
+  expect(sample.owner).toBe("idle");
+  expect(Math.abs(sample.bottom - sample.viewportHeight))
+    .toBeLessThanOrEqual(MONEY_SHEET_ANCHOR_TOLERANCE);
+  expect(Math.abs(sample.y - (sample.viewportHeight - sample.height)))
+    .toBeLessThanOrEqual(MONEY_SHEET_ANCHOR_TOLERANCE);
+}
+
+test("@money-modal-anchor anchors Add money and Send across desktop and mobile viewports", async ({ page }, testInfo) => {
+  const cases = [
+    { name: "Add money", closeName: "Close add money", width: 1326, height: 702 },
+    { name: "Send", closeName: "Close send dialog", width: 1326, height: 702 },
+    { name: "Add money", closeName: "Close add money", width: 390, height: 844 },
+    { name: "Send", closeName: "Close send dialog", width: 390, height: 844 },
+  ] as const;
+  const measurements: Array<Record<string, unknown>> = [];
+
+  await page.setViewportSize({ width: cases[0].width, height: cases[0].height });
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page);
+  await signIn(page);
+
+  for (const modalCase of cases) {
+    await page.setViewportSize({ width: modalCase.width, height: modalCase.height });
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    const trigger = page.getByRole("button", { name: modalCase.name, exact: true });
+    await expect(trigger).toBeVisible();
+    await trigger.focus();
+    await expect(trigger).toBeFocused();
+    const initialOverflow = await page.evaluate(() => document.body.style.overflow);
+
+    await beginMoneySheetTrace(page);
+    await trigger.press("Enter");
+    const dialog = page.getByRole("dialog", { name: modalCase.name });
+    await expect(dialog).toBeVisible();
+    await waitForMoneySheetIdle(page);
+    await page.waitForTimeout(50);
+    const openSamples = await endMoneySheetTrace(page);
+
+    expect(compactMotionOwners(openSamples)).toEqual(["opening", "idle"]);
+    const opening = openSamples.filter(({ owner }) => owner === "opening");
+    expect(opening.length).toBeGreaterThan(0);
+    expect(opening[0].y).toBeGreaterThanOrEqual(
+      opening[0].viewportHeight - MONEY_SHEET_ANCHOR_TOLERANCE,
+    );
+    expectUntransformedAnchor(openSamples);
+    const settled = openSamples.findLast(({ owner }) => owner === "idle")!;
+    expectIdleAnchor(settled);
+
+    const sheet = dialog.locator("[data-money-sheet]");
+    const settledBox = await sheet.boundingBox();
+    if (!settledBox) throw new Error(`${modalCase.name} sheet is not measurable`);
+    expect(settledBox.x).toBeGreaterThanOrEqual(-1);
+    expect(settledBox.x + settledBox.width).toBeLessThanOrEqual(modalCase.width + 1);
+    expect(settledBox.width).toBeCloseTo(modalCase.width, 0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+
+    await beginMoneySheetTrace(page);
+    await page.waitForTimeout(32);
+    await dialog.getByRole("button", { name: modalCase.closeName }).click();
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    const closeSamples = await endMoneySheetTrace(page);
+
+    expect(compactMotionOwners(closeSamples)).toEqual(["idle", "closing"]);
+    expectUntransformedAnchor(closeSamples);
+    expectIdleAnchor(closeSamples.find(({ owner }) => owner === "idle")!);
+    const closing = closeSamples.filter(({ owner }) => owner === "closing");
+    expect(closing.length).toBeGreaterThan(0);
+    expectMonotonic(closing.map(({ y }) => y), "down");
+    expect(closing.at(-1)!.y).toBeGreaterThanOrEqual(
+      closing.at(-1)!.viewportHeight - MONEY_SHEET_CLOSE_FRAME_TOLERANCE,
+    );
+    await expect(trigger).toBeFocused();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe(initialOverflow);
+
+    measurements.push({
+      engine: testInfo.project.name,
+      modal: modalCase.name,
+      viewport: `${modalCase.width}x${modalCase.height}`,
+      settled: {
+        x: settledBox.x,
+        y: settledBox.y,
+        width: settledBox.width,
+        height: settledBox.height,
+        bottom: settledBox.y + settledBox.height,
+      },
+      openOwners: compactMotionOwners(openSamples),
+      closeOwners: compactMotionOwners(closeSamples),
+      openDurationMs: Math.round(
+        openSamples.find(({ owner }) => owner === "idle")!.t - opening[0].t,
+      ),
+    });
+  }
+
+  console.log(`MONEY_MODAL_ANCHOR ${JSON.stringify(measurements)}`);
+  await testInfo.attach("money-modal-anchor-measurements", {
+    body: JSON.stringify(measurements, null, 2),
+    contentType: "application/json",
+  });
+});
+
 test.describe("MoneyModal painted motion", () => {
-  test("opens, throws up, reverses, and closes with one position owner", async ({ page }, testInfo) => {
+  test("@money-modal-anchor opens, throws up, reverses, and closes with one position owner", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
     await installApiFixtures(page);
     await signIn(page);
 
-    const beginTrace = async () => page.evaluate(() => {
-      const debug = globalThis as typeof globalThis & {
-        moneySheetDebug?: { samples: MoneySheetMotionSample[]; stop: boolean };
-      };
-      const trace = { samples: [] as MoneySheetMotionSample[], stop: false };
-      debug.moneySheetDebug = trace;
-      const started = performance.now();
-      const sample = () => {
-        const sheet = document.querySelector<HTMLElement>("dialog[open] [data-money-sheet]");
-        if (sheet) {
-          const rect = sheet.getBoundingClientRect();
-          trace.samples.push({
-            t: performance.now() - started,
-            y: rect.y,
-            height: rect.height,
-            owner: sheet.dataset.positionOwner ?? "missing",
-            state: sheet.dataset.state ?? "missing",
-          });
-        }
-        if (!trace.stop) requestAnimationFrame(sample);
-      };
-      requestAnimationFrame(sample);
-    });
-    const endTrace = async () => page.evaluate(() => {
-      const debug = globalThis as typeof globalThis & {
-        moneySheetDebug?: { samples: MoneySheetMotionSample[]; stop: boolean };
-      };
-      if (!debug.moneySheetDebug) return [];
-      debug.moneySheetDebug.stop = true;
-      return debug.moneySheetDebug.samples;
-    });
-    const waitForIdle = async () => expect.poll(() => page.locator(
-      "dialog[open] [data-money-sheet]",
-    ).getAttribute("data-position-owner")).toBe("idle");
     const gesture = async (moves: Array<{ distance: number; pause: number }>) => {
       const box = await page.locator("dialog[open] [data-money-sheet-grabber]").boundingBox();
       if (!box) throw new Error("MoneyModal grabber is not measurable");
@@ -730,11 +865,11 @@ test.describe("MoneyModal painted motion", () => {
       await page.mouse.up();
     };
 
-    await beginTrace();
+    await beginMoneySheetTrace(page);
     await page.getByRole("button", { name: "Send" }).click();
-    await waitForIdle();
+    await waitForMoneySheetIdle(page);
     await page.waitForTimeout(200);
-    const openSamples = await endTrace();
+    const openSamples = await endMoneySheetTrace(page);
 
     const openGrabber = page.locator("dialog[open] [data-money-sheet-grabber]");
     const hitBox = await openGrabber.boundingBox();
@@ -744,31 +879,40 @@ test.describe("MoneyModal painted motion", () => {
     expect(visibleGrabberBox?.height).toBe(4);
     expect((visibleGrabberBox?.y ?? 0) - (hitBox?.y ?? 0)).toBeCloseTo(8, 1);
 
-    await beginTrace();
+    await beginMoneySheetTrace(page);
     await gesture([{ distance: 120, pause: 40 }, { distance: -20, pause: 0 }]);
-    await waitForIdle();
+    await waitForMoneySheetIdle(page);
     await page.waitForTimeout(200);
-    const throwSamples = await endTrace();
+    const throwSamples = await endMoneySheetTrace(page);
 
-    await beginTrace();
+    await beginMoneySheetTrace(page);
     await gesture([{ distance: 220, pause: 160 }, { distance: 190, pause: 0 }]);
-    await waitForIdle();
+    await waitForMoneySheetIdle(page);
     await page.waitForTimeout(200);
-    const reverseSamples = await endTrace();
+    const reverseSamples = await endMoneySheetTrace(page);
     await expect(page.getByRole("dialog", { name: "Send" })).toBeVisible();
 
-    await beginTrace();
+    await beginMoneySheetTrace(page);
+    await page.waitForTimeout(32);
     await page.getByRole("button", { name: "Close send dialog" }).click();
     await expect(page.locator("dialog[open]")).toHaveCount(0);
-    const closeSamples = await endTrace();
+    const closeSamples = await endMoneySheetTrace(page);
 
     expect(compactMotionOwners(openSamples)).toEqual(["opening", "idle"]);
     expect(compactMotionOwners(throwSamples)).toEqual(["idle", "drag", "idle"]);
     expect(compactMotionOwners(reverseSamples)).toEqual(["idle", "drag", "returning", "idle"]);
     expect(compactMotionOwners(closeSamples)).toEqual(["idle", "closing"]);
+    expectUntransformedAnchor(openSamples);
+    expectUntransformedAnchor(throwSamples);
+    expectUntransformedAnchor(reverseSamples);
+    expectUntransformedAnchor(closeSamples);
 
     const openStart = openSamples.find(({ owner }) => owner === "opening")!;
     const openEnd = openSamples.find(({ owner }) => owner === "idle")!;
+    expect(openStart.y).toBeGreaterThanOrEqual(
+      openStart.viewportHeight - MONEY_SHEET_ANCHOR_TOLERANCE,
+    );
+    expectIdleAnchor(openEnd);
     const openDuration = openEnd.t - openStart.t;
     expect(openDuration).toBeGreaterThanOrEqual(300);
     expect(openDuration).toBeLessThanOrEqual(450);
@@ -788,19 +932,38 @@ test.describe("MoneyModal painted motion", () => {
     const returning = reverseSamples.filter(({ owner }) => owner === "returning");
     expectMonotonic(returning.map(({ y }) => y), "up");
     expect(Math.min(...returning.map(({ y }) => y))).toBeGreaterThanOrEqual(openY - 0.75);
+    expect(
+      Math.max(...returning.map(({ height }) => height))
+      - Math.min(...returning.map(({ height }) => height)),
+    ).toBeLessThanOrEqual(1);
+    expectIdleAnchor(reverseSamples.findLast(({ owner }) => owner === "idle")!);
 
+    expectIdleAnchor(closeSamples.find(({ owner }) => owner === "idle")!);
     const closing = closeSamples.filter(({ owner }) => owner === "closing");
     const closeDuration = closing.at(-1)!.t - closing[0].t + 16;
     expectMonotonic(closing.map(({ y }) => y), "down");
-    expect(Math.max(...closing.map(({ y }) => y))).toBeLessThanOrEqual(844.5);
+    expect(closing.at(-1)!.y).toBeGreaterThanOrEqual(
+      closing.at(-1)!.viewportHeight - MONEY_SHEET_CLOSE_FRAME_TOLERANCE,
+    );
+    expect(
+      Math.max(...closing.map(({ height }) => height))
+      - Math.min(...closing.map(({ height }) => height)),
+    ).toBeLessThanOrEqual(1);
     expect(closeDuration).toBeGreaterThanOrEqual(300);
     expect(closeDuration).toBeLessThanOrEqual(450);
 
     const measurements = {
+      engine: testInfo.project.name,
       viewport: "390x844",
       openDurationMs: Math.round(openDuration),
       closeDurationMs: Math.round(closeDuration),
-      openHeightPx: Math.round(openSamples.at(-1)!.height),
+      settled: {
+        y: openEnd.y,
+        bottom: openEnd.bottom,
+        height: openEnd.height,
+        translateY: openEnd.translateY,
+        viewportHeight: openEnd.viewportHeight,
+      },
       owners: {
         open: compactMotionOwners(openSamples),
         throwUp: compactMotionOwners(throwSamples),

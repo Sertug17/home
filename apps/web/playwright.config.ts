@@ -70,8 +70,24 @@ export default defineConfig({
   },
   use: {
     baseURL: "http://localhost:3199",
-    browserName: "chromium",
     headless: true,
-    launchOptions: executablePath ? { executablePath } : undefined,
+    trace: "retain-on-failure",
+    video: "retain-on-failure",
   },
+  projects: [
+    {
+      name: "chromium-smoke",
+      use: {
+        browserName: "chromium",
+        launchOptions: executablePath ? { executablePath } : undefined,
+      },
+    },
+    {
+      name: "webkit-money-modal",
+      grep: /@money-modal-anchor/,
+      use: {
+        browserName: "webkit",
+      },
+    },
+  ],
 });

@@ -45,7 +45,7 @@ jobs:
         run: bun check
 
   browser-smoke:
-    name: Chromium product smoke
+    name: Chromium smoke + WebKit MoneyModal
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -70,10 +70,10 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Install Chromium
-        run: bunx playwright install --with-deps chromium
+      - name: Install Chromium and WebKit
+        run: bunx playwright install --with-deps chromium webkit
 
-      - name: Test signed-in send recovery smoke
+      - name: Test Chromium smoke and WebKit MoneyModal regression
         run: bun run --cwd apps/web test:browser-smoke
 
   delivery-automation-tests:
