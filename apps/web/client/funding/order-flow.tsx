@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Stack } from "@home/ui";
 import { CopyableValue } from "@/components/copyable-value";
+import { atomicToDecimal } from "@/shared/formatting/atomic";
 import { MoneyAmountDisplay, MoneyModalFooter, MoneyNumpad } from "@/client/money-modal";
 import modal from "@/client/money-modal/money-modal.module.css";
 import styles from "./add-money.module.css";
@@ -164,7 +165,6 @@ function stateCopy(state: string) {
 }
 function terminal(state: string) { return ["received", "dispatch-ambiguous", "failed", "cancelled", "expired", "refunded"].includes(state); }
 function positiveDecimal(value: string) { return /^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(value) && /[1-9]/.test(value); }
-function atomicToDecimal(value: string, decimals: number) { const padded = value.padStart(decimals + 1, "0"); const fraction = padded.slice(-decimals).replace(/0+$/, ""); return fraction ? `${padded.slice(0, -decimals)}.${fraction}` : padded.slice(0, -decimals); }
 function readQuoteDraft(value: unknown): QuoteDraft | null { if (!record(value) || typeof value.quoteToken !== "string" || !record(value.quote) || typeof value.quote.fiatAmount !== "string" || typeof value.quote.tokenAmountAtomic !== "string" || !Array.isArray(value.quote.fees) || typeof value.quote.expiresAt !== "string") return null; return { quoteToken: value.quoteToken, quote: value.quote as FundingQuote }; }
 export function readFundingOrder(value: unknown): FundingOrderSummary | null { const candidate = record(value) && record(value.order) ? value.order : null; return candidate && typeof candidate.id === "string" && typeof candidate.providerId === "string" && typeof candidate.state === "string" && typeof candidate.fiatAmount === "string" ? candidate as FundingOrderSummary : null; }
 function record(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
