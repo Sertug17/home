@@ -60,7 +60,8 @@
   --home-ui-icon-size: 20px;
   --home-ui-icon-size-large: 24px;
   --home-ui-target-min: 44px;
-  --home-ui-motion-press: 100ms;
+  --home-ui-motion-press: 150ms;
+  --home-ui-motion-release: 320ms;
   --home-ui-motion-chip: 120ms;
   --home-ui-motion-tab: 180ms;
 }
@@ -68,6 +69,7 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --home-ui-motion-press: 0ms;
+    --home-ui-motion-release: 0ms;
     --home-ui-motion-chip: 0ms;
     --home-ui-motion-tab: 0ms;
   }

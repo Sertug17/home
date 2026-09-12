@@ -81,7 +81,9 @@
   overflow-wrap: anywhere;
   cursor: pointer;
   touch-action: manipulation;
-  transition: background-color var(--home-ui-motion-press), transform var(--home-ui-motion-press);
+  transition:
+    background-color var(--home-ui-motion-press) ease-out,
+    transform var(--home-ui-motion-release) cubic-bezier(0.22, 1.4, 0.36, 1);
 }
 
 .home-ui-button__label { grid-area: 1 / 1; min-inline-size: 0; }
@@ -105,7 +107,11 @@
 .home-ui-button[data-variant="secondary"][aria-pressed="true"]:enabled,
 .home-ui-button[data-variant="quiet"]:enabled:active,
 .home-ui-button[data-variant="quiet"][aria-pressed="true"]:enabled { background: var(--home-ui-color-subtle-pressed); }
-.home-ui-button:enabled:active { transform: translateY(1px); }
+.home-ui-button:enabled:active {
+  transform: scale(0.97);
+  transition-duration: var(--home-ui-motion-press);
+  transition-timing-function: ease-out;
+}
 .home-ui-button[aria-pressed="true"]:enabled { box-shadow: inset 0 0 0 2px currentColor; }
 .home-ui-button:focus-visible {
   outline: 2px solid var(--home-ui-color-focus);
@@ -133,8 +139,8 @@
 .home-ui-icon-button svg { display: block; }
 @keyframes home-ui-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .home-ui-button { transition: none; }
-  .home-ui-button:enabled:active { transform: none; }
+  .home-ui-button { transition: opacity var(--home-ui-motion-press); }
+  .home-ui-button:enabled:active { transform: none; opacity: 0.72; }
   .home-ui-button__spinner { animation: none; }
 }
 @media (forced-colors: active) {
