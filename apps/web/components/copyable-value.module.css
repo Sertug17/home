@@ -11,16 +11,16 @@
   text-align: inherit;
   text-decoration: none;
   touch-action: manipulation;
-  transition: color 120ms ease;
+  transition: color var(--home-ui-motion-chip) ease;
 }
 
 .text:focus-visible {
-  outline: 2px solid var(--home-blue);
+  outline: 2px solid var(--home-ui-color-focus);
   outline-offset: 3px;
 }
 
 .copied {
-  color: var(--home-blue);
+  color: var(--home-ui-color-action);
 }
 
 .srOnly {
@@ -41,7 +41,7 @@
 .error {
   display: block;
   margin: 0;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 0.78rem;
   line-height: 1.4;
 }
@@ -50,10 +50,10 @@
   display: block;
   width: 100%;
   margin-top: 6px;
-  border: 1px solid var(--home-hairline);
-  border-radius: 8px;
-  background: var(--home-canvas);
-  color: var(--home-ink);
+  border: 1px solid var(--separator);
+  border-radius: var(--home-ui-radius-control);
+  background: var(--home-ui-color-canvas);
+  color: var(--fg);
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   font-size: 0.72rem;
   line-height: 1.45;
@@ -64,7 +64,7 @@
 }
 
 .fullValue:focus-visible {
-  outline: 3px solid var(--home-blue);
+  outline: 3px solid var(--home-ui-color-focus);
   outline-offset: 2px;
 }
 

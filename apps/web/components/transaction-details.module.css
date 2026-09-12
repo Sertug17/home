@@ -1,11 +1,11 @@
 .explorerWrap {
   display: flex;
   justify-content: center;
-  margin: 4px 0 0;
+  margin: var(--home-ui-space-1) 0 0;
 }
 
 .explorer {
-  color: var(--home-blue);
+  color: var(--home-ui-color-action);
   font-size: 0.9rem;
   font-weight: 700;
   text-decoration: none;
@@ -16,6 +16,6 @@
 }
 
 .explorer:focus-visible {
-  outline: 2px solid var(--home-blue);
+  outline: 2px solid var(--home-ui-color-focus);
   outline-offset: 2px;
 }

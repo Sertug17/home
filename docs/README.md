@@ -1,6 +1,6 @@
 # Docs
 
-**Current delivery state is [build status](build-status.md)** (snapshot September 8, 2026). Start there, then the money-action contract and the current-tree review. Target/production-destination docs are demoted below so they cannot be mistaken for the live app.
+**Current delivery state is [build status](build-status.md)** (snapshot September 8, 2026). Start there, then [Home is thin](home-is-thin.md) and the current-tree review. Target/production-destination docs are demoted below so they cannot be mistaken for the live app.
 
 If you want to run or fork Home, start with the root [Get started](../README.md#get-started) path and [Fork and extend](fork-and-extend.md). Sending a focused PR or joining as a second engineer is optional — see [CONTRIBUTING](../CONTRIBUTING.md). The in-repo agent crew follows the [operating manual](operating-manual.md).
 
@@ -9,10 +9,8 @@ If you want to run or fork Home, start with the root [Get started](../README.md#
 | Doc | Use it for |
 |---|---|
 | [Build status](build-status.md) | What is integrated, validation evidence, remaining gates |
-| [Wallet runtime spike](wallet-runtime-spike.md) | Prepare → claim → sign → reconcile; PostgreSQL runtime selection and provider-handle recovery |
-| [Money-action persistence](money-action-persistence.md) | Shipped one-row PostgreSQL model, evidence indexes, readiness preflight, and safety invariants |
-| [Attempt-aware onchain transactions](onchain-transaction-architecture.md) | Retained decision, failure windows, provider facts, and the withdrawn Phase 2–5 direction |
-| [Architecture review](architecture-review-2026-09.md) | Current-tree patterns, risks, contribution contract, first-week slices |
+| [Home is thin](home-is-thin.md) | The action model: server-authored calldata, verified scope, one owner-generation fence, and a minimal confirmed-action record. |
+| [Architecture review](architecture-review-2026-09.md) | Current-tree patterns, risks, contribution contract, and first-week slices; Home is thin supersedes its money-action sections. |
 
 ## Run & operate
 
@@ -28,7 +26,7 @@ If you want to run or fork Home, start with the root [Get started](../README.md#
 | [Morpho setup](morpho-setup.md) | USDC vault candidates and read verification; deposit/withdraw status is in [build status](build-status.md) |
 | [Codex prices](codex-prices.md) | Optional server-only Invest USD snapshots |
 | [Portfolio](portfolio.md) | USDC/ETH reads, Token Balances inventory, regional valuation, device presentation cache, `BASE_RPC_URL`. Phase B/C: [inventory summary](balances-inventory-architecture.md) |
-| [Vercel deploy](vercel-deploy.md) | Bun monorepo install/build on Vercel; hosted money actions need Neon `DATABASE_URL`; [preview auth / CDP CORS](vercel-deploy.md#preview-auth); preview branch cleanup Actions |
+| [Vercel deploy](vercel-deploy.md) | Bun monorepo install/build on Vercel; hosted actions need Neon `DATABASE_URL`; [preview auth / CDP CORS](vercel-deploy.md#preview-auth); preview branch cleanup Actions |
 | [Privacy-safe observability](observability.md) | Scrub-first error schema, bounded client ingestion, operator queries, and the remaining route-wrapper gate |
 | [CDP error reporting](cdp-error-reporting.md) | Privacy decision: keep server SDK error reporting disabled by default |
 

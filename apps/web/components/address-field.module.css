@@ -1,13 +1,13 @@
 .field {
   min-height: 48px;
   border: 1px solid var(--separator);
-  border-radius: var(--control-radius);
+  border-radius: var(--home-ui-radius-control);
   padding: 0 6px 0 14px;
 }
 
 .field:focus-within {
-  border-color: rgba(0, 82, 255, 0.45);
-  outline: 3px solid rgba(0, 82, 255, 0.18);
+  border-color: color-mix(in srgb, var(--home-ui-color-focus) 45%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--home-ui-color-focus) 18%, transparent);
   outline-offset: 2px;
 }
 
@@ -35,9 +35,9 @@
   flex: 0 0 auto;
   place-items: center;
   border: 0;
-  border-radius: var(--control-radius);
+  border-radius: var(--home-ui-radius-control);
   background: transparent;
-  color: var(--home-blue);
+  color: var(--home-ui-color-action);
   cursor: pointer;
 }
 
@@ -47,6 +47,6 @@
 }
 
 .paste:focus-visible {
-  outline: 2px solid var(--home-blue);
+  outline: 2px solid var(--home-ui-color-focus);
   outline-offset: 2px;
 }

@@ -5,9 +5,9 @@
   place-items: center;
   flex: 0 0 auto;
   border: 0;
-  border-radius: var(--control-radius);
+  border-radius: var(--home-ui-radius-control);
   background: transparent;
-  color: var(--home-ink);
+  color: var(--fg);
   cursor: pointer;
   padding: 0;
 }
@@ -25,8 +25,8 @@
   overflow: hidden;
   isolation: isolate;
   border-radius: 50%;
-  background: var(--home-gray-100);
-  color: var(--home-ink);
+  background: var(--home-ui-color-canvas);
+  color: var(--fg);
   font-size: 0.82rem;
   font-weight: 750;
   line-height: 1;
@@ -48,18 +48,18 @@
   width: 100%;
   height: 100%;
   place-items: center;
-  background: var(--home-gray-100);
-  color: var(--home-ink);
+  background: var(--home-ui-color-canvas);
+  color: var(--fg);
   text-transform: lowercase;
 }
 
 .hit:focus-visible {
-  outline: 2px solid var(--home-blue);
+  outline: 2px solid var(--home-ui-color-focus);
   outline-offset: 2px;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .hit:hover:not(:disabled) .mark {
-    box-shadow: inset 0 0 0 1px var(--home-hairline);
+    box-shadow: inset 0 0 0 1px var(--separator);
   }
 }

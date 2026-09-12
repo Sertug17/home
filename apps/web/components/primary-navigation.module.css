@@ -1,4 +1,3 @@
-/* #162 preview rebuild touch — no product change (retry) */
 .navigation {
   position: relative;
   right: auto;
@@ -9,9 +8,9 @@
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-inline: -16px;
-  border-top: 1px solid var(--home-gray-100);
-  background: var(--home-white);
+  margin-inline: calc(-1 * var(--home-ui-space-4));
+  border-top: 1px solid var(--separator);
+  background: var(--home-ui-color-surface);
   padding: 0;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -25,14 +24,14 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--home-ui-space-1);
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   cursor: pointer;
-  padding: 8px 0;
-  transition: color var(--motion-tab) ease;
+  padding: var(--home-ui-space-2) 0;
+  transition: color var(--home-ui-motion-tab) ease;
 }
 
 .iconFrame {
@@ -43,13 +42,13 @@
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: var(--control-radius);
-  color: var(--home-ink);
+  border-radius: var(--home-ui-radius-control);
+  color: var(--fg);
   transform-origin: center center;
   transition:
-    background-color var(--motion-tab) ease,
-    border-color var(--motion-tab) ease,
-    color var(--motion-tab) ease,
+    background-color var(--home-ui-motion-tab) ease,
+    border-color var(--home-ui-motion-tab) ease,
+    color var(--home-ui-motion-tab) ease,
     transform 110ms ease;
 }
 
@@ -70,13 +69,13 @@
 }
 
 .active {
-  color: var(--home-ink);
+  color: var(--fg);
 }
 
 .active .iconFrame {
-  border-color: var(--home-blue);
-  background: var(--home-blue);
-  color: var(--home-white);
+  border-color: var(--home-ui-color-action);
+  background: var(--home-ui-color-action);
+  color: var(--fg-on-accent);
 }
 
 .active .label {
@@ -85,14 +84,14 @@
 
 .item:focus-visible {
   z-index: 1;
-  outline: 2px solid var(--home-blue);
+  outline: 2px solid var(--home-ui-color-focus);
   outline-offset: -4px;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .item:hover:not(.active) {
-    background: var(--home-gray-50);
-    color: var(--home-ink);
+    background: var(--home-ui-color-subtle-hover);
+    color: var(--fg);
   }
 }
 
@@ -104,7 +103,7 @@
     margin-inline: 0;
     grid-template-columns: repeat(2, minmax(110px, 150px));
     border-top: 0;
-    border-bottom: 1px solid var(--home-gray-100);
+    border-bottom: 1px solid var(--separator);
     padding: 0;
   }
 
@@ -112,14 +111,13 @@
     min-height: 56px;
     justify-content: flex-start;
     flex-direction: row;
-    gap: 8px;
+    gap: var(--home-ui-space-2);
     padding: 5px 10px;
   }
 
   .iconFrame {
     width: 32px;
     height: 32px;
-    border-radius: 8px;
   }
 
   .label {

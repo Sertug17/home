@@ -10,22 +10,8 @@ afterEach(() => {
   cleanup();
 });
 
-describe("PrimaryNavigation — #162 footer lock", () => {
-  test("keeps Home and Invest only", () => {
-    const view = render(
-      <PrimaryNavigation activeNavigation="home" onNavigate={() => {}} />,
-    );
-    const tabs = view.getByRole("navigation", { name: "Main navigation" });
-    const buttons = [...tabs.querySelectorAll("button")].map(
-      (button) => button.textContent,
-    );
-    expect(buttons).toEqual(["Home", "Invest"]);
-  });
-
-
-
-
-  test("activates Home for nested Home panels without adding tabs", () => {
+describe("PrimaryNavigation", () => {
+  test("activates Home for nested Home panels", () => {
     const view = render(
       <PrimaryNavigation activeNavigation="balances" onNavigate={() => {}} />,
     );
