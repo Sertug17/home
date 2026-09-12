@@ -8,6 +8,7 @@
     "./text": "./src/text.tsx",
     "./button": "./src/button.tsx",
     "./icon-button": "./src/icon-button.tsx",
+    "./money-ticker": "./src/money-ticker.tsx",
     "./haptic": "./src/haptic.ts",
     "./layout": "./src/layout.tsx",
     "./icons": "./src/icons.ts",
@@ -27,6 +28,7 @@
     "test": "bun test tests"
   },
   "dependencies": {
+    "@number-flow/react": "0.6.2",
     "@phosphor-icons/react": "2.1.10"
   },
   "peerDependencies": {
@@ -35,7 +37,9 @@
     "react-dom": "^19.2.8"
   },
   "peerDependenciesMeta": {
-    "next": { "optional": true }
+    "next": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.14.0",
