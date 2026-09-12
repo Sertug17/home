@@ -9,7 +9,6 @@ import {
 import { useAccountWallet } from "@/client/account/cdp-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import { MoneyActionReview } from "@/client/money-actions/review";
-import { useMoneyDataRefresh } from "@/client/money-actions/refresh";
 import type { PreparedMoneyAction } from "@/shared/money-actions/types";
 import {
   MoneyAmountDisplay,
@@ -47,7 +46,6 @@ export function TradeActions({
   layout?: "row" | "sticky";
 }) {
   const account = useAccountWallet();
-  const refreshMoneyData = useMoneyDataRefresh();
   const status = getTradeAssetStatus(asset.id);
   const [side, setSide] = useState<TradeSide | null>(null);
   const [modalBoundary, setModalBoundary] = useState<string | null>(null);
@@ -207,7 +205,6 @@ export function TradeActions({
           onConfirmed={() => {
             setAction(null);
             close();
-            refreshMoneyData();
           }}
         />
       ) : null}

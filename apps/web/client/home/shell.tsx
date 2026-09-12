@@ -74,7 +74,6 @@ export function HomeShell({
   initialSendFlow = false,
   initialSendActionId = null,
   applyInboundUrlIntent = false,
-  onTransferConfirmed,
   selectedRegionId,
   onRegionChange,
   disarmBalancesRestore,
@@ -425,7 +424,6 @@ export function HomeShell({
           activitySession={activitySession}
           fetchActivity={account.fetchActivity}
           fetchOperations={account.fetchOperations}
-          onTransferConfirmed={onTransferConfirmed}
           navigateTo={navigateTo}
           urlAddMoney={urlAddMoney}
           urlReturnedFromCoinbase={urlReturnedFromCoinbase}

@@ -45,7 +45,6 @@ export function DashboardShell({
   activitySession,
   fetchActivity,
   fetchOperations,
-  onTransferConfirmed,
   navigateTo,
   urlAddMoney,
   urlReturnedFromCoinbase,
@@ -79,7 +78,6 @@ export function DashboardShell({
   activitySession: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  onTransferConfirmed?: () => void;
   navigateTo: (panel: ShellPanelId) => void;
   urlAddMoney: boolean;
   urlReturnedFromCoinbase: boolean;
@@ -142,7 +140,6 @@ export function DashboardShell({
                   activitySession={activitySession}
                   fetchActivity={fetchActivity}
                   fetchOperations={fetchOperations}
-                  onTransferConfirmed={onTransferConfirmed}
                   onOpenSave={() => navigateTo(savePanelId)}
                   onOpenBalances={() => navigateTo(balancesPanelId)}
                   onOpenActivity={() => navigateTo(activityPanelId)}

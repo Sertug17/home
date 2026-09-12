@@ -9,7 +9,6 @@ export type {
   PreparedMoneyAction,
 } from "@/shared/money-actions/types";
 export { MoneyActionReview } from "./review";
-export { MoneyDataRefreshProvider, useMoneyDataRefresh } from "./refresh";
 export {
   hasOnchainExecutionReference,
   isActivityVisibleMoneyAction,

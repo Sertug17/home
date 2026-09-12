@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Stack } from "@home/ui";
 import { MoneyTicker } from "@home/ui/money-ticker";
 import { CopyableValue } from "@/components/copyable-value";
 import { useOptionalAppChrome } from "@/components/app-chrome";
 import { useAccountWallet } from "@/client/account/cdp-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
-import { useMoneyDataRefresh } from "@/client/money-actions/refresh";
 import type { OperationResult, PreparedMoneyAction } from "@/shared/money-actions/types";
 import { usePortfolio } from "@/client/portfolio";
 import { formatAddress } from "@/shared/formatting";
@@ -53,7 +52,6 @@ type SavingsExperienceProps = {
   prepareMoneyAction?: (endpoint: string, input: unknown) => Promise<PreparedMoneyAction>;
   executeMoneyAction?: (action: PreparedMoneyAction) => Promise<OperationResult>;
   onBack?: () => void;
-  onActionConfirmed?: (result: OperationResult) => void | Promise<void>;
 };
 
 type LoadState =
@@ -81,11 +79,8 @@ type PositionState =
     }
   | { status: "error" };
 
-export function AuthenticatedSavingsExperience({
-  onActionConfirmed,
-}: Pick<SavingsExperienceProps, "onActionConfirmed"> = {}) {
+export function AuthenticatedSavingsExperience() {
   const account = useAccountWallet();
-  const refreshMoneyData = useMoneyDataRefresh();
   const session = account.status === "verified" ? account.session : null;
   const portfolioSession = session?.smartAccount
     ? {
@@ -105,10 +100,6 @@ export function AuthenticatedSavingsExperience({
       availableUsdcBaseUnits={usdc?.balanceBaseUnits ?? null}
       prepareMoneyAction={account.prepareMoneyAction}
       executeMoneyAction={account.executeMoneyAction}
-      onActionConfirmed={async (result) => {
-        refreshMoneyData();
-        await onActionConfirmed?.(result);
-      }}
     />
   );
 }
@@ -123,7 +114,6 @@ export function SavingsExperience({
   prepareMoneyAction,
   executeMoneyAction,
   onBack,
-  onActionConfirmed,
 }: SavingsExperienceProps) {
   const [rateNowMs, setRateNowMs] = useState(() => now());
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
@@ -159,7 +149,6 @@ export function SavingsExperience({
     refetchOnWindowFocus: false,
     meta: sessionKey ? ownerQueryMeta(sessionKey, "owner") : undefined,
     queryFn: ({ signal }) => {
-      setRateNowMs(now());
       if (!fetchPositions) throw new Error("Savings positions are unavailable.");
       return fetchPositions(signal);
     },
@@ -172,6 +161,15 @@ export function SavingsExperience({
   });
 
   useEffect(() => {
+    if (positionsQuery.dataUpdatedAt <= 0) return;
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setRateNowMs(now());
+    });
+    return () => { active = false; };
+  }, [now, positionsQuery.dataUpdatedAt]);
+
+  useEffect(() => {
     if (loadState.status !== "ready") return;
     const expiresAt = nextSavingsRateExpiryAt(
       loadState.data.candidates,
@@ -182,12 +180,6 @@ export function SavingsExperience({
     const timeout = setTimeout(() => setRateNowMs(now()), expiresAt - rateNowMs);
     return () => clearTimeout(timeout);
   }, [loadState, now, rateNowMs]);
-
-  const handleActionConfirmed = useCallback(async (result: OperationResult) => {
-    setRateNowMs(now());
-    await Promise.all([metadataQuery.refetch(), positionsQuery.refetch()]);
-    await onActionConfirmed?.(result);
-  }, [metadataQuery, now, onActionConfirmed, positionsQuery]);
 
   const positionState = useMemo<PositionState>(() => {
     if (!sessionKey) return { status: "idle" };
@@ -470,7 +462,6 @@ export function SavingsExperience({
           prepareMoneyAction={prepareMoneyAction}
           executeMoneyAction={executeMoneyAction}
           onClose={() => setActionMode(null)}
-          onConfirmed={handleActionConfirmed}
         />
       ) : null}
     </section>

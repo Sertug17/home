@@ -13,7 +13,19 @@ import type {
   FetchActivity,
 } from "./types";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
-import { ownerQueryKey, ownerQueryMeta, useHomeInfiniteQuery } from "@/client/query/query-client";
+import {
+  browserHomeQueryClient,
+  ownerQueryKey,
+  ownerQueryMeta,
+  useHomeInfiniteQuery,
+  useHomeQuery,
+  useHomeQueryClient,
+} from "@/client/query/query-client";
+import {
+  activityWindowScope,
+  advanceActivityWindowEnd,
+  initialActivityWindowEnd,
+} from "@/client/query/after-action";
 
 export const activityStaleTimeMs = 10_000;
 
@@ -34,21 +46,23 @@ export function useActivity(
 ): UseActivityResult {
   const validSession = isVerifiedActivitySession(session) ? session : null;
   const ownerKey = validSession ? activityOwnerKey(validSession) : null;
+  const queryClient = useHomeQueryClient(browserHomeQueryClient());
   const requestedCursorsRef = useRef(new Map<string, Set<string>>());
   const loadMoreInFlightRef = useRef(false);
   const [autoLoadPaused, setAutoLoadPaused] = useState(false);
-  const [refreshedWindow, setRefreshedWindow] = useState<{
-    ownerKey: string;
-    windowEnd: string;
-  } | null>(null);
   const expectedSession = validSession;
-  const ownerWindowEnd = useMemo(
-    () => ownerKey ? new Date().toISOString() : "",
-    [ownerKey],
-  );
-  const windowEnd = ownerKey && refreshedWindow?.ownerKey === ownerKey
-    ? refreshedWindow.windowEnd
-    : ownerWindowEnd;
+  const windowQuery = useHomeQuery({
+    queryKey: ownerKey
+      ? ownerQueryKey(ownerKey, activityWindowScope)
+      : ["unauthenticated", "activity-window-disabled"],
+    enabled: false,
+    initialData: ownerKey ? initialActivityWindowEnd : "",
+    staleTime: Infinity,
+    gcTime: Infinity,
+    meta: ownerKey ? ownerQueryMeta(ownerKey, "memory") : undefined,
+    queryFn: async () => ownerKey ? initialActivityWindowEnd() : "",
+  });
+  const windowEnd = windowQuery.data ?? "";
 
   const query = useHomeInfiniteQuery({
     queryKey: ownerKey
@@ -92,11 +106,9 @@ export function useActivity(
 
   const retry = useCallback(() => { void query.refetch(); }, [query]);
   const refresh = useCallback(() => {
-    if (ownerKey) {
-      setRefreshedWindow({ ownerKey, windowEnd: new Date().toISOString() });
-    }
+    if (ownerKey) advanceActivityWindowEnd(queryClient, ownerKey);
     setAutoLoadPaused(false);
-  }, [ownerKey, setAutoLoadPaused, setRefreshedWindow]);
+  }, [ownerKey, queryClient, setAutoLoadPaused]);
   const requestMore = useCallback(async () => {
     if (!query.hasNextPage || query.isFetchingNextPage || loadMoreInFlightRef.current || autoLoadPaused) return;
     loadMoreInFlightRef.current = true;

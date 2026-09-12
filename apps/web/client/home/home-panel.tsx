@@ -43,7 +43,6 @@ export function HomePanel({
   activitySession,
   fetchActivity,
   fetchOperations,
-  onTransferConfirmed,
   onOpenSave,
   onOpenBalances,
   onOpenActivity,
@@ -58,7 +57,6 @@ export function HomePanel({
   activitySession: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  onTransferConfirmed?: () => void;
   onOpenSave: () => void;
   onOpenBalances: () => void;
   onOpenActivity: () => void;
@@ -119,7 +117,6 @@ export function HomePanel({
         <TransferActions
           initialOpen={initialSendFlow}
           initialActionId={initialSendActionId}
-          onTransferConfirmed={onTransferConfirmed}
           availableByAsset={deriveSendAvailability(balanceItems)}
         />
       </div>
