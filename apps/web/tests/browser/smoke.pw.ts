@@ -1,6 +1,9 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { parsePortfolioValuationSnapshot } from "../../shared/portfolio/parse-valuation";
 
+// Local laptops paint balances in ~350-620ms; hosted CI runners measure 1.0-2.2s. Regressions show as multiples, not tens of ms.
+const BALANCES_PAINTED_BUDGET_MS = process.env.CI ? 3_500 : 1_000;
+
 const OWNER = "0x1111111111111111111111111111111111111111";
 const RECIPIENT = "0x2222222222222222222222222222222222222222";
 const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
@@ -219,7 +222,7 @@ test("ambiguous handle response retries without a second wallet dispatch", async
   await signIn(page);
   expect(await page.evaluate(() =>
     performance.getEntriesByName("balances:painted", "mark")[0]?.startTime ?? Number.POSITIVE_INFINITY,
-  )).toBeLessThan(1_000);
+  )).toBeLessThan(BALANCES_PAINTED_BUDGET_MS);
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByRole("button", { name: "1", exact: true }).click();
   await page.getByRole("button", { name: "Continue" }).click();

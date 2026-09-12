@@ -71,7 +71,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Install Chromium and WebKit
-        run: bunx playwright install --with-deps chromium webkit
+        # Uses the pinned @playwright/test CLI; bare `bunx playwright` downloads the latest CLI and mismatched browser builds.
+        run: bun run --cwd apps/web test:browser-install
 
       - name: Test Chromium smoke and WebKit MoneyModal regression
         run: bun run --cwd apps/web test:browser-smoke
