@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { MfaError } from "@coinbase/cdp-core";
 import { executeActionOnce } from "./cdp-money-action-execution";
+import { BaseAccountConnectorError } from "./base-account-connector";
 import { TransferExecutionError } from "@/shared/transfers/types";
 
 const id = "11111111-1111-4111-8111-111111111111";
@@ -20,6 +22,55 @@ describe("thin action dispatch", () => {
       recordHandle: async () => { serverPosts += 1; },
     })).rejects.toMatchObject({ reason: "stale-session" });
     expect({ serverPosts, providerCalls }).toEqual({ serverPosts: 0, providerCalls: 0 });
+  });
+
+  test("retries explicit wallet rejection but keeps ambiguous dispatch failures single-shot", async () => {
+    for (const rejection of [
+      new BaseAccountConnectorError("cancelled"),
+      new MfaError("CANCELLED", "fixture MFA cancellation"),
+    ]) {
+      let dispatches = 0;
+      const providerDispatches = new Map<string, Promise<string>>();
+      const execute = () => executeActionOnce({
+        id,
+        generation: 3,
+        fence: { assertCurrent: () => {} },
+        confirmedPlans: new Map([[id, plan]]),
+        providerDispatches,
+        confirm: async () => plan,
+        dispatch: async () => {
+          dispatches += 1;
+          if (dispatches === 1) throw rejection;
+          return `0x${"ab".repeat(32)}`;
+        },
+        recordHandle: async () => {},
+      });
+
+      await expect(execute()).rejects.toMatchObject({ reason: "rejected", cause: rejection });
+      await expect(execute()).resolves.toBe(`0x${"ab".repeat(32)}`);
+      expect(dispatches).toBe(2);
+    }
+
+    const ambiguous = new Error("transport aborted after dispatch began");
+    let ambiguousDispatches = 0;
+    const providerDispatches = new Map<string, Promise<string>>();
+    const executeAmbiguous = () => executeActionOnce({
+      id,
+      generation: 3,
+      fence: { assertCurrent: () => {} },
+      confirmedPlans: new Map([[id, plan]]),
+      providerDispatches,
+      confirm: async () => plan,
+      dispatch: async () => {
+        ambiguousDispatches += 1;
+        throw ambiguous;
+      },
+      recordHandle: async () => {},
+    });
+
+    await expect(executeAmbiguous()).rejects.toBe(ambiguous);
+    await expect(executeAmbiguous()).rejects.toBe(ambiguous);
+    expect(ambiguousDispatches).toBe(1);
   });
 
   test("reuses one idempotent CDP dispatch when handle recording resolves remotely then throws locally", async () => {

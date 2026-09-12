@@ -1,11 +1,12 @@
 "use client";
 
+import { MfaError } from "@coinbase/cdp-core";
 import { useCallback, useRef, type MutableRefObject } from "react";
 import type { AccountSessionStatus, AccountWalletSdkBoundary } from "./cdp-client";
 import type { OwnerGenerationFence } from "./cdp-session-lifecycle";
 import type { AuthenticatedTransport } from "./cdp-authenticated-transport";
 import type { SessionFetch, VerifiedAccountSession } from "./session-client";
-import type { ConnectedBaseAccount } from "./base-account-connector";
+import { BaseAccountConnectorError, type ConnectedBaseAccount } from "./base-account-connector";
 import type { OperationResult, PreparedMoneyAction } from "@/shared/money-actions/types";
 import { TransferExecutionError } from "@/shared/transfers/types";
 
@@ -16,6 +17,14 @@ type ConfirmedPlan = {
 };
 
 type GenerationGuard = Pick<OwnerGenerationFence, "assertCurrent">;
+
+function isUserRejectedDispatch(error: unknown): boolean {
+  return (
+    error instanceof BaseAccountConnectorError && error.reason === "cancelled"
+  ) || (
+    error instanceof MfaError && error.code === "CANCELLED"
+  );
+}
 
 export async function executeActionOnce(input: {
   id: string;
@@ -42,7 +51,16 @@ export async function executeActionOnce(input: {
     dispatch = input.dispatch(plan);
     input.providerDispatches.set(input.id, dispatch);
   }
-  const providerHandle = await dispatch;
+  let providerHandle: string;
+  try {
+    providerHandle = await dispatch;
+  } catch (error) {
+    if (isUserRejectedDispatch(error)) {
+      if (input.providerDispatches.get(input.id) === dispatch) input.providerDispatches.delete(input.id);
+      throw new TransferExecutionError("rejected", error);
+    }
+    throw error;
+  }
   input.fence.assertCurrent(input.generation);
   await input.recordHandle(providerHandle);
   input.fence.assertCurrent(input.generation);
@@ -202,7 +220,10 @@ export function useMoneyActionExecution({
         recordHandle: (handle) => postHandle(action.id, generation, { providerHandle: handle }),
       });
     } catch (error) {
-      if (error instanceof TransferExecutionError) throw error;
+      if (error instanceof TransferExecutionError) {
+        if (error.reason === "rejected") return { id: action.id, status: "rejected" };
+        throw error;
+      }
       throw new TransferExecutionError("submission-unknown", error);
     }
     void resolveTransaction(action, generation, providerHandle);
