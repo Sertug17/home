@@ -66,8 +66,11 @@ export function FundingOrderFlow({ binding, fetchAccountResource, queryOwnerKey,
           : publicQueryKey("funding-order-isolated", order.id))
       : publicQueryKey("funding-order-disabled"),
     enabled: Boolean(order && !terminal(order.state)),
+    // The created order is authoritative for the first poll interval; the
+    // provider is polled from then on (matches the previous setInterval cadence).
     initialData: order ?? undefined,
-    staleTime: 0,
+    initialDataUpdatedAt: () => Date.now(),
+    staleTime: 4_000,
     retry: false,
     refetchOnWindowFocus: false,
     refetchInterval: (query) => {
