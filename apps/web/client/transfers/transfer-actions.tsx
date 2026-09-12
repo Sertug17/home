@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import { CopyableValue } from "@/components/copyable-value";
 import { formatAddress } from "@/shared/formatting";
@@ -13,6 +19,7 @@ import {
   moneyFlowHref,
   withoutMoneyFlowHref,
 } from "@/config/shell-location";
+import { markHomePerformance } from "@/client/observability/perf-marks";
 import { SendDialog } from "./send-dialog";
 import { TRANSFER_ASSETS, formatSendConfirmAmount } from "@/shared/transfers/transfer-helpers";
 import type { ConfirmedTransfer } from "@/shared/transfers/types";
@@ -71,10 +78,17 @@ export function TransferActionsForWallet({
   const visibleSuccess = success && success.owner === boundary ? success.transfer : null;
 
   useEffect(() => {
+    if (boundary) markHomePerformance("action:first-interactive");
+  }, [boundary]);
+
+  useEffect(() => {
     if (!initialOpen || !boundary) return;
-    setSuccess(null);
-    setModalOwner(boundary);
-    setSendOpen(true);
+    const frame = window.requestAnimationFrame(() => {
+      setSuccess(null);
+      setModalOwner(boundary);
+      setSendOpen(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [boundary, initialOpen]);
 
   useEffect(() => {
@@ -107,6 +121,12 @@ export function TransferActionsForWallet({
     setSendOpen(false);
     setModalOwner(null);
   };
+  const showReview = useCallback((actionId: string) => {
+    commitClientUrl(moneyFlowHref("/dashboard", actionId), "replace");
+  }, []);
+  const showFirstStep = useCallback(() => {
+    commitClientUrl(moneyFlowHref("/dashboard"), "replace");
+  }, []);
 
   useEffect(() => {
     if (!success) return;
@@ -138,12 +158,8 @@ export function TransferActionsForWallet({
               executeMoneyAction={wallet.executeMoneyAction}
               ownerBoundary={boundary}
               resumeActionId={initialActionId}
-              onReview={(actionId) => {
-                commitClientUrl(moneyFlowHref("/dashboard", actionId), "replace");
-              }}
-              onInvalidResume={() => {
-                commitClientUrl(moneyFlowHref("/dashboard"), "replace");
-              }}
+              onReview={showReview}
+              onInvalidResume={showFirstStep}
               onTransferConfirmed={(transfer) => {
                 setSuccess({ transfer, owner: boundary });
                 onTransferConfirmed?.(transfer);

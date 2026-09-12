@@ -68,6 +68,7 @@ import type { AssetMarkResolution } from "@/client/asset-mark/presentation";
 import { PresentationRegionProvider } from "@/client/invest/presentation-quote";
 import { PiggyBank } from "lucide-react";
 import { browserHomeQueryClient, useHomeQueryClient } from "@/client/query/query-client";
+import { markHomePerformance } from "@/client/observability/perf-marks";
 
 export type { HomeAssetBalanceItem, HomeAssetBalancesPresentation };
 
@@ -249,11 +250,12 @@ function HomeExperienceView({
 }) {
   const router = useRouter();
   const account = useAccountWallet();
-  const pendingUrlIntentRef = useRef(
+  const [initialUrlIntent] = useState(() =>
     typeof window === "undefined"
       ? parseInboundUrlIntent(new URLSearchParams())
       : parseInboundUrlIntent(new URLSearchParams(window.location.search)),
   );
+  const pendingUrlIntentRef = useRef(initialUrlIntent);
   const appliedUrlIntentRef = useRef(false);
   const initial = resolvePresentation({ detectedCountry });
   const [internalRegionId, setInternalRegionId] = useState<RegionId>(
@@ -288,7 +290,7 @@ function HomeExperienceView({
   const [isAccountOpen, setIsAccountOpen] = useState(
     initialAccountOpen ||
       (routeMode === "landing" &&
-        pendingUrlIntentRef.current.location.account === "signin"),
+        initialUrlIntent.location.account === "signin"),
   );
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(
     initialAccountSettingsOpen,
@@ -320,10 +322,24 @@ function HomeExperienceView({
       : null;
   const previousScrollContextRef = useRef(scrollContextId);
   useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      markHomePerformance("shell:paint");
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+  useEffect(() => {
     if (previousScrollContextRef.current === scrollContextId) return;
     previousScrollContextRef.current = scrollContextId;
     mainRef.current?.scrollTo({ top: 0, behavior: "auto" });
   }, [scrollContextId]);
+  useEffect(() => {
+    if (!("scrollRestoration" in window.history)) return;
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    return () => {
+      window.history.scrollRestoration = previous;
+    };
+  }, []);
 
   const closeAccount = useCallback(() => {
     setIsAccountOpen(false);
@@ -355,7 +371,15 @@ function HomeExperienceView({
       setUrlSendFlow(intent.flow === "send");
       setUrlSendActionId(intent.actionId);
       if (location.panel === balancesPanelId && !restoresBalances) {
+        // Reset the shared scroller before unhiding Balances so its sentinel
+        // cannot reveal another batch from the outgoing panel's offset.
+        mainRef.current?.scrollTo({ top: 0, behavior: "auto" });
         setBalancesRevealReset((resetSignal) => resetSignal + 1);
+      }
+      if (restoresBalances) {
+        // Account settings overlays keep the same panel id, so explicitly run
+        // the post-navigation restoration after the overlay disappears.
+        setNavigationRequest((request) => request + 1);
       }
     };
     window.addEventListener("popstate", onPopState);
@@ -396,6 +420,11 @@ function HomeExperienceView({
     account.status === "restoring" || account.status === "validating";
   const isVerified = account.status === "verified";
   useEffect(() => {
+    if (!isVerified || !account.session?.smartAccount) return;
+    markHomePerformance("session:verified");
+    markHomePerformance("wallet:ready");
+  }, [account.session?.smartAccount, isVerified]);
+  useEffect(() => {
     if (
       !applyInboundUrlIntent ||
       routeMode !== "dashboard" ||
@@ -429,6 +458,11 @@ function HomeExperienceView({
     ? (assetBalances ?? loadingAssetBalances)
     : loadingAssetBalances;
   const paintedAssetBalances = liveAssetBalances;
+  useEffect(() => {
+    if (isVerified && paintedAssetBalances.status !== "loading") {
+      markHomePerformance("balances:painted");
+    }
+  }, [isVerified, paintedAssetBalances.status]);
   const balancesOwnerKey = account.ownerKey;
   const balancesSubject = account.session?.user.subject ?? null;
   const balancesSmartAccount = account.session?.smartAccount?.address ?? null;
@@ -461,19 +495,24 @@ function HomeExperienceView({
     if (!panelStage) return;
 
     panelStage.focus({ preventScroll: true });
+    let restoreFrame: number | null = null;
     const isBalances = activeNavigation === balancesPanelId;
     const shouldPreserveBalances =
       isBalances && pendingBalancesRestoreRef.current;
     if (isBalances) {
       pendingBalancesRestoreRef.current = false;
       if (shouldPreserveBalances) {
-        mainRef.current?.scrollTo({
-          top: clampHomeScrollTop(
-            mainRef.current,
-            balancesReturnScrollRef.current,
-          ),
-          behavior: "auto",
-        });
+        const restoreBalancesScroll = () => {
+          mainRef.current?.scrollTo({
+            top: clampHomeScrollTop(
+              mainRef.current,
+              balancesReturnScrollRef.current,
+            ),
+            behavior: "auto",
+          });
+        };
+        restoreBalancesScroll();
+        restoreFrame = window.requestAnimationFrame(restoreBalancesScroll);
       }
       disarmBalancesRestore();
     }
@@ -490,6 +529,9 @@ function HomeExperienceView({
         behavior: reducedMotion ? "auto" : "smooth",
       });
     }
+    return () => {
+      if (restoreFrame !== null) window.cancelAnimationFrame(restoreFrame);
+    };
   }, [
     activeNavigation,
     disarmBalancesRestore,
@@ -764,10 +806,11 @@ function HomeExperienceView({
                   {balancesMounted ? (
                     <MountedShellPanel active={activeNavigation === balancesPanelId}>
                       <BalancesPage
-                      assetBalances={paintedAssetBalances}
-                      assetMarkResolution={assetMarkResolution}
-                      isChecking={isChecking}
-                      revealedCount={balancesReveal.count}
+                        active={activeNavigation === balancesPanelId}
+                        assetBalances={paintedAssetBalances}
+                        assetMarkResolution={assetMarkResolution}
+                        isChecking={isChecking}
+                        revealedCount={balancesReveal.count}
                         onRevealMore={balancesReveal.extend}
                       />
                     </MountedShellPanel>
@@ -1210,12 +1253,14 @@ function HomePanel({
 }
 
 function BalancesPage({
+  active,
   assetBalances,
   assetMarkResolution,
   isChecking,
   revealedCount,
   onRevealMore,
 }: {
+  active: boolean;
   assetBalances?: HomeAssetBalancesPresentation;
   assetMarkResolution?: AssetMarkResolution;
   isChecking: boolean;
@@ -1242,6 +1287,7 @@ function BalancesPage({
         </p>
       ) : null}
       <IncrementalBalancesList
+        active={active}
         items={assetBalances?.items ?? []}
         isLoading={isLoading}
         isUnavailable={assetBalances?.status === "unavailable"}
@@ -1419,7 +1465,7 @@ function useBalancesRevealWindow(
   const count = Math.min(revealWindow.count, items.length);
   const extend = useCallback(() => {
     setRevealWindow((current) =>
-      current.key === key
+      current.key === key && current.resetSignal === resetSignal
         ? {
             key,
             resetSignal: current.resetSignal,
@@ -1430,12 +1476,13 @@ function useBalancesRevealWindow(
           }
         : current,
     );
-  }, [key, items.length]);
+  }, [key, items.length, resetSignal]);
 
   return { count, extend };
 }
 
 function IncrementalBalancesList({
+  active,
   items,
   isLoading,
   isUnavailable = false,
@@ -1443,6 +1490,7 @@ function IncrementalBalancesList({
   revealedCount,
   onRevealMore,
 }: {
+  active: boolean;
   items: readonly HomeAssetBalanceItem[];
   isLoading: boolean;
   isUnavailable?: boolean;
@@ -1455,7 +1503,7 @@ function IncrementalBalancesList({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!hasMore) return;
+    if (!active || !hasMore) return;
     if (typeof IntersectionObserver === "undefined") return;
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -1470,7 +1518,7 @@ function IncrementalBalancesList({
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [revealedCount, items.length, hasMore, onRevealMore]);
+  }, [active, revealedCount, items.length, hasMore, onRevealMore]);
 
   if (items.length === 0) {
     if (isLoading) {
@@ -1491,7 +1539,7 @@ function IncrementalBalancesList({
           />
         ))}
       </ul>
-      {hasMore ? (
+      {active && hasMore ? (
         <div
           ref={sentinelRef}
           className="balances-sentinel"

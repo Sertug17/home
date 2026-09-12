@@ -25,8 +25,6 @@ const replaceCalls: string[] = [];
 const pushCalls: string[] = [];
 let backCalls = 0;
 let autoPopRouterBack = true;
-let autoCommitRouterPush = true;
-let pendingRouterPush: string | null = null;
 
 // History-aware App Router double. `push`/`replace` keep a real call ledger
 // AND advance an in-test history stack, syncing `window.location` so the
@@ -49,17 +47,7 @@ function commitHistoryPush(href: string) {
 
 function pushHistory(href: string) {
   pushCalls.push(href);
-  if (autoCommitRouterPush) {
-    commitHistoryPush(href);
-  } else {
-    pendingRouterPush = href;
-  }
-}
-
-function commitPendingRouterPush() {
-  expect(pendingRouterPush).toBeTruthy();
-  commitHistoryPush(pendingRouterPush as string);
-  pendingRouterPush = null;
+  commitHistoryPush(href);
 }
 
 function replaceHistory(href: string) {
@@ -103,8 +91,6 @@ function resetHistory() {
   pushCalls.length = 0;
   backCalls = 0;
   autoPopRouterBack = true;
-  autoCommitRouterPush = true;
-  pendingRouterPush = null;
   historyEntries = ["/"];
   historyCursor = 0;
   syncHistoryLocation("/");
