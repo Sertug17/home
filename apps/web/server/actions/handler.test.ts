@@ -45,6 +45,7 @@ describe("actions HTTP handlers", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       id: ID,
+      kind: "send",
       summary: row.summary,
       calls: [CALL],
       expiresAt: row.summary.expiresAt,
@@ -60,7 +61,7 @@ describe("actions HTTP handlers", () => {
     });
     const response = await handler(request(`/api/actions/${ID}`), context());
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ id: ID, status: "pending", summary: row.summary });
+    expect(await response.json()).toMatchObject({ id: ID, kind: "send", status: "pending", summary: row.summary });
   });
 
   test("GET returns the same 404 for another owner", async () => {

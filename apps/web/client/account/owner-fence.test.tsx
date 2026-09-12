@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { AccountWalletClient, AccountWalletSdkBoundary } from "./cdp-client";
 import type { VerifiedAccountSession } from "./session-client";
 import type { PreparedMoneyAction } from "@/shared/money-actions/types";
+import { getHomeQueryClient, ownerQueryKey } from "@/client/query/query-client";
 
 const { act, cleanup, render, waitFor } = await import("@testing-library/react");
 const { useEffect } = await import("react");
@@ -187,6 +188,7 @@ const triggerRows: Array<{
 afterEach(() => {
   cleanup();
   observedClient = null;
+  getHomeQueryClient().clear();
   window.sessionStorage.clear();
   window.localStorage.clear();
 });
@@ -252,5 +254,131 @@ describe("owner generation fence", () => {
       window.sessionStorage.clear();
       window.localStorage.clear();
     }
+  });
+
+  test("cancels post-action freshness before an owner switch can recreate old-owner queries", async () => {
+    const queryClient = getHomeQueryClient();
+    let activeSession = session("cdp-embedded");
+    let freshFetches = 0;
+    const dataOwnerKey = `${activeSession.user.subject}\u0000${ADDRESS_A.toLowerCase()}\u00008453\u0000cdp-embedded`;
+
+    const scheduled = new Map<object, () => void>();
+    const nativeSetTimeout = globalThis.setTimeout;
+    const nativeClearTimeout = globalThis.clearTimeout;
+    globalThis.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+      if (delay === 3_000 && typeof callback === "function") {
+        const id = {};
+        scheduled.set(id, () => callback(...args));
+        return id;
+      }
+      return nativeSetTimeout(callback, delay, ...args);
+    }) as typeof setTimeout;
+    globalThis.clearTimeout = ((id: ReturnType<typeof setTimeout>) => {
+      if (scheduled.delete(id as object)) return;
+      nativeClearTimeout(id);
+    }) as typeof clearTimeout;
+
+    try {
+      const activeSdk = sdk({
+        sendUserOperation: async () => ({ userOperationHash: `0x${"ab".repeat(32)}` }),
+        getUserOperation: async () => ({
+          network: "base",
+          userOpHash: `0x${"ab".repeat(32)}`,
+          calls: prepared(activeSession).calls,
+          status: "complete",
+          transactionHash: `0x${"cd".repeat(32)}`,
+        }),
+      });
+      const sessionFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        if (path === "/api/session") return Response.json(activeSession);
+        if (path === "/api/actions/prepare") return Response.json(prepared(activeSession));
+        if (path.endsWith("/confirm")) return Response.json({ calls: prepared(activeSession).calls });
+        if (path === "/api/actions") {
+          return Response.json({ actions: [{ id: ACTION_ID, summary: { amounts: prepared(activeSession).amounts } }] });
+        }
+        if (path.startsWith("/api/portfolio/valuation?")) {
+          freshFetches += 1;
+          return new Response(null, { status: 500 });
+        }
+        if (init?.method === "POST" && path.endsWith("/handle")) return Response.json({});
+        return Response.json({});
+      };
+      const owner = (ownerSdk: AccountWalletSdkBoundary) => (
+        <AccountWalletSessionOwner sdk={ownerSdk} sessionFetch={sessionFetch}>
+          <ClientProbe />
+        </AccountWalletSessionOwner>
+      );
+      const view = render(owner(activeSdk));
+      await waitFor(() => expect(currentClient().status).toBe("verified"));
+      queryClient.setQueryData(ownerQueryKey(dataOwnerKey, "valuation", "US"), {
+        version: 2,
+        inventory: {
+          holdings: [{ kind: "direct", id: "usdc", balanceBaseUnits: "1000000" }],
+        },
+      });
+      const action = await currentClient().prepareMoneyAction("send", { amountBaseUnits: "1000000" });
+      await currentClient().executeMoneyAction(action);
+      await waitFor(() => expect(scheduled.size).toBe(1));
+      const oldPoll = [...scheduled.values()][0]!;
+
+      activeSession = session("cdp-embedded", "subject-b", ADDRESS_B);
+      await act(async () => { view.rerender(owner(sdk({ ownerKey: OWNER_B }))); });
+      await waitFor(() => expect(currentClient().status).toBe("verified"));
+      oldPoll();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(freshFetches).toBe(0);
+      expect(scheduled.size).toBe(0);
+      expect(queryClient.getQueryCache().findAll({ queryKey: [dataOwnerKey] })).toHaveLength(0);
+    } finally {
+      globalThis.setTimeout = nativeSetTimeout;
+      globalThis.clearTimeout = nativeClearTimeout;
+    }
+  });
+
+  test("clears confirmed plans at the owner-generation boundary", async () => {
+    let activeSession = session("cdp-embedded");
+    let confirmPosts = 0;
+    let dispatches = 0;
+    const sessionFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/session") return Response.json(activeSession);
+      if (path === "/api/actions/prepare") return Response.json(prepared(activeSession));
+      if (path.endsWith("/confirm")) {
+        confirmPosts += 1;
+        return Response.json({ calls: prepared(activeSession).calls });
+      }
+      if (init?.method === "POST" && path.endsWith("/handle")) return Response.json({});
+      return Response.json({});
+    };
+    const activeSdk = (ownerKey: string) => sdk({
+      ownerKey,
+      sendUserOperation: async () => {
+        dispatches += 1;
+        return { userOperationHash: `0x${"ab".repeat(32)}` };
+      },
+    });
+    const owner = (ownerSdk: AccountWalletSdkBoundary) => (
+      <AccountWalletSessionOwner sdk={ownerSdk} sessionFetch={sessionFetch}>
+        <ClientProbe />
+      </AccountWalletSessionOwner>
+    );
+    const view = render(owner(activeSdk(OWNER_A)));
+    await waitFor(() => expect(currentClient().status).toBe("verified"));
+    const first = await currentClient().prepareMoneyAction("send", { amountBaseUnits: "1000000" });
+    await currentClient().executeMoneyAction(first);
+
+    activeSession = session("cdp-embedded", "subject-b", ADDRESS_B);
+    view.rerender(owner(activeSdk(OWNER_B)));
+    await waitFor(() => expect(currentClient().status).toBe("verified"));
+    activeSession = session("cdp-embedded");
+    view.rerender(owner(activeSdk(OWNER_A)));
+    await waitFor(() => expect(currentClient().status).toBe("verified"));
+
+    const second = await currentClient().prepareMoneyAction("send", { amountBaseUnits: "1000000" });
+    await currentClient().executeMoneyAction(second);
+    expect({ confirmPosts, dispatches }).toEqual({ confirmPosts: 2, dispatches: 2 });
   });
 });

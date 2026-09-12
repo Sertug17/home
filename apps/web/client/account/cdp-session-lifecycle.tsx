@@ -107,7 +107,9 @@ export function AccountWalletSessionOwner({
     signOut: sdkSignOut,
   } = sdk;
   const queryClient = useHomeQueryClient(browserHomeQueryClient());
+  const ownerBoundaryResetRef = useRef<() => void>(() => {});
   const clearQueryBoundary = useCallback(() => {
+    ownerBoundaryResetRef.current();
     clearOwnerQueryBoundary(
       queryClient,
       typeof window === "undefined" ? undefined : window.localStorage,
@@ -358,6 +360,12 @@ export function AccountWalletSessionOwner({
     baseConnection: baseConnectionRef,
     transport,
   });
+  useLayoutEffect(() => {
+    ownerBoundaryResetRef.current = () => {
+      transport.reset();
+      moneyActions.reset();
+    };
+  }, [moneyActions, transport]);
 
   const retrySessionValidation = useCallback(async () => {
     if (retryInitialization) await retryInitialization();

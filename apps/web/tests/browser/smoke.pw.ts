@@ -128,7 +128,7 @@ async function installApiFixtures(
       return json(route, { action: { id: ACTION_ID, status: "pending", providerHandle: USER_OPERATION_HASH } });
     }
     if (path === `/api/actions/${ACTION_ID}`) return json(route, status === "unconfirmed"
-      ? { id: ACTION_ID, summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, calls: action().calls, expiresAt: EXPIRES_AT }
+      ? { id: ACTION_ID, kind: "send", summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, calls: action().calls, expiresAt: EXPIRES_AT }
       : { action: { id: ACTION_ID, status: "pending", providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined } });
     if (path === "/api/actions") return json(route, { actions: status === "pending" ? [{ id: ACTION_ID, provider: "cdp-embedded", kind: "send", summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, status: "pending", createdAt: CREATED_AT, confirmedAt: CREATED_AT, providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined, owner: action().owner }] : [] });
     if (path === "/api/activity") return json(route, { version: 1, walletAddress: OWNER, chainId: 8453, from: "2026-09-01T00:00:00.000Z", to: new Date().toISOString(), transfers: [], nextCursor: null, source: { provider: "Playwright", method: "fixture", fetchedAt: new Date().toISOString() } });
