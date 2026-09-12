@@ -123,7 +123,7 @@
 .home-ui-button__label { grid-area: 1 / 1; min-inline-size: 0; }
 .home-ui-button[data-variant="secondary"] {
   background: var(--home-ui-color-surface);
-  color: var(--fg, var(--home-ui-color-text));
+  color: var(--home-ui-color-text);
   border-color: var(--separator, var(--home-ui-color-border));
 }
 .home-ui-button[data-variant="quiet"] {
