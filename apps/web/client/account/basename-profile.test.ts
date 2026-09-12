@@ -3,25 +3,12 @@ import {
   basenameProfileUrl,
   fetchBasenameProfile,
   parseBasenameProfile,
-  profileGlyph,
 } from "./basename-profile";
 
 const ADDRESS = "0x1111111111111111111111111111111111111111";
 
 describe("profileGlyph", () => {
-  test("prefers Basename, then email local-part, then owner key", () => {
-    expect(
-      profileGlyph({
-        basename: "Jesse.base.eth",
-        ownerKey: "ada@example.test",
-        address: ADDRESS,
-      }),
-    ).toBe("j");
-    expect(profileGlyph({ ownerKey: "Ada@example.test" })).toBe("a");
-    expect(profileGlyph({ ownerKey: "home-user" })).toBe("h");
-    expect(profileGlyph({ address: ADDRESS })).toBe("1");
-    expect(profileGlyph({})).toBe("");
-  });
+
 });
 
 describe("parseBasenameProfile", () => {

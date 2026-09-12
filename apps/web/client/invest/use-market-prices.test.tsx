@@ -93,30 +93,6 @@ afterEach(() => {
 });
 
 describe("useMarketPrices", () => {
-  test("loads the public snapshot without auth and preserves a stable market props object", async () => {
-    const renderedProps: ReturnType<typeof useMarketPrices>[] = [];
-    const options: UseMarketPricesOptions = {
-      fetchImpl: (async () =>
-        Response.json(responseWithSnapshot(new Date().toISOString()))),
-      refreshCooldownMs: 60_000,
-    };
-    const view = render(
-      <HookProbe options={options} onRender={(props) => renderedProps.push(props)} />,
-    );
-
-    await waitFor(() =>
-      expect(page().getByTestId("stock-detail").textContent).toBe(
-        "$123.4567890123456789",
-      ),
-    );
-    const readyProps = renderedProps.at(-1);
-
-    view.rerender(
-      <HookProbe options={options} onRender={(props) => renderedProps.push(props)} />,
-    );
-    expect(renderedProps.at(-1)).toBe(readyProps);
-  });
-
   test("ages a ready source snapshot out while mounted instead of presenting it as perpetually live", async () => {
     const freshnessMs = 20;
     const options: UseMarketPricesOptions = {

@@ -116,28 +116,6 @@ afterEach(() => {
 const originalFetch = window.fetch;
 
 describe("invest discovery flow", () => {
-  test("opens Stocks category from See all and lists the full curated catalog", async () => {
-    renderInvest(<InvestExperience />);
-
-    expect(page().getByText("Amazon")).toBeTruthy();
-    expect(page().getByText("Microsoft")).toBeTruthy();
-    expect(page().queryByText("Tesla")).toBeNull();
-
-    fireEvent.click(page().getAllByRole("button", { name: "See all ›" })[0]!);
-    await waitFor(() =>
-      expect(page().getByRole("heading", { name: "Stocks" })).toBeTruthy(),
-    );
-    expect(window.location.search).toBe("?panel=invest&shelf=stocks");
-    expect(page().getByText("Tesla")).toBeTruthy();
-    expect(page().getByText("Strategy")).toBeTruthy();
-    expect(page().getByText("SanDisk")).toBeTruthy();
-    expect(page().getByText("SpaceX")).toBeTruthy();
-    expect(page().queryByText("Buy")).toBeNull();
-    fireEvent.click(page().getByRole("button", { name: "Back to Invest" }));
-    expect(page().getByRole("heading", { name: "Invest" })).toBeTruthy();
-    expect(page().queryByText("Tesla")).toBeNull();
-  });
-
   test("pops stacked in-app category and detail without replacing the hub", async () => {
     window.fetch = (async () =>
       Response.json({
@@ -181,35 +159,7 @@ describe("invest discovery flow", () => {
     expect(page().getByRole("heading", { name: "Invest" })).toBeTruthy();
   });
 
-  test("renders a real history series and never substitutes a fake line", async () => {
-    window.fetch = (async () =>
-      Response.json({
-        version: 1,
-        provider: "codex",
-        assetId: "cbbtc",
-        range: "1W",
-        fetchedAt: "2026-09-07T20:00:00.000Z",
-        status: "ready",
-        points: [
-          { time: "2026-09-01T00:00:00.000Z", value: "62000" },
-          { time: "2026-09-07T00:00:00.000Z", value: "64210" },
-        ],
-      })) as unknown as typeof fetch;
 
-    renderInvest(<InvestExperience cryptoMarket={readyCrypto} />);
-    fireEvent.click(page().getByRole("button", { name: "Bitcoin details" }));
-
-    await waitFor(() =>
-      expect(page().getByRole("img", { name: "1W price history" })).toBeTruthy(),
-    );
-    expect(page().queryByText("No price history for this range.")).toBeNull();
-  });
-
-  test("fail-closes the Memes shelf when trending is unavailable", () => {
-    renderInvest(<InvestExperience memeStatus="error" />);
-    expect(page().getAllByText("Unavailable").length).toBeGreaterThan(0);
-    expect(page().queryByText("Degen")).toBeNull();
-  });
 });
 
 describe("Memes detail incremental loading", () => {

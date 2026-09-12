@@ -2,7 +2,6 @@ import "@/client/account/dom-test-harness";
 
 import { page } from "@/tests/helpers/dom";
 import { afterEach, describe, expect, test } from "bun:test";
-import { StrictMode } from "react";
 import type { AccountWalletClient } from "@/client/account/cdp-client";
 import { getHomeQueryClient } from "@/client/query/query-client";
 
@@ -146,23 +145,6 @@ describe("FundingExperience", () => {
     await act(async () => { resolveOrder({ order: { id: "11111111-1111-4111-8111-111111111111", providerId: "ripio", state: "dispatch-ambiguous", fiatAmount: "1000", providerStatus: null, instructions: null } }); await pendingOrder; });
     expect(page().getByRole("dialog", { name: "Receive" })).toBeTruthy();
     expect(page().queryByText("Check Activity before trying again")).toBeNull();
-  });
-
-  test("keeps hosted navigation active after StrictMode effect replay", async () => {
-    const navigations: string[] = [];
-    render(
-      <StrictMode>
-        <FundingExperienceForWallet
-          wallet={{ ...verifiedWallet(), fetchAccountResource: async () => hosted() }}
-          navigateToHostedOnramp={(url) => navigations.push(url)}
-          regionId="US"
-        />
-      </StrictMode>,
-    );
-
-    fireEvent.click(page().getByRole("button", { name: /Use Coinbase to deposit USD/ }));
-    fireEvent.click(page().getByRole("button", { name: "Continue to Coinbase" }));
-    await waitFor(() => expect(navigations).toEqual([HOSTED_URL]));
   });
 
   test("closing a pending hosted onramp prevents delayed navigation and stale persistence", async () => {

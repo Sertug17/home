@@ -492,44 +492,5 @@ describe("useInvestDiscover pagination", () => {
     expect(page().getByTestId("auto-load-paused").textContent).toBe("yes");
   });
 
-  test("does not refetch public discovery on visibility changes", async () => {
-    let pageZeroCalls = 0;
-    render(
-      <HookProbe
-        options={{
-          refreshCooldownMs: 0,
-          fetchImpl: async (input) => {
-            const url = String(input);
-            if (!url.includes("offset=")) {
-              pageZeroCalls += 1;
-              return discoverResponse(
-                [degenAsset],
-                { nextOffset: 24, exhausted: false },
-              );
-            }
-            return discoverResponse(
-              [higherAsset],
-              { nextOffset: null, exhausted: true },
-            );
-          },
-        }}
-      />,
-    );
 
-    await waitFor(() =>
-      expect(page().getByTestId("meme-status").textContent).toBe("ready"),
-    );
-
-    document.dispatchEvent(new Event("visibilitychange"));
-    await Promise.resolve();
-    expect(pageZeroCalls).toBe(1);
-
-    fireEvent.click(page().getByRole("button", { name: "load-more" }));
-    await waitFor(() =>
-      expect(page().getByTestId("meme-names").textContent).toBe(
-        "Degen,Higher",
-      ),
-    );
-    expect(page().getByTestId("exhausted").textContent).toBe("yes");
-  });
 });

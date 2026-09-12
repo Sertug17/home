@@ -94,12 +94,12 @@ describe("SavingsMoneyDialog", () => {
     expect(executions).toBe(2);
   });
 
-  for (const failure of [
+  test("surfaces typed prepare errors", async () => {
+    for (const failure of [
     { name: "limit", error: Object.assign(new Error("limit"), { status: 409 }), message: "exceeds the current onchain account balance or vault limit" },
     { name: "rate limit", error: Object.assign(new Error("limited"), { status: 429, code: "SAVINGS_ACTION_RATE_LIMITED", serverMessage: "Base RPC is rate limited. Try again shortly." }), message: "Base RPC is rate limited. Try again shortly. No transaction was submitted." },
     { name: "RPC", error: Object.assign(new Error("unavailable"), { status: 502, code: "SAVINGS_ACTION_RPC", serverMessage: "Base RPC rejected a savings state read: execution reverted" }), message: "Base RPC rejected a savings state read: execution reverted (SAVINGS_ACTION_RPC) No transaction was submitted." },
-  ]) {
-    test(`surfaces the typed ${failure.name} prepare error`, async () => {
+    ]) {
       render(
         <SavingsMoneyDialog
           open mode="deposit" session={session} candidate={candidate}
@@ -111,6 +111,7 @@ describe("SavingsMoneyDialog", () => {
       typeAmount("5");
       fireEvent.click(page().getByRole("button", { name: "Continue" }));
       expect((await page().findByRole("alert")).textContent).toContain(failure.message);
-    });
-  }
+      cleanup();
+    }
+  });
 });
