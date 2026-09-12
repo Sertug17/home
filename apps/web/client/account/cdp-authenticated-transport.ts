@@ -197,7 +197,9 @@ export function useAuthenticatedTransport({
             queryKey: valuationQuery.queryKey,
             staleTime: 0,
             retry: false,
-            meta: ownerQueryMeta(portfolioOwner, "owner"),
+            // Must stay memory-only: fetchQuery's options overwrite the hook's meta,
+            // and the valuation payload includes recognized rows that are never persisted.
+            meta: ownerQueryMeta(portfolioOwner, "memory"),
             queryFn: async ({ signal }) => parsePortfolioValuationSnapshot(
               await fetchVerifiedResource(
                 "/api/portfolio/valuation",

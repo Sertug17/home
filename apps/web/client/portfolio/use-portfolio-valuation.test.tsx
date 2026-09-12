@@ -3,6 +3,7 @@ import "@/client/account/dom-test-harness";
 import {
   getHomeQueryClient,
   ownerQueryKey,
+  ownerQueryMeta,
   shouldPersistOwnerQuery,
 } from "@/client/query/query-client";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -169,6 +170,26 @@ describe("portfolio valuation ownership", () => {
     const query = getHomeQueryClient().getQueryCache().find({
       queryKey: ownerQueryKey(ownerKey, "valuation", "US"),
     });
+    expect(query?.meta).toEqual({ persistence: "memory", ownerKey });
+    expect(query && shouldPersistOwnerQuery(query, ownerKey)).toBe(false);
+  });
+
+  test("stays memory-only after an imperative fetchQuery refresh (the transport's post-action path)", async () => {
+    const fetchValuation: FetchPortfolioValuation = async () => snapshot("US");
+    render(<Harness region="US" fetchValuation={fetchValuation} />);
+    await waitFor(() => expect(document.body.textContent).toBe("US:USD"));
+
+    const ownerKey = `${session.subject}\u0000${ADDRESS}\u00008453`;
+    const queryKey = ownerQueryKey(ownerKey, "valuation", "US");
+    // fetchQuery options overwrite the hook's meta; the transport must pass "memory".
+    await getHomeQueryClient().fetchQuery({
+      queryKey,
+      staleTime: 0,
+      retry: false,
+      meta: ownerQueryMeta(ownerKey, "memory"),
+      queryFn: async () => snapshot("US"),
+    });
+    const query = getHomeQueryClient().getQueryCache().find({ queryKey });
     expect(query?.meta).toEqual({ persistence: "memory", ownerKey });
     expect(query && shouldPersistOwnerQuery(query, ownerKey)).toBe(false);
   });
