@@ -23,6 +23,8 @@ export type HomeAssetBalanceItem = {
   displayContext?: string;
   currencyCode?: string | null;
   tone?: "default" | "muted" | "error";
+  /** Recognized catalog rows are nested-Balances-only. */
+  recognized?: true;
 };
 
 export type HomeAssetBalancesPresentation = {
@@ -45,7 +47,7 @@ export function previewHomeBalanceItems(
   items: readonly HomeAssetBalanceItem[],
   limit = HOME_BALANCES_HUB_PREVIEW_COUNT,
 ): readonly HomeAssetBalanceItem[] {
-  return items.slice(0, limit);
+  return items.filter((item) => item.recognized !== true).slice(0, limit);
 }
 
 export function presentPortfolioValuation(
@@ -108,6 +110,7 @@ export function presentPortfolioValuation(
         ),
       ),
       ...presentAssetRows(snapshot),
+      ...presentRecognizedRows(snapshot),
     ],
     ...presentNonreadyItemIds(snapshot),
   };
@@ -238,6 +241,41 @@ function presentAssetRows(
     else other.push(item);
   }
   return [...fiat, ...other];
+}
+
+function presentRecognizedRows(
+  snapshot: PortfolioValuationSnapshot,
+): HomeAssetBalanceItem[] {
+  return (snapshot.recognized?.holdings ?? []).map((holding) => {
+    const nativeLabel = formatPresentationTokenAmount(
+      BigInt(holding.balanceBaseUnits),
+      holding.decimals,
+      holding.symbol,
+      { category: "crypto", regionId: snapshot.selectedRegion },
+    );
+    const pricedFiat =
+      holding.valuationStatus === "priced" &&
+      holding.value &&
+      holding.valueCurrency
+        ? formatPresentationFiat(
+            holding.value,
+            holding.valueCurrency,
+            2,
+            snapshot.selectedRegion,
+          )
+        : null;
+    return {
+      id: `asset:${holding.assetKey}`,
+      assetKey: holding.assetKey,
+      group: "asset",
+      name: holding.name,
+      detail: holding.symbol,
+      displayBalance: pricedFiat ?? nativeLabel,
+      ...(pricedFiat ? { displayContext: nativeLabel } : {}),
+      currencyCode: null,
+      recognized: true,
+    };
+  });
 }
 
 function presentDirectAssetRow(

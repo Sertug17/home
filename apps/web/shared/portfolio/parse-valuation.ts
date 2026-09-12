@@ -112,6 +112,9 @@ export function parsePortfolioValuationSnapshot(
   for (const line of value.lines) {
     if (!validateLine(line, expectedCurrency, holdingKeys)) fail();
   }
+  if (value.recognized !== undefined && !validateRecognized(value.recognized, expectedCurrency, holdingKeys)) {
+    fail();
+  }
   for (const bucket of value.cashBuckets) if (!validateCashBucket(bucket)) fail();
   if (value.nativeCashValuations !== undefined) {
     if (
@@ -238,6 +241,75 @@ function validateLine(
     ].includes(String(value.status)) &&
     (value.reason === null || typeof value.reason === "string")
   );
+}
+
+function validateRecognized(
+  value: unknown,
+  currency: FiatCurrencyCode | null,
+  configuredHoldingKeys: ReadonlySet<string>,
+): boolean {
+  if (
+    !isRecord(value) ||
+    (value.status !== "complete" && value.status !== "incomplete") ||
+    !Array.isArray(value.holdings)
+  ) {
+    return false;
+  }
+  const seen = new Set<string>();
+  for (const holding of value.holdings) {
+    if (!isRecord(holding)) return false;
+    const address = typeof holding.contractAddress === "string"
+      ? holding.contractAddress
+      : "";
+    const lowerAddress = address.toLowerCase();
+    const assetKey = `eip155:8453/erc20:${lowerAddress}`;
+    if (
+      !addressPattern.test(address) ||
+      address !== lowerAddress ||
+      holding.id !== `recognized:${lowerAddress}` ||
+      holding.assetKey !== assetKey ||
+      configuredHoldingKeys.has(assetKey) ||
+      seen.has(assetKey) ||
+      typeof holding.name !== "string" ||
+      holding.name.trim() !== holding.name ||
+      holding.name.length === 0 ||
+      holding.name.length > 64 ||
+      typeof holding.symbol !== "string" ||
+      holding.symbol.trim() !== holding.symbol ||
+      holding.symbol.length === 0 ||
+      holding.symbol.length > 64 ||
+      typeof holding.decimals !== "number" ||
+      !Number.isSafeInteger(holding.decimals) ||
+      holding.decimals < 0 ||
+      holding.decimals > 255 ||
+      !readInteger(holding.balanceBaseUnits) ||
+      holding.balanceBaseUnits === "0" ||
+      !validateDecimal(holding.liquidityUsd) ||
+      !isRecord(holding.liquidityUsd) ||
+      BigInt(String(holding.liquidityUsd.atoms)) === BigInt(0) ||
+      !validateDecimal(holding.volume24Usd) ||
+      holding.valueCurrency !== currency ||
+      !validateNullableDecimal(holding.value) ||
+      !["priced", "unpriced"].includes(String(holding.valuationStatus)) ||
+      (holding.valuationStatus === "priced" && holding.value === null) ||
+      (holding.valuationStatus === "unpriced" && holding.value !== null) ||
+      (holding.imageUrl !== undefined && !validateHttpsImage(holding.imageUrl))
+    ) {
+      return false;
+    }
+    seen.add(assetKey);
+  }
+  return true;
+}
+
+function validateHttpsImage(value: unknown): boolean {
+  if (typeof value !== "string" || value.length > 2_048) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && !url.hash;
+  } catch {
+    return false;
+  }
 }
 
 function validateNativeCashValuations({

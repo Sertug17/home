@@ -34,7 +34,9 @@ export function usePortfolioValuation(
     staleTime: valuationStaleTimeMs,
     retry: false,
     refetchOnWindowFocus: true,
-    meta: ownerKey ? ownerQueryMeta(ownerKey, "owner") : undefined,
+    // The response includes optional recognized-token rows. Keep this query in
+    // memory so those wallet-specific catalog matches are never dehydrated.
+    meta: ownerKey ? ownerQueryMeta(ownerKey, "memory") : undefined,
     placeholderData: (previousData, previousQuery) =>
       previousQuery?.queryKey[0] === ownerKey
         ? keepPreviousData(previousData)
