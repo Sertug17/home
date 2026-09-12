@@ -162,11 +162,6 @@ export async function prepareTradeAction(
     ...withoutHash,
     intentHash: createHash("sha256").update(stableStringify(withoutHash)).digest("hex"),
   };
-  try {
-    await dependencies.intentStore.issue(intent);
-  } catch (error) {
-    throw new TradePreparationError("provider-unavailable", error);
-  }
   return toReview(intent);
 }
 

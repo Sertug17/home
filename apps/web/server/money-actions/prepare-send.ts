@@ -9,7 +9,7 @@ import type { PreparedMoneyAction } from "@/shared/money-actions/types";
 import { PORTFOLIO_BASE_USDC_ADDRESS } from "@/shared/portfolio/types";
 import { issueMoneyAction } from "./issue";
 import { readAuthorizedMoneyActionSession } from "./session";
-import type { SessionAuthorizer } from "./handlers";
+type SessionAuthorizer = (request: Request) => Promise<Response>;
 
 export function createPrepareSendMoneyActionHandler(dependencies: {
   authorize: SessionAuthorizer;
