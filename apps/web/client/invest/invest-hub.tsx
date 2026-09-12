@@ -1,3 +1,4 @@
+import { Stack } from "@home/ui";
 import { useOptionalAppChrome } from "@/components/app-chrome";
 import type { InvestAsset } from "@/config/invest-assets";
 import type { AssetMarkResolution } from "@/client/asset-mark/presentation";
@@ -50,7 +51,7 @@ export function InvestHub({
           <h2 id="invest-title">Invest</h2>
         </header>
       )}
-      <div className={styles.shelves}>
+      <Stack className={styles.shelves} space="3">
         {discoverShelves.map((shelf) => (
           <DiscoverShelf
             key={shelf.id}
@@ -63,7 +64,7 @@ export function InvestHub({
             onOpenAsset={(asset) => onOpenAsset(asset, "hub")}
           />
         ))}
-      </div>
+      </Stack>
     </section>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Stack } from "@home/ui";
 import { CopyableValue } from "@/components/copyable-value";
 import { MoneyAmountDisplay, MoneyModalFooter, MoneyNumpad } from "@/client/money-modal";
 import modal from "@/client/money-modal/money-modal.module.css";
@@ -125,29 +126,29 @@ export function FundingOrderFlow({ binding, fetchAccountResource, queryOwnerKey,
   const fieldsComplete = !binding.kyc?.fields?.some((field) => !fields[field.name]?.trim());
   return (
     <>
-      <div className={`${modal.body} ${styles.statusStack}`}>
+      <Stack className={`${modal.body} ${styles.statusStack}`} space="2">
         {binding.paymentMethods.length > 1 ? <label>Payment method<select value={method} onChange={(event) => setMethod(event.currentTarget.value)}>{binding.paymentMethods.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label> : null}
         {binding.kyc?.terms ? <a href={binding.kyc.terms.url} target="_blank" rel="noreferrer">Review {binding.displayName} terms</a> : null}
         {binding.kyc?.fields?.map((field) => <label key={field.name}>{field.label}{field.type === "select" ? <select value={fields[field.name] ?? ""} onChange={(event) => setFields((current) => ({ ...current, [field.name]: event.currentTarget.value }))}><option value="">Choose</option>{field.options?.map((option) => <option key={option}>{option}</option>)}</select> : <input type={field.type} value={fields[field.name] ?? ""} onChange={(event) => setFields((current) => ({ ...current, [field.name]: event.currentTarget.value }))} />}</label>)}
         <MoneyAmountDisplay amount={amount} onAmountChange={setAmount} assetId={binding.assetId} assetLabel={binding.currency} assetCurrency={binding.currency} assetLocked pricing={{ status: "unpriced" }} nativeSymbol={binding.currency} />
         <MoneyNumpad value={amount} maxDecimals={2} onChange={setAmount} disabled={busy} />
         {error ? <p className={modal.error} role="alert">{error}</p> : null}
-      </div>
+      </Stack>
       <MoneyModalFooter primaryLabel={busy ? "Getting quote…" : "Review quote"} primaryDisabled={busy || !fieldsComplete || !positiveDecimal(amount)} onPrimary={() => void requestQuote()} secondaryLabel="Back" onSecondary={onBack} />
     </>
   );
 }
 
 function QuoteReview({ binding, draft, busy, confirmationAttempted, error, onConfirm, onBack }: { binding: FundingBinding; draft: QuoteDraft; busy: boolean; confirmationAttempted: boolean; error: string | null; onConfirm: () => void; onBack: () => void }) {
-  return <><div className={`${modal.body} ${styles.statusStack}`}><h3>Review quote</h3><p>Deposit: {draft.quote.fiatAmount} {binding.currency}</p><p>Receive: {atomicToDecimal(draft.quote.tokenAmountAtomic, binding.assetDecimals)} {binding.assetSymbol}</p>{draft.quote.fees.length ? <section aria-label="Fees"><h4>Fees</h4>{draft.quote.fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : draft.quote.feesKnown ? <p>Fees: None</p> : <p>Fees: Not yet available</p>}<p>Expires: {new Date(draft.quote.expiresAt).toLocaleString()}</p>{error ? <p className={modal.error} role="alert">{error}</p> : null}</div><MoneyModalFooter primaryLabel={busy ? "Confirming same order…" : "Confirm deposit"} primaryDisabled={busy} onPrimary={onConfirm} secondaryLabel="Back" secondaryDisabled={confirmationAttempted} onSecondary={onBack} /></>;
+  return <><Stack className={`${modal.body} ${styles.statusStack}`} space="2"><h3>Review quote</h3><p>Deposit: {draft.quote.fiatAmount} {binding.currency}</p><p>Receive: {atomicToDecimal(draft.quote.tokenAmountAtomic, binding.assetDecimals)} {binding.assetSymbol}</p>{draft.quote.fees.length ? <section aria-label="Fees"><h4>Fees</h4>{draft.quote.fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : draft.quote.feesKnown ? <p>Fees: None</p> : <p>Fees: Not yet available</p>}<p>Expires: {new Date(draft.quote.expiresAt).toLocaleString()}</p>{error ? <p className={modal.error} role="alert">{error}</p> : null}</Stack><MoneyModalFooter primaryLabel={busy ? "Confirming same order…" : "Confirm deposit"} primaryDisabled={busy} onPrimary={onConfirm} secondaryLabel="Back" secondaryDisabled={confirmationAttempted} onSecondary={onBack} /></>;
 }
 function ProviderEconomicsReview({ binding, order, onContinue }: { binding: FundingBinding; order: FundingOrderSummary; onContinue: () => void }) {
   const fees = order.fees ?? [];
-  return <><div className={`${modal.body} ${styles.statusStack}`}><h3>Review payment details</h3><p>Receive: {atomicToDecimal(order.expectedTokenAmountAtomic!, binding.assetDecimals)} {binding.assetSymbol}</p>{fees.length ? <section aria-label="Provider fees"><h4>Fees</h4>{fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : <p>Fees: None</p>}<p>These details came from {binding.displayName}. Review them before using the payment instructions.</p></div><MoneyModalFooter primaryLabel="View payment instructions" onPrimary={onContinue} /></>;
+  return <><Stack className={`${modal.body} ${styles.statusStack}`} space="2"><h3>Review payment details</h3><p>Receive: {atomicToDecimal(order.expectedTokenAmountAtomic!, binding.assetDecimals)} {binding.assetSymbol}</p>{fees.length ? <section aria-label="Provider fees"><h4>Fees</h4>{fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : <p>Fees: None</p>}<p>These details came from {binding.displayName}. Review them before using the payment instructions.</p></Stack><MoneyModalFooter primaryLabel="View payment instructions" onPrimary={onContinue} /></>;
 }
 function OrderStatus({ order, onBack }: { order: FundingOrderSummary; onBack: () => void }) {
   const copy = stateCopy(order.state);
-  return <><div className={`${modal.body} ${styles.statusStack}`}><h3>{copy.title}</h3><p>{copy.body}</p>{order.instructions ? <InstructionView instruction={order.instructions} /> : null}{order.providerStatus ? <p>Status: {order.providerStatus}</p> : null}</div>{order.state !== "dispatch-ambiguous" ? <div className={modal.footer}><button className={modal.quiet} type="button" onClick={onBack}>Back</button></div> : null}</>;
+  return <><Stack className={`${modal.body} ${styles.statusStack}`} space="2"><h3>{copy.title}</h3><p>{copy.body}</p>{order.instructions ? <InstructionView instruction={order.instructions} /> : null}{order.providerStatus ? <p>Status: {order.providerStatus}</p> : null}</Stack>{order.state !== "dispatch-ambiguous" ? <div className={modal.footer}><button className={modal.quiet} type="button" onClick={onBack}>Back</button></div> : null}</>;
 }
 function InstructionView({ instruction }: { instruction: Instruction }) {
   if (instruction.kind === "redirect") return <a className={modal.primary} href={instruction.url} rel="noreferrer">Continue to payment</a>;

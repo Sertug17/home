@@ -1,6 +1,6 @@
 .experience {
   width: 100%;
-  color: var(--home-ink);
+  color: var(--fg);
   background: transparent;
 }
 
@@ -53,7 +53,7 @@
   border: 0;
   border-radius: var(--control-radius);
   background: transparent;
-  color: var(--home-ink);
+  color: var(--fg);
   cursor: pointer;
   padding: 0;
 }
@@ -71,24 +71,20 @@
 }
 
 .shelves {
-  display: grid;
-  gap: 12px;
+  width: 100%;
 }
 
 .shelf {
   display: grid;
   gap: 2px;
-  border: 1px solid var(--home-hairline);
+  border: 1px solid var(--separator);
   border-radius: var(--panel-radius);
-  background: var(--home-white);
   padding: 10px 12px 8px;
 }
 
 .shelfHeading {
-  display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
   padding: 2px 4px 6px;
 }
 
@@ -102,7 +98,7 @@
 .seeAll {
   border: 0;
   background: transparent;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 650;
@@ -113,7 +109,7 @@
 .shelfStatus {
   margin: 0;
   padding: 10px 4px 8px;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 0.78rem;
   font-weight: 600;
 }
@@ -133,7 +129,7 @@
   align-items: center;
   gap: 12px;
   border: 0;
-  border-bottom: 1px solid var(--home-hairline);
+  border-bottom: 1px solid var(--separator);
   border-radius: 0;
   background: transparent;
   color: inherit;
@@ -159,7 +155,7 @@
 
 .identity strong,
 .quote strong {
-  color: var(--home-ink);
+  color: var(--fg);
   font-size: 0.92rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -168,7 +164,7 @@
 .identity small,
 .quote small,
 .change {
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 0.72rem;
   font-weight: 600;
 }
@@ -211,7 +207,7 @@
 }
 
 .priceHeader strong {
-  color: var(--home-ink);
+  color: var(--fg);
   font-size: clamp(2.5rem, 10vw, 3rem);
   font-weight: 700;
   letter-spacing: -0.06em;
@@ -222,7 +218,7 @@
 
 .priceHeader strong[data-tone="muted"],
 .priceHeader strong[data-tone="error"] {
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 1.05rem;
   font-weight: 650;
   letter-spacing: -0.03em;
@@ -230,7 +226,7 @@
 }
 
 .priceHeader span {
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 0.86rem;
 }
 
@@ -253,13 +249,13 @@
   align-items: baseline;
   justify-content: space-between;
   padding: 0 4px;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 0.76rem;
   font-weight: 650;
 }
 
 .chartCaption strong {
-  color: var(--home-ink);
+  color: var(--fg);
   font-size: inherit;
   letter-spacing: 0.04em;
 }
@@ -276,7 +272,7 @@
   border: 1px solid transparent;
   border-radius: var(--control-radius);
   background: transparent;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   cursor: pointer;
   font-size: 0.74rem;
   font-weight: 700;
@@ -287,9 +283,9 @@
 }
 
 .ranges button[aria-pressed="true"] {
-  border-color: var(--home-hairline);
+  border-color: var(--separator);
   background: var(--home-canvas);
-  color: var(--home-ink);
+  color: var(--fg);
 }
 
 .chartStage {
@@ -356,7 +352,7 @@
   display: grid;
   place-items: center;
   margin: 0;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 0.8rem;
   pointer-events: none;
 }
@@ -393,9 +389,9 @@
 }
 
 .cta button:last-child {
-  border: 1px solid var(--home-hairline);
+  border: 1px solid var(--separator);
   background: var(--home-white);
-  color: var(--home-ink);
+  color: var(--fg);
 }
 
 .cta button:disabled {
@@ -405,7 +401,7 @@
 
 .locked {
   margin-top: 22px;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 0.78rem;
 }
 
@@ -416,10 +412,10 @@
 .loadMoreButton {
   width: 100%;
   min-height: 42px;
-  border: 1px solid var(--home-hairline);
+  border: 1px solid var(--separator);
   border-radius: var(--control-radius);
   background: var(--home-white);
-  color: var(--home-ink);
+  color: var(--fg);
   cursor: pointer;
   font: inherit;
   font-size: 0.78rem;
@@ -442,7 +438,7 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 0.78rem;
 }
 
@@ -467,7 +463,7 @@
 }
 
 .loadMoreNotice {
-  color: var(--home-muted);
+  color: var(--fg-muted);
 }
 
 .sentinel {
@@ -477,7 +473,7 @@
 
 .end {
   margin: 16px 0 0;
-  color: var(--home-muted);
+  color: var(--fg-muted);
   font-size: 0.75rem;
   text-align: center;
 }

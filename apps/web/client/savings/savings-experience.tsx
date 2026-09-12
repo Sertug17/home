@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Stack } from "@home/ui";
 import { CopyableValue } from "@/components/copyable-value";
 import { useOptionalAppChrome } from "@/components/app-chrome";
 import { useAccountWallet } from "@/client/account/cdp-client";
@@ -268,8 +269,9 @@ export function SavingsExperience({
         </header>
       )}
 
-      <div
+      <Stack
         className={styles.hero}
+        space="2"
         aria-busy={coldLoading || refreshing || undefined}
       >
         {coldLoading ? (
@@ -335,7 +337,7 @@ export function SavingsExperience({
             <p className={styles.heroCaption} role="status">Balance unavailable</p>
           </>
         )}
-      </div>
+      </Stack>
 
       {loadState.status === "loading" ? (
         <section
@@ -352,7 +354,7 @@ export function SavingsExperience({
       ) : !coldLoading && !positionFailed && candidates.length > 0 ? (
         <section className={styles.vaults} aria-labelledby="savings-vaults-title">
           <h3 id="savings-vaults-title" className={styles.vaultKicker}>Vault</h3>
-          <div className={styles.vaultList} role="radiogroup" aria-label="Vault">
+          <Stack className={styles.vaultList} space={{ custom: "10px" }} role="radiogroup" aria-label="Vault">
             {candidates.map((candidate) => {
               const isSelected = selected?.vaultAddress === candidate.vaultAddress;
               const balance = balances.find((entry) =>
@@ -361,7 +363,7 @@ export function SavingsExperience({
               return (
                 <div
                   key={candidate.vaultAddress}
-                  className={`${styles.vault} ${isSelected ? styles.vaultSelected : ""}`.trim()}
+                  className={`${styles.vault} surface-primary ${isSelected ? styles.vaultSelected : ""}`.trim()}
                 >
                   <button
                     className={styles.vaultHeader}
@@ -419,7 +421,7 @@ export function SavingsExperience({
                 </div>
               );
             })}
-          </div>
+          </Stack>
         </section>
       ) : null}
 

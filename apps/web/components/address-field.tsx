@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Inline } from "@home/ui";
 import { ClipboardPaste } from "lucide-react";
 import { formatAddress, isAddress } from "@/shared/formatting";
 import styles from "./address-field.module.css";
@@ -34,7 +35,7 @@ export function AddressField({
   }
 
   return (
-    <div className={styles.field}>
+    <Inline className={`${styles.field} surface-primary`} space="2">
       <input
         id={id}
         className={styles.input}
@@ -57,6 +58,6 @@ export function AddressField({
       >
         <ClipboardPaste size={18} strokeWidth={1.9} />
       </button>
-    </div>
+    </Inline>
   );
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { Inline, Stack } from "@home/ui";
 import { ArrowDownToLine } from "lucide-react";
 import { CurrencyMark } from "@/components/currency-mark";
 import {
@@ -171,8 +172,8 @@ export function MethodBody({
   const showCoinbase = regionId === "US";
   return (
     <div className={modal.body}>
-      <div className={styles.methods}>
-        <button className={styles.method} type="button" onClick={onSelectReceive}>
+      <Stack className={styles.methods} space="3">
+        <button className={`${styles.method} surface-primary`} type="button" onClick={onSelectReceive}>
           <span className={styles.methodIcon} aria-hidden="true">
             <ArrowDownToLine size={18} strokeWidth={2.1} />
           </span>
@@ -183,7 +184,7 @@ export function MethodBody({
           <span className={styles.methodChevron} aria-hidden="true">›</span>
         </button>
         {providerBindings.map((binding) => (
-          <button className={styles.method} type="button" onClick={() => onSelectBinding(binding)} key={`${binding.providerId}:${binding.assetId}`}>
+          <button className={`${styles.method} surface-primary`} type="button" onClick={() => onSelectBinding(binding)} key={`${binding.providerId}:${binding.assetId}`}>
             <CurrencyMark currency={binding.currency as FiatCurrencyCode} symbol={presentationRegions[regionId].currency.symbol ?? "$"} />
             <span className={styles.methodCopy}>
               <span className={styles.methodTitle}>Deposit {binding.currency}</span>
@@ -193,7 +194,7 @@ export function MethodBody({
           </button>
         ))}
         {showCoinbase ? (
-          <button className={styles.method} type="button" onClick={onSelectBuy}>
+          <button className={`${styles.method} surface-primary`} type="button" onClick={onSelectBuy}>
             <CurrencyMark currency="USD" symbol="$" />
             <span className={styles.methodCopy}>
               <span className={styles.methodTitle}>Deposit USD</span>
@@ -202,7 +203,7 @@ export function MethodBody({
             <span className={styles.methodChevron} aria-hidden="true">›</span>
           </button>
         ) : null}
-      </div>
+      </Stack>
       <button
         className={styles.anotherOnramp}
         type="button"
@@ -380,7 +381,7 @@ export function OtherOnrampsBody({
           );
           return canOpen ? (
             <button
-              className={styles.method}
+              className={`${styles.method} surface-primary`}
               type="button"
               onClick={onSelectCoinbase}
               key={onramp.id}
@@ -388,7 +389,7 @@ export function OtherOnrampsBody({
               {content}
             </button>
           ) : (
-            <div className={`${styles.method} ${styles.unavailableMethod}`} key={onramp.id}>
+            <div className={`${styles.method} surface-primary ${styles.unavailableMethod}`} key={onramp.id}>
               {content}
             </div>
           );
@@ -408,7 +409,7 @@ export function SupportedAssets({ regionId }: { regionId: RegionId }) {
   return (
     <section className={styles.supported} aria-label="Supported receive assets on Base">
       <p className={styles.supportedLabel}>Supported on Base</p>
-      <div className={styles.supportedMarks}>
+      <Inline className={styles.supportedMarks} space={{ custom: "14px" }}>
         <span className={styles.supportedAsset}>
           <CurrencyMark currency="USD" symbol="$" />
           <span>USDC</span>
@@ -419,7 +420,7 @@ export function SupportedAssets({ regionId }: { regionId: RegionId }) {
             <span>{localAsset.symbol}</span>
           </span>
         ) : null}
-      </div>
+      </Inline>
       <p className={styles.supportedMore}>Plus other tokens in Home&apos;s supported Base inventory</p>
     </section>
   );

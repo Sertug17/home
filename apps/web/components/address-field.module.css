@@ -1,11 +1,7 @@
 .field {
-  display: flex;
   min-height: 48px;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--home-hairline);
+  border: 1px solid var(--separator);
   border-radius: var(--control-radius);
-  background: var(--home-white);
   padding: 0 6px 0 14px;
 }
 
@@ -21,7 +17,7 @@
   min-height: 46px;
   border: 0;
   background: transparent;
-  color: var(--home-ink);
+  color: var(--fg);
   font: inherit;
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   font-size: 0.95rem;
