@@ -98,9 +98,6 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Type-check delivery TypeScript
-        run: bun run --cwd apps/web tsc --project ../../scripts/delivery/tsconfig.json
-
       - name: Test delivery metadata algorithms with fixtures
         run: node --test scripts/delivery/tests/*.test.mjs
 

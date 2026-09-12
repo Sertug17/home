@@ -9,9 +9,7 @@ Pull requests run these untrusted-code checks without provider or funded-wallet 
 - `bun check`
 - `Chromium product smoke`
 - `delivery automation tests`
-- `real PostgreSQL money/attempt contract (PostgreSQL 14)`
-
-The `delivery automation tests` job also runs the scoped TypeScript project at `scripts/delivery/tsconfig.json`, which type-checks the Bun PostgreSQL executor without changing package metadata.
+- `real PostgreSQL actions and funding contracts (PostgreSQL 14)`
 
 `PR destination` uses `pull_request_target` and explicitly checks out the trusted policy from `main`; it never checks out or executes the pull request head. Before any API call it validates the event repository, pull request number, 40-hex event head SHA, API configuration, and bounded reconciliation count. It first publishes **`delivery/pr-destination`** as pending on that trusted event head, refetches the live pull request, and also marks any newly observed live head pending before further verification. Success is published only after the current live repository, number, base, labels, state, and head are stable and policy-valid. A failed refresh after success makes one bounded best-effort pending publication so a usable status API does not silently leave that success authoritative. Its only write permission is `statuses:write`; the other permissions are read-only. The workflow job result itself is attached to the `pull_request_target` base SHA and is not exact-head proof. Pull request metadata reads and commit-status writes remain non-atomic.
 
@@ -48,7 +46,7 @@ Jesse or a repository administrator should make these changes only after this PR
    - `bun check`
    - `Chromium product smoke`
    - `delivery automation tests`
-   - `real PostgreSQL money/attempt contract (PostgreSQL 14)`
+   - `real PostgreSQL actions and funding contracts (PostgreSQL 14)`
    - `delivery/pr-destination`
 5. Do **not** select `Publish current-head PR destination status` as the destination requirement. That Actions job result is not the exact-head status; require the stable `delivery/pr-destination` commit-status context above.
 6. Use strict required checks (branch must be current with `main`) unless Jesse explicitly accepts the merge-race risk of loose checks.

@@ -60,6 +60,24 @@ export type ActionRow = {
   handle_recorded_at: string | Date | null;
 };
 
+/**
+ * Drivers disagree on jsonb: Neon's Pool returns parsed objects, Bun.SQL returns
+ * the JSON text. Normalize at the query boundary so the store is driver-agnostic.
+ */
+function parseJsonColumn<T>(value: unknown): T | null {
+  if (value == null) return null;
+  if (typeof value === "string") return JSON.parse(value) as T;
+  return value as T;
+}
+
+function normalizeActionRow(row: ActionRow): ActionRow {
+  return {
+    ...row,
+    summary: parseJsonColumn<ActionSummary>(row.summary) as ActionSummary,
+    pending: parseJsonColumn<PendingAction>(row.pending),
+  };
+}
+
 let runtimeStore: ActionsStore | null = null;
 
 export class ActionsStore {
@@ -99,7 +117,7 @@ export class ActionsStore {
       `SELECT * FROM actions WHERE id = $1 AND owner_key = $2`,
       [id, actionOwnerKey(owner)],
     );
-    return result.rows[0] ?? null;
+    return result.rows[0] ? normalizeActionRow(result.rows[0]) : null;
   }
 
   async confirm(owner: MoneyActionOwner, id: string, finalCalls?: MoneyActionCall[]): Promise<ActionRow | null> {
@@ -109,7 +127,7 @@ export class ActionsStore {
         `SELECT * FROM actions WHERE id = $1 AND owner_key = $2 FOR UPDATE`,
         [id, actionOwnerKey(owner)],
       );
-      const row = selected.rows[0];
+      const row = selected.rows[0] ? normalizeActionRow(selected.rows[0]) : undefined;
       if (!row) return null;
       if (row.confirmed_at) return row;
       const updated = await tx.query<ActionRow>(
@@ -122,7 +140,7 @@ export class ActionsStore {
         [id, actionOwnerKey(owner)],
       );
       return {
-        ...updated.rows[0],
+        ...normalizeActionRow(updated.rows[0]!),
         pending: row.pending
           ? { ...row.pending, ...(finalCalls ? { calls: finalCalls } : {}) }
           : null,
@@ -147,7 +165,7 @@ export class ActionsStore {
        RETURNING *`,
       [id, actionOwnerKey(owner), input.providerHandle ?? null, input.transactionHash ?? null],
     );
-    return result.rows[0] ?? null;
+    return result.rows[0] ? normalizeActionRow(result.rows[0]) : null;
   }
 
   async list(owner: MoneyActionOwner): Promise<ActionRow[]> {
@@ -164,7 +182,7 @@ export class ActionsStore {
       [key],
       { timeoutMs: 5_000 },
     );
-    return result.rows;
+    return result.rows.map(normalizeActionRow);
   }
 
   async dispose(): Promise<void> {
