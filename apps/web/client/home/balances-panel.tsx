@@ -110,9 +110,7 @@ export function BalancesPage({
 }) {
   const isLoading = assetBalances?.status === "loading" || isChecking;
   const balanceStatusLabel =
-    assetBalances?.totalStatus === "partial"
-      ? "Unavailable"
-      : assetBalances?.statusLabel;
+    assetBalances?.totalStatus === "partial" ? undefined : assetBalances?.statusLabel;
   const showBalanceStatus =
     assetBalances?.status !== "loading" &&
     balanceStatusLabel !== "Updating…" &&

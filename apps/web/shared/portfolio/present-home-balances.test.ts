@@ -195,8 +195,8 @@ describe("presentPortfolioValuation", () => {
     expect(partial).toMatchObject({
       displayTotal: "R$\u00A012,50",
       totalStatus: "partial",
-      statusLabel: "Unavailable",
     });
+    expect(partial.statusLabel).toBeUndefined();
     expect(unavailable).toMatchObject({
       displayTotal: "—",
       totalStatus: "unavailable",

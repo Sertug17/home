@@ -78,9 +78,7 @@ export function HomePanel({
       : "Total balance";
   const balanceItems = assetBalances?.items ?? [];
   const balanceStatusLabel =
-    assetBalances?.totalStatus === "partial"
-      ? "Unavailable"
-      : assetBalances?.statusLabel;
+    assetBalances?.totalStatus === "partial" ? undefined : assetBalances?.statusLabel;
   const showBalanceStatus =
     assetBalances?.status !== "loading" &&
     balanceStatusLabel !== "Updating…" &&

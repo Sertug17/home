@@ -98,9 +98,7 @@ export function presentPortfolioValuation(
       ? "Choose a country in Account to set how money is shown"
       : totalUnavailable
         ? "Balance unavailable"
-        : totalPartial
-          ? "Unavailable"
-          : undefined,
+        : undefined,
     items: [
       ...snapshot.cashBuckets.map((bucket) =>
         presentCashBucket(
