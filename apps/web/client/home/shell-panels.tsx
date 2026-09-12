@@ -1,0 +1,199 @@
+"use client";
+
+import type { RefObject, ReactNode } from "react";
+import type { FetchActivity } from "@/client/activity";
+import { AccountSettings } from "@/client/account/account-settings";
+import { PrimaryNavigation } from "@/components/primary-navigation";
+import {
+  activityPanelId,
+  balancesPanelId,
+  isHomeNestedPanelId,
+  savePanelId,
+  type ShellPanelId,
+} from "@/config/navigation";
+import type { RegionId, ResolutionSource } from "@/config/regions";
+import type { AssetMarkResolution } from "@/client/asset-mark/presentation";
+import type { VerifiedAccountSession } from "@/shared/account/session-types";
+import { ActivityPage } from "./activity-panel";
+import { BalancesPage } from "./balances-panel";
+import { SavingsPanel, InvestPanel } from "./feature-panels";
+import { HomePanel } from "./home-panel";
+import type { HomeAssetBalancesPresentation } from "./home-types";
+import { MountedShellPanel } from "./panel-shared";
+
+export function DashboardShell({
+  mainRef,
+  panelStageRef,
+  isUnavailable,
+  unavailableMessage,
+  retrySessionValidation,
+  isAccountSettingsOpen,
+  isSignedOut,
+  isChecking,
+  isVerified,
+  activeNavigation,
+  nestedChromeTitle,
+  regionId,
+  resolutionSource,
+  preferenceMessage,
+  isPreferenceReady,
+  accountAddress,
+  selectRegion,
+  signOut,
+  paintedAssetBalances,
+  assetMarkResolution,
+  activitySession,
+  fetchActivity,
+  fetchOperations,
+  onTransferConfirmed,
+  navigateTo,
+  urlAddMoney,
+  urlReturnedFromCoinbase,
+  urlSendFlow,
+  urlSendActionId,
+  balancesMounted,
+  balancesReveal,
+  savingsContent,
+  investContent,
+}: {
+  mainRef: RefObject<HTMLElement | null>;
+  panelStageRef: RefObject<HTMLElement | null>;
+  isUnavailable: boolean;
+  unavailableMessage: string | null;
+  retrySessionValidation: () => Promise<void>;
+  isAccountSettingsOpen: boolean;
+  isSignedOut: boolean;
+  isChecking: boolean;
+  isVerified: boolean;
+  activeNavigation: ShellPanelId;
+  nestedChromeTitle: string | null;
+  regionId: RegionId;
+  resolutionSource: ResolutionSource;
+  preferenceMessage: string;
+  isPreferenceReady: boolean;
+  accountAddress: string | null;
+  selectRegion: (region: RegionId) => void;
+  signOut: () => void;
+  paintedAssetBalances: HomeAssetBalancesPresentation;
+  assetMarkResolution?: AssetMarkResolution;
+  activitySession: VerifiedAccountSession | null;
+  fetchActivity: FetchActivity;
+  fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
+  onTransferConfirmed?: () => void;
+  navigateTo: (panel: ShellPanelId) => void;
+  urlAddMoney: boolean;
+  urlReturnedFromCoinbase: boolean;
+  urlSendFlow: boolean;
+  urlSendActionId: string | null;
+  balancesMounted: boolean;
+  balancesReveal: { count: number; extend: () => void };
+  savingsContent?: ReactNode;
+  investContent?: ReactNode;
+}) {
+  return (
+    <>
+      <main ref={mainRef} className="app-main app-main-authenticated">
+        {isUnavailable ? (
+          <div className="dashboard-notice" role="alert">
+            <span>{unavailableMessage ?? "Your private details remain hidden."}</span>
+            <button type="button" onClick={() => void retrySessionValidation()}>
+              Retry account check
+            </button>
+          </div>
+        ) : null}
+
+        {isAccountSettingsOpen ? (
+          <div className="panel-fade">
+            <AccountSettings
+              regionId={regionId}
+              onRegionChange={selectRegion}
+              resolutionSource={resolutionSource}
+              preferenceMessage={preferenceMessage}
+              isPreferenceReady={isPreferenceReady}
+              accountAddress={isVerified ? accountAddress : null}
+              onSignOut={signOut}
+            />
+          </div>
+        ) : isSignedOut ? (
+          <section className="panel-stage" aria-busy="true" aria-label="Signed out">
+            <span className="sr-status">Signed out</span>
+          </section>
+        ) : (
+          <section
+            ref={panelStageRef}
+            className="panel-stage"
+            id="navigation-panel"
+            tabIndex={-1}
+            aria-labelledby={
+              isHomeNestedPanelId(activeNavigation) || nestedChromeTitle
+                ? undefined
+                : `${activeNavigation}-nav`
+            }
+            aria-label={
+              activeNavigation === savePanelId ? "Savings" : nestedChromeTitle ?? undefined
+            }
+            aria-busy={isChecking}
+          >
+            <div className="panel-fade">
+              {activeNavigation === "home" ? (
+                <HomePanel
+                  assetBalances={paintedAssetBalances}
+                  assetMarkResolution={assetMarkResolution}
+                  activitySession={activitySession}
+                  fetchActivity={fetchActivity}
+                  fetchOperations={fetchOperations}
+                  onTransferConfirmed={onTransferConfirmed}
+                  onOpenSave={() => navigateTo(savePanelId)}
+                  onOpenBalances={() => navigateTo(balancesPanelId)}
+                  onOpenActivity={() => navigateTo(activityPanelId)}
+                  initialAddMoney={urlAddMoney}
+                  returnedFromCoinbase={urlReturnedFromCoinbase}
+                  initialSendFlow={urlSendFlow}
+                  initialSendActionId={urlSendActionId}
+                  regionId={regionId}
+                />
+              ) : null}
+              {balancesMounted ? (
+                <MountedShellPanel active={activeNavigation === balancesPanelId}>
+                  <BalancesPage
+                    active={activeNavigation === balancesPanelId}
+                    assetBalances={paintedAssetBalances}
+                    assetMarkResolution={assetMarkResolution}
+                    isChecking={isChecking}
+                    revealedCount={balancesReveal.count}
+                    onRevealMore={balancesReveal.extend}
+                  />
+                </MountedShellPanel>
+              ) : null}
+              {activeNavigation === activityPanelId ? (
+                <ActivityPage
+                  activitySession={activitySession}
+                  fetchActivity={fetchActivity}
+                  fetchOperations={fetchOperations}
+                  regionId={regionId}
+                  showSessionShimmer={!activitySession && (
+                    paintedAssetBalances.status === "loading" ||
+                    paintedAssetBalances.revalidating === true
+                  )}
+                />
+              ) : null}
+              {activeNavigation === savePanelId ? (
+                <SavingsPanel
+                  isVerified={isVerified}
+                  isChecking={isChecking}
+                  content={savingsContent}
+                />
+              ) : null}
+              {activeNavigation === "invest" ? (
+                <InvestPanel regionId={regionId} content={investContent} />
+              ) : null}
+            </div>
+          </section>
+        )}
+      </main>
+      {!isSignedOut ? (
+        <PrimaryNavigation activeNavigation={activeNavigation} onNavigate={navigateTo} />
+      ) : null}
+    </>
+  );
+}
