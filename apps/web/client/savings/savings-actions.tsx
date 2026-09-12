@@ -33,7 +33,6 @@ export type SavingsMoneyDialogProps = {
   availableLabel?: string;
   availableBaseUnits?: string | null;
   prepareMoneyAction: AccountWalletClient["prepareMoneyAction"];
-  checkMoneyAction: AccountWalletClient["checkMoneyAction"];
   executeMoneyAction: AccountWalletClient["executeMoneyAction"];
   onClose: () => void;
   onConfirmed?: (result: OperationResult) => void | Promise<void>;
@@ -49,7 +48,6 @@ export function SavingsMoneyDialog({
   availableLabel,
   availableBaseUnits,
   prepareMoneyAction,
-  checkMoneyAction,
   executeMoneyAction,
   onClose,
   onConfirmed,
@@ -57,7 +55,7 @@ export function SavingsMoneyDialog({
   const [amount, setAmount] = useState("");
   const [amountBaseUnits, setAmountBaseUnits] = useState<string | null>(null);
   const [preparedAction, setPreparedAction] = useState<PreparedMoneyAction | null>(null);
-  const [recoveringAction, setRecoveringAction] = useState(false);
+  const [attemptedAction, setAttemptedAction] = useState(false);
   const [step, setStep] = useState<DialogStep>("amount");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ mode: SavingsActionMode; amount: string } | null>(null);
@@ -83,7 +81,7 @@ export function SavingsMoneyDialog({
     setAmount("");
     setAmountBaseUnits(null);
     setPreparedAction(null);
-    setRecoveringAction(false);
+    setAttemptedAction(false);
     setStep("amount");
     setError(null);
   }
@@ -117,7 +115,7 @@ export function SavingsMoneyDialog({
       setAmountBaseUnits(nextAmount);
       setError(null);
       setStep("pending");
-      const action = await prepareMoneyAction("/api/savings/actions", {
+      const action = await prepareMoneyAction(mode === "withdraw" ? "savings-withdraw" : "savings-deposit", {
         kind: mode,
         vaultAddress: candidate.vaultAddress,
         amountBaseUnits: nextAmount,
@@ -133,7 +131,7 @@ export function SavingsMoneyDialog({
         );
       }
       setPreparedAction(action);
-      setRecoveringAction(false);
+      setAttemptedAction(false);
       setStep("confirm");
     } catch (caught) {
       setPreparedAction(null);
@@ -148,59 +146,27 @@ export function SavingsMoneyDialog({
     setStep("pending");
     try {
       const result = await executeMoneyAction(preparedAction);
-      if (result.status === "confirmed") {
-        const confirmedAmount = confirmAmount;
-        try {
-          await onConfirmed?.(result);
-        } catch {
-          // A parent refresh failure must not relabel a receipt-confirmed action.
-        }
-        setSuccess({ mode, amount: confirmedAmount });
-        reset();
-        onClose();
-        return;
-      }
+      setAttemptedAction(true);
       if (result.status === "rejected" || result.status === "expired" || result.status === "failed") {
         setError(messageForActionStatus(result.status, mode));
         setStep(result.status === "failed" ? "failed" : "error");
         return;
       }
-      setRecoveringAction(true);
-      setError("This action is still open. Checking again will not submit it again.");
-      setStep("confirm");
-    } catch {
-      setRecoveringAction(true);
-      setError("The outcome is unknown. Check your wallet before starting another action.");
-      setStep("confirm");
-    }
-  }
-
-  async function checkStatus() {
-    if (!preparedAction || step === "pending") return;
-    setError(null);
-    setStep("pending");
-    try {
-      const result = await checkMoneyAction(preparedAction);
-      if (result.status === "confirmed") {
-        try {
-          await onConfirmed?.(result);
-        } catch {
-          // Keep the confirmed receipt even if refresh fails.
-        }
-        setSuccess({ mode, amount: confirmAmount });
-        reset();
-        onClose();
-        return;
+      const confirmedAmount = confirmAmount;
+      try {
+        await onConfirmed?.(result);
+      } catch {
+        // A parent refresh failure must not relabel a dispatched action.
       }
-      setError(messageForActionStatus(result.status, mode));
-      setStep("confirm");
+      setSuccess({ mode, amount: confirmedAmount });
+      reset();
+      onClose();
     } catch {
-      setError("The existing submission is unresolved. Check its status; do not submit it again.");
+      setAttemptedAction(true);
+      setError("The dispatch outcome is unresolved. Retry recording this same action; a new dispatch will not be created.");
       setStep("confirm");
     }
   }
-
-  const checkOnly = (recoveringAction || expiredPrepared) && step === "confirm";
 
   return (
     <>
@@ -263,7 +229,7 @@ export function SavingsMoneyDialog({
           ) : null}
 
           {error ? <p className={modal.error} role="alert">{error}</p> : null}
-          {expiredPrepared && step === "confirm" ? (
+          {expiredPrepared && !attemptedAction && step === "confirm" ? (
             <p className={modal.error} role="alert">
               This {mode} expired. Go back and continue again.
             </p>
@@ -280,8 +246,9 @@ export function SavingsMoneyDialog({
 
         {step === "confirm" ? (
           <MoneyModalFooter
-            primaryLabel={checkOnly ? "Check status" : `${mode === "deposit" ? "Deposit" : "Withdraw"} ${confirmAmount}`}
-            onPrimary={() => void (checkOnly ? checkStatus() : confirm())}
+            primaryLabel={attemptedAction ? "Retry" : `${mode === "deposit" ? "Deposit" : "Withdraw"} ${confirmAmount}`}
+            primaryDisabled={expiredPrepared && !attemptedAction}
+            onPrimary={() => void confirm()}
             secondaryLabel="Back"
             onSecondary={goBack}
           />

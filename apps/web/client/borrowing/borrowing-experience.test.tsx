@@ -64,30 +64,31 @@ describe("BorrowExperience", () => {
     expect(document.body.textContent).not.toContain("Demo balance");
   });
 
-  test("loads private state through fetchAccountResource and sends only user intent to the prepare endpoint", async () => {
+  test("loads private state and sends only user intent to the unified prepare action", async () => {
     const snapshot = emptySnapshot();
-    const requests: Array<{ path: string; options: unknown }> = [];
-    const fetchAccountResource = async (path: string, options: { method?: "GET" | "POST"; body?: unknown } = {}) => {
-      requests.push({ path, options });
-      if (options.method === "POST") {
-        return {
-          status: "preview-only",
-          snapshot,
-          preview: {
-            operation: "borrow",
-            title: "Borrow USDC",
-            amount: { symbol: "USDC", decimals: 6, amountBaseUnits: "1000000" },
-            warnings: ["Current state only."],
-            asOf: "2026-09-08T12:00:00.000Z",
-            execution: "disabled",
-            disabledReason: "Simulation unavailable.",
-          },
-        };
-      }
+    const reads: string[] = [];
+    const prepared: Array<{ kind: string; params: unknown }> = [];
+    const fetchAccountResource = async (path: string) => {
+      reads.push(path);
       return snapshot;
     };
+    const prepareMoneyAction = async (kind: string, params: unknown) => {
+      prepared.push({ kind, params });
+      return {
+        id: "11111111-1111-4111-8111-111111111111",
+        reviewHash: "a".repeat(64),
+        owner: { subject: session.user.subject, address: OWNER, chainId: 8453 as const, accountProvider: "cdp-embedded" as const },
+        kind: "borrow" as const,
+        title: "Borrow USDC",
+        calls: [{ to: MORPHO_BLUE_ADDRESS, data: "0x1234" as const, value: "0" }],
+        amounts: [{ assetId: "usdc", symbol: "USDC", decimals: 6, amountBaseUnits: "1000000", direction: "receive" as const }],
+        warnings: ["Current state only."],
+        createdAt: "2026-09-12T12:00:00.000Z",
+        expiresAt: "2030-09-12T12:02:00.000Z",
+      };
+    };
 
-    render(<BorrowExperience session={session} fetchAccountResource={fetchAccountResource} />);
+    render(<BorrowExperience session={session} fetchAccountResource={fetchAccountResource} prepareMoneyAction={prepareMoneyAction} executeMoneyAction={async (action) => ({ id: action.id, status: "submitted" })} />);
     expect(await within(document.body).findByText(/no cbBTC, USDC, or position/i)).toBeTruthy();
     const refreshButton = within(document.body).getByRole("button", { name: "Refresh" });
     expect(refreshButton.classList.contains("home-ui-button")).toBe(true);
@@ -98,17 +99,12 @@ describe("BorrowExperience", () => {
     expect(previewButton.classList.contains("home-ui-button")).toBe(true);
     expect(previewButton.getAttribute("data-variant")).toBe("primary");
     fireEvent.click(previewButton);
-    expect(await within(document.body).findByText("Read-only preview")).toBeTruthy();
-    expect(within(document.body).getByText("1 USDC").getAttribute("data-text-style")).toBe("row-value");
-
-    expect(requests[0].path).toBe("/api/borrow");
-    expect(requests[1]).toEqual({
-      path: "/api/borrow",
-      options: {
-        method: "POST",
-        body: { operation: "borrow", amount: "1", snapshotBlockHash: BLOCK_HASH },
-      },
-    });
-    expect(JSON.stringify(requests[1])).not.toContain("calls");
+    expect(await within(document.body).findByText("Borrow USDC")).toBeTruthy();
+    expect(reads).toEqual(["/api/borrow"]);
+    expect(prepared).toEqual([{
+      kind: "borrow",
+      params: { operation: "borrow", amount: "1", snapshotBlockHash: BLOCK_HASH },
+    }]);
+    expect(JSON.stringify(prepared)).not.toContain("calls");
   });
 });

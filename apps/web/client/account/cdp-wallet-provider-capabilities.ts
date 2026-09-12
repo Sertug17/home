@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import {
   BaseAccountConnectorError,
   type BaseAccountInvalidation,
@@ -9,11 +9,6 @@ import {
 import type { OwnerGenerationFence } from "./cdp-session-lifecycle";
 import type { VerifiedAccountSession } from "./session-client";
 import type { AccountProvider } from "@/shared/account/session-types";
-import {
-  ProviderHandleJournal,
-  type ProviderHandleJournalLock,
-  type ProviderHandleJournalStorage,
-} from "@/client/money-actions/provider-handle-journal";
 
 export type AuthenticationIdentity = {
   ownerKey: string | null;
@@ -138,23 +133,12 @@ export function invalidationMessage(reason: BaseAccountInvalidation): string {
 
 export function useWalletProviderCapabilities({
   ownerFence,
-  providerHandleJournalStorage,
-  providerHandleJournalLock,
 }: {
   ownerFence: OwnerGenerationFence;
-  providerHandleJournalStorage?: ProviderHandleJournalStorage | null;
-  providerHandleJournalLock?: ProviderHandleJournalLock | null;
 }) {
   const accountSelectionRef = useRef<AccountSelection>(initialAccountSelection());
   const baseConnectionRef = useRef<ConnectedBaseAccount | null>(null);
   const baseLoginInProgressRef = useRef(false);
-  const [providerHandleJournal] = useState(
-    () => new ProviderHandleJournal({
-      storage: providerHandleJournalStorage,
-      lock: providerHandleJournalLock,
-    }),
-  );
-
   const clearBaseConnection = useCallback(() => {
     baseLoginInProgressRef.current = false;
     const connection = baseConnectionRef.current;
@@ -197,7 +181,6 @@ export function useWalletProviderCapabilities({
     accountSelectionRef,
     baseConnectionRef,
     baseLoginInProgressRef,
-    providerHandleJournal,
     clearBaseConnection,
     signTypedData,
   };

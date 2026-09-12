@@ -12,77 +12,52 @@ export type MoneyActionReviewProps = {
   action: PreparedMoneyAction;
   onClose: () => void;
   onConfirmed: (result: OperationResult) => void;
-  check?: (action: PreparedMoneyAction) => Promise<OperationResult>;
   execute?: (action: PreparedMoneyAction) => Promise<OperationResult>;
-  recovering?: boolean;
 };
 
 export function MoneyActionReview(props: MoneyActionReviewProps) {
-  return props.execute && props.check
-    ? <MoneyActionReviewContent {...props} check={props.check} execute={props.execute} />
+  return props.execute
+    ? <MoneyActionReviewContent {...props} execute={props.execute} />
     : <ConnectedMoneyActionReview {...props} />;
 }
 
 function ConnectedMoneyActionReview(props: MoneyActionReviewProps) {
   const wallet = useAccountWallet();
-  return (
-    <MoneyActionReviewContent
-      {...props}
-      check={props.check ?? wallet.checkMoneyAction}
-      execute={props.execute ?? wallet.executeMoneyAction}
-    />
-  );
+  return <MoneyActionReviewContent {...props} execute={wallet.executeMoneyAction} />;
 }
 
 function MoneyActionReviewContent({
   action,
   onClose,
   onConfirmed,
-  check,
   execute,
-  recovering = false,
 }: MoneyActionReviewProps & {
-  check: (action: PreparedMoneyAction) => Promise<OperationResult>;
   execute: (action: PreparedMoneyAction) => Promise<OperationResult>;
 }) {
   const [pending, setPending] = useState(false);
-  const [attempted, setAttempted] = useState(recovering);
-  const [unresolved, setUnresolved] = useState(recovering);
-  const [error, setError] = useState<string | null>(() =>
-    recovering
-      ? "The existing submission is unresolved. Check its status; do not submit it again."
-      : null,
-  );
+  const [attempted, setAttempted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { expired, recheckExpired } = useReactiveExpiry(action.expiresAt);
-  const checkOnly = expired || unresolved || attempted;
 
   async function confirm() {
     if (pending) return;
-    if (!checkOnly && recheckExpired()) {
+    if (!attempted && recheckExpired()) {
       setError("This prepared action expired. Prepare and review a fresh action.");
       return;
     }
     setPending(true);
-    if (!checkOnly) setError(null);
+    setError(null);
     try {
-      const result = await (checkOnly ? check(action) : execute(action));
+      const result = await execute(action);
       setAttempted(true);
-      if (result.status === "confirmed") {
-        setUnresolved(false);
-        onConfirmed(result);
-        return;
-      }
       if (isTerminalStatus(result.status)) {
-        setUnresolved(false);
         setError(messageForStatus(result.status));
         return;
       }
-      setUnresolved(true);
-      setError(messageForStatus(result.status));
+      onConfirmed(result);
     } catch {
       setAttempted(true);
-      setUnresolved(true);
-      setError("The existing submission is unresolved. Check its status; do not submit it again.");
+      setError("The dispatch outcome is unresolved. Retry recording this same action; a new dispatch will not be created.");
     } finally {
       setPending(false);
     }
@@ -129,20 +104,12 @@ function MoneyActionReviewContent({
       {action.warnings.map((warning) => (
         <p className={styles.warning} key={warning}>{presentReviewWarning(warning)}</p>
       ))}
-      {expired ? <p className={styles.error} role="alert">This prepared action expired. Prepare and review a fresh action.</p> : null}
+      {expired && !attempted ? <p className={styles.error} role="alert">This prepared action expired. Prepare and review a fresh action.</p> : null}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       <div className={styles.actions}>
         <button type="button" disabled={pending} onClick={onClose}>Back</button>
-        <button type="button" disabled={pending} onClick={() => void confirm()}>
-          {pending
-            ? "Checking submission…"
-            : checkOnly
-              ? expired && !unresolved
-                ? "Check action status"
-                : "Check status"
-              : action.kind === "swap"
-                ? "Confirm swap"
-                : "Confirm action"}
+        <button type="button" disabled={pending || (expired && !attempted)} onClick={() => void confirm()}>
+          {pending ? "Submitting…" : attempted ? "Retry" : action.kind === "swap" ? "Confirm swap" : "Confirm action"}
         </button>
       </div>
     </section>
@@ -153,10 +120,7 @@ function presentReviewWarning(warning: string): string {
   if (/wallet will show the Base network fee/i.test(warning)) {
     return "Base network fees apply and are finalized at submission.";
   }
-  return warning.replace(
-    /the final wallet review binds/i,
-    "final confirmation binds",
-  );
+  return warning.replace(/the final wallet review binds/i, "final confirmation binds");
 }
 
 function isTerminalStatus(status: OperationResult["status"]): boolean {
@@ -168,6 +132,6 @@ function messageForStatus(status: OperationResult["status"]): string {
     case "rejected": return "The wallet request was rejected.";
     case "expired": return "This prepared action expired. Prepare a fresh action.";
     case "failed": return "The verified onchain receipt reported failure.";
-    default: return "The existing submission is still unresolved. Checking again will not resubmit it.";
+    default: return "The action is pending.";
   }
 }

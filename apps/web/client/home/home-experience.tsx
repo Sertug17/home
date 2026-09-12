@@ -47,7 +47,6 @@ import {
 import {
   MoneyDataRefreshProvider,
   RecentMoneyActions,
-  type PreparedMoneyAction,
 } from "@/client/money-actions";
 import type { VerifiedPortfolioSession } from "@/client/portfolio";
 import { FundingActions } from "@/client/funding/funding-actions";
@@ -460,15 +459,6 @@ function HomeExperienceView({
 
   const activitySession: VerifiedAccountSession | null =
     isVerified && account.session?.smartAccount ? account.session : null;
-  const fetchAccountResource = account.fetchAccountResource;
-  const readOperation = useCallback(
-    (id: string, signal?: AbortSignal) => fetchAccountResource(
-      `/api/actions/${encodeURIComponent(id)}`,
-      { signal },
-    ),
-    [fetchAccountResource],
-  );
-
   useEffect(() => {
     if (
       routeMode === "dashboard" &&
@@ -778,8 +768,6 @@ function HomeExperienceView({
                       activitySession={activitySession}
                       fetchActivity={account.fetchActivity}
                       fetchOperations={account.fetchOperations}
-                      readOperation={readOperation}
-                      checkOperation={account.checkMoneyAction}
                       activityRefreshTrigger={activityRefreshTrigger}
                       onTransferConfirmed={onTransferConfirmed}
                       onOpenSave={() => navigateTo(savePanelId)}
@@ -804,8 +792,6 @@ function HomeExperienceView({
                       activitySession={activitySession}
                       fetchActivity={account.fetchActivity}
                       fetchOperations={account.fetchOperations}
-                      readOperation={readOperation}
-                      checkOperation={account.checkMoneyAction}
                       activityRefreshTrigger={activityRefreshTrigger}
                       showSessionShimmer={!activitySession && (
                         paintedAssetBalances.status === "loading" ||
@@ -1054,8 +1040,6 @@ function HomePanel({
   activitySession,
   fetchActivity,
   fetchOperations,
-  readOperation,
-  checkOperation,
   activityRefreshTrigger,
   onTransferConfirmed,
   onOpenSave,
@@ -1070,8 +1054,6 @@ function HomePanel({
   activitySession: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  readOperation: (id: string, signal?: AbortSignal) => Promise<unknown>;
-  checkOperation?: (action: PreparedMoneyAction) => Promise<unknown>;
   activityRefreshTrigger?: string | number;
   onTransferConfirmed?: () => void;
   onOpenSave: () => void;
@@ -1211,8 +1193,6 @@ function HomePanel({
             activitySession={activitySession}
             fetchActivity={fetchActivity}
             fetchOperations={fetchOperations}
-            readOperation={readOperation}
-            checkOperation={checkOperation}
             activityRefreshTrigger={activityRefreshTrigger}
           />
         </div>
@@ -1269,16 +1249,12 @@ function ActivityPage({
   activitySession,
   fetchActivity,
   fetchOperations,
-  readOperation,
-  checkOperation,
   activityRefreshTrigger,
   showSessionShimmer,
 }: {
   activitySession: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  readOperation: (id: string, signal?: AbortSignal) => Promise<unknown>;
-  checkOperation?: (action: PreparedMoneyAction) => Promise<unknown>;
   activityRefreshTrigger?: string | number;
   showSessionShimmer: boolean;
 }) {
@@ -1297,8 +1273,6 @@ function ActivityPage({
         activitySession={activitySession}
         fetchActivity={fetchActivity}
         fetchOperations={fetchOperations}
-        readOperation={readOperation}
-        checkOperation={checkOperation}
         activityRefreshTrigger={activityRefreshTrigger}
       />
     </div>
@@ -1311,8 +1285,6 @@ function ConnectedActivityPanel({
   activitySession,
   fetchActivity,
   fetchOperations,
-  readOperation,
-  checkOperation,
   activityRefreshTrigger,
 }: {
   density: ActivityPanelDensity;
@@ -1320,8 +1292,6 @@ function ConnectedActivityPanel({
   activitySession: VerifiedAccountSession | null;
   fetchActivity: FetchActivity;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  readOperation: (id: string, signal?: AbortSignal) => Promise<unknown>;
-  checkOperation?: (action: PreparedMoneyAction) => Promise<unknown>;
   activityRefreshTrigger?: string | number;
 }) {
   const [indexedTransactionHashes, setIndexedTransactionHashes] = useState<string[]>([]);
@@ -1347,8 +1317,6 @@ function ConnectedActivityPanel({
         <RecentMoneyActions
           session={activitySession}
           fetchOperations={fetchOperations}
-          readOperation={readOperation}
-          checkOperation={checkOperation}
           refreshTrigger={activityRefreshTrigger}
           excludeTransactionHashes={indexedTransactionHashes}
           embedded

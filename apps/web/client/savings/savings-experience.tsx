@@ -47,7 +47,6 @@ type SavingsExperienceProps = {
   now?: () => number;
   availableUsdcBaseUnits?: string | null;
   prepareMoneyAction?: (endpoint: string, input: unknown) => Promise<PreparedMoneyAction>;
-  checkMoneyAction?: (action: PreparedMoneyAction) => Promise<OperationResult>;
   executeMoneyAction?: (action: PreparedMoneyAction) => Promise<OperationResult>;
   onBack?: () => void;
   onActionConfirmed?: (result: OperationResult) => void | Promise<void>;
@@ -101,7 +100,6 @@ export function AuthenticatedSavingsExperience({
       fetchPositions={account.fetchSavingsPositions}
       availableUsdcBaseUnits={usdc?.balanceBaseUnits ?? null}
       prepareMoneyAction={account.prepareMoneyAction}
-      checkMoneyAction={account.checkMoneyAction}
       executeMoneyAction={account.executeMoneyAction}
       onActionConfirmed={async (result) => {
         setPortfolioTick((tick) => tick + 1);
@@ -120,7 +118,6 @@ export function SavingsExperience({
   now = Date.now,
   availableUsdcBaseUnits = null,
   prepareMoneyAction,
-  checkMoneyAction,
   executeMoneyAction,
   onBack,
   onActionConfirmed,
@@ -506,7 +503,7 @@ export function SavingsExperience({
         </div>
       ) : null}
 
-      {session && selected && prepareMoneyAction && checkMoneyAction && executeMoneyAction ? (
+      {session && selected && prepareMoneyAction && executeMoneyAction ? (
         <SavingsMoneyDialog
           open={actionMode !== null}
           mode={actionMode ?? "deposit"}
@@ -525,7 +522,6 @@ export function SavingsExperience({
             actionMode === "deposit" ? availableUsdcBaseUnits : selectedAmount?.toString() ?? null
           }
           prepareMoneyAction={prepareMoneyAction}
-          checkMoneyAction={checkMoneyAction}
           executeMoneyAction={executeMoneyAction}
           onClose={() => setActionMode(null)}
           onConfirmed={handleActionConfirmed}

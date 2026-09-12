@@ -176,7 +176,6 @@ describe("Save simplify", () => {
           prepares.push(input);
           return preparedAction("save-deposit");
         }}
-        checkMoneyAction={async () => ({ id: "action-1", status: "prepared" })}
         executeMoneyAction={async () => ({ id: "action-1", status: "confirmed" })}
       />,
     );
@@ -234,7 +233,6 @@ describe("Save simplify", () => {
         }}
         availableUsdcBaseUnits="50000000"
         prepareMoneyAction={async () => preparedAction("save-deposit")}
-        checkMoneyAction={async () => ({ id: "action-1", status: "prepared" })}
         executeMoneyAction={async () => ({ id: "action-1", status: "confirmed" })}
       />,
     );
@@ -263,7 +261,6 @@ describe("Save simplify", () => {
         })}
         availableUsdcBaseUnits="50000000"
         prepareMoneyAction={async () => preparedAction("save-withdraw")}
-        checkMoneyAction={async () => ({ id: "action-1", status: "prepared" })}
         executeMoneyAction={async () => ({ id: "action-1", status: "confirmed" })}
       />,
     );

@@ -2,7 +2,7 @@ import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import {
   TRANSFER_ASSETS,
   assertTransferRequest,
-  buildTransferCall,
+  encodeUsdcTransfer,
 } from "@/shared/transfers/transfer-helpers";
 import type { TransferRequest } from "@/shared/transfers/types";
 import type { PreparedMoneyAction } from "@/shared/money-actions/types";
@@ -45,7 +45,7 @@ export async function issueSendMoneyAction(
   now = new Date(),
 ): Promise<PreparedMoneyAction> {
   assertTransferRequest(request);
-  const call = buildTransferCall(request);
+  const call = buildServerTransferCall(request);
   const asset = TRANSFER_ASSETS[request.assetId];
   const target = request.assetId === "usdc" ? PORTFOLIO_BASE_USDC_ADDRESS : request.recipient;
   return issueMoneyAction(session, {
@@ -66,6 +66,18 @@ export async function issueSendMoneyAction(
     ],
     expiresAt: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
   });
+}
+
+function buildServerTransferCall(request: TransferRequest): {
+  to: `0x${string}`;
+  value: bigint;
+  data: `0x${string}`;
+} {
+  assertTransferRequest(request);
+  const amount = BigInt(request.amountBaseUnits);
+  return request.assetId === "eth"
+    ? { to: request.recipient, value: amount, data: "0x" }
+    : { to: PORTFOLIO_BASE_USDC_ADDRESS, value: BigInt(0), data: encodeUsdcTransfer(request.recipient, amount) };
 }
 
 function isTransferRequest(value: unknown): value is TransferRequest {

@@ -1,447 +1,64 @@
 "use client";
-/* eslint-disable react-hooks/exhaustive-deps -- refs moved behind capability hooks retain the original stable identities. */
 
-import { useCallback, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
-import type { GetUserOperationResult } from "@coinbase/cdp-core";
+import { useCallback, useRef, type MutableRefObject } from "react";
 import type { AccountSessionStatus, AccountWalletSdkBoundary } from "./cdp-client";
 import type { OwnerGenerationFence } from "./cdp-session-lifecycle";
 import type { AuthenticatedTransport } from "./cdp-authenticated-transport";
 import type { SessionFetch, VerifiedAccountSession } from "./session-client";
-import { ACCOUNT_PROVIDER_HEADER, BASE_CHAIN_ID } from "@/shared/account/session-types";
 import type { ConnectedBaseAccount } from "./base-account-connector";
-import { BaseAccountConnectorError } from "./base-account-connector";
-import { parsePortfolioSnapshot } from "@/client/portfolio/parse";
-import {
-  claimMoneyAction,
-  readMoneyAction,
-  recordMoneyActionStatus,
-  recordMoneyActionSubmission,
-  type MoneyActionApiFetch,
-} from "@/client/money-actions/client";
 import type { OperationResult, PreparedMoneyAction } from "@/shared/money-actions/types";
-import type { ProviderHandleJournal } from "@/client/money-actions/provider-handle-journal";
-import { recoverJournaledProviderHandle } from "@/client/money-actions/provider-handle-recovery";
-import type { StoredMoneyActionOperation } from "@/shared/money-actions/types";
-import { assertTransferRequest, buildTransferCall, findTransferBalance } from "@/shared/transfers/transfer-helpers";
-import { TransferExecutionError, type ConfirmedTransfer, type PendingTransfer, type TransferRequest } from "@/shared/transfers/types";
+import { TransferExecutionError } from "@/shared/transfers/types";
 
-const transactionHashPattern = /^0x[0-9a-fA-F]{64}$/;
-const decimalIntegerPattern = /^(?:0|[1-9][0-9]*)$/;
-const TRANSFER_CONFIRMATION_TIMEOUT_MS = 120_000;
-const TRANSFER_CONFIRMATION_POLL_MS = 1_500;
+const hashPattern = /^0x[0-9a-fA-F]{64}$/;
 
-function transferBoundaryKey(
-  ownerKey: string,
-  session: VerifiedAccountSession,
-): string | null {
-  return session.smartAccount
-    ? `${ownerKey}\u0000${session.user.subject}\u0000${session.smartAccount.address}\u0000${session.accountProvider}`
-    : null;
-}
+type ConfirmedPlan = {
+  calls: Array<{ to: `0x${string}`; data: `0x${string}`; value: string }>;
+};
 
-function normalizeTransactionHash(value: unknown): `0x${string}` {
-  if (typeof value !== "string" || !transactionHashPattern.test(value)) {
-    throw new TransferExecutionError("failed");
+type GenerationGuard = Pick<OwnerGenerationFence, "assertCurrent">;
+
+export async function executeActionOnce(input: {
+  id: string;
+  generation: number;
+  fence: GenerationGuard;
+  confirmedPlans: Map<string, ConfirmedPlan>;
+  providerDispatches: Map<string, Promise<string>>;
+  confirm: () => Promise<ConfirmedPlan>;
+  dispatch: (plan: ConfirmedPlan) => Promise<string>;
+  recordHandle: (providerHandle: string) => Promise<void>;
+}): Promise<string> {
+  input.fence.assertCurrent(input.generation);
+  let plan = input.confirmedPlans.get(input.id);
+  if (!plan) {
+    input.fence.assertCurrent(input.generation);
+    plan = await input.confirm();
+    input.fence.assertCurrent(input.generation);
+    input.confirmedPlans.set(input.id, plan);
   }
-  return value.toLowerCase() as `0x${string}`;
+
+  let dispatch = input.providerDispatches.get(input.id);
+  if (!dispatch) {
+    input.fence.assertCurrent(input.generation);
+    dispatch = input.dispatch(plan);
+    input.providerDispatches.set(input.id, dispatch);
+  }
+  const providerHandle = await dispatch;
+  input.fence.assertCurrent(input.generation);
+  await input.recordHandle(providerHandle);
+  input.fence.assertCurrent(input.generation);
+  return providerHandle;
 }
 
-function operationResult(operation: StoredMoneyActionOperation): OperationResult {
-  return {
-    id: operation.action.id,
-    status: operation.status,
-    ...(operation.transactionHash ? { transactionHash: operation.transactionHash } : {}),
-    ...(operation.userOperationHash ? { userOperationHash: operation.userOperationHash } : {}),
-  };
-}
-
-function isMoneyActionOwnedBySession(
-  action: PreparedMoneyAction,
-  session: VerifiedAccountSession,
-): boolean {
+function validPrepared(value: unknown, session: VerifiedAccountSession): value is PreparedMoneyAction {
   return Boolean(
-    session.smartAccount &&
-    action.owner.subject === session.user.subject &&
-    action.owner.address.toLowerCase() === session.smartAccount.address.toLowerCase() &&
-    action.owner.chainId === BASE_CHAIN_ID &&
-    action.owner.accountProvider === session.accountProvider
+    isRecord(value) && typeof value.id === "string" && typeof value.reviewHash === "string" &&
+    isRecord(value.owner) && session.smartAccount &&
+    value.owner.subject === session.user.subject &&
+    typeof value.owner.address === "string" &&
+    value.owner.address.toLowerCase() === session.smartAccount.address.toLowerCase() &&
+    value.owner.accountProvider === session.accountProvider &&
+    Array.isArray(value.calls) && Array.isArray(value.amounts) && Array.isArray(value.warnings),
   );
-}
-
-async function sameProviderCalls(
-  actual: unknown,
-  expected: PreparedMoneyAction["calls"],
-): Promise<boolean> {
-  if (!Array.isArray(actual) || actual.length !== expected.length) return false;
-  for (const [index, value] of actual.entries()) {
-    const wanted = expected[index];
-    if (
-      !isRecord(value) ||
-      typeof value.to !== "string" ||
-      !/^0x[0-9a-fA-F]{40}$/.test(value.to) ||
-      (value.data !== undefined && (typeof value.data !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value.data)))
-    ) return false;
-    const data = (value.data ?? "0x").toLowerCase();
-    let dataMatches = data === wanted.data.toLowerCase();
-    if (wanted.dataHash) {
-      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(data));
-      const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-      dataMatches = hex === wanted.dataHash;
-    }
-    const rawValue = value.value;
-    if (typeof rawValue !== "string" || !decimalIntegerPattern.test(rawValue)) return false;
-    if (
-      value.to.toLowerCase() !== wanted.to.toLowerCase() ||
-      !dataMatches ||
-      BigInt(rawValue) !== BigInt(wanted.value)
-    ) return false;
-  }
-  return true;
-}
-
-const embeddedOperationStatuses = new Set([
-  "pending", "signed", "broadcast", "complete", "dropped", "failed",
-]);
-
-type EmbeddedMoneyActionObservation = {
-  status: "pending" | "complete" | "dropped" | "failed";
-  transactionHash?: `0x${string}`;
-};
-
-async function parseEmbeddedMoneyActionObservation(
-  value: unknown,
-  expectedUserOperationHash: `0x${string}`,
-  expectedCalls: PreparedMoneyAction["calls"],
-): Promise<EmbeddedMoneyActionObservation> {
-  if (
-    !isRecord(value) ||
-    value.network !== "base" ||
-    typeof value.userOpHash !== "string" ||
-    typeof value.status !== "string" ||
-    !embeddedOperationStatuses.has(value.status) ||
-    !(await sameProviderCalls(value.calls, expectedCalls)) ||
-    (value.receipts !== undefined && !Array.isArray(value.receipts))
-  ) {
-    throw new TransferExecutionError("submission-unknown");
-  }
-  let observedUserOperationHash: `0x${string}`;
-  try {
-    observedUserOperationHash = normalizeTransactionHash(value.userOpHash);
-  } catch {
-    throw new TransferExecutionError("submission-unknown");
-  }
-  if (observedUserOperationHash !== expectedUserOperationHash) {
-    throw new TransferExecutionError("submission-unknown");
-  }
-
-  let transactionHash: `0x${string}` | undefined;
-  if (value.transactionHash !== undefined) {
-    const pendingEmptyHash =
-      value.transactionHash === "" &&
-      (value.status === "pending" || value.status === "broadcast");
-    if (!pendingEmptyHash) {
-      try {
-        transactionHash = normalizeTransactionHash(value.transactionHash);
-      } catch {
-        throw new TransferExecutionError("submission-unknown");
-      }
-    }
-  }
-
-  let reverted = false;
-  if (Array.isArray(value.receipts)) {
-    for (const receipt of value.receipts) {
-      if (!isRecord(receipt)) throw new TransferExecutionError("submission-unknown");
-      if (receipt.transactionHash !== undefined) {
-        let receiptHash: `0x${string}`;
-        try {
-          receiptHash = normalizeTransactionHash(receipt.transactionHash);
-        } catch {
-          throw new TransferExecutionError("submission-unknown");
-        }
-        if (transactionHash && receiptHash !== transactionHash) {
-          throw new TransferExecutionError("submission-unknown");
-        }
-      }
-      if (receipt.revert !== undefined) {
-        if (
-          !isRecord(receipt.revert) ||
-          typeof receipt.revert.data !== "string" ||
-          !/^0x[0-9a-fA-F]*$/.test(receipt.revert.data) ||
-          typeof receipt.revert.message !== "string"
-        ) {
-          throw new TransferExecutionError("submission-unknown");
-        }
-        reverted = true;
-      }
-    }
-  }
-
-  if (value.status === "failed" || reverted) return { status: "failed", ...(transactionHash ? { transactionHash } : {}) };
-  if (value.status === "dropped") return { status: "dropped", ...(transactionHash ? { transactionHash } : {}) };
-  if (value.status === "complete" && transactionHash) return { status: "complete", transactionHash };
-  return { status: "pending", ...(transactionHash ? { transactionHash } : {}) };
-}
-
-function transferError(error: unknown): TransferExecutionError {
-  if (error instanceof TransferExecutionError) {
-    return error;
-  }
-  if (
-    error instanceof BaseAccountConnectorError &&
-    error.reason === "cancelled"
-  ) {
-    return new TransferExecutionError("rejected", error);
-  }
-  return new TransferExecutionError("failed", error);
-}
-
-class MoneyActionExpiredBeforeDispatchError extends Error {
-  constructor() {
-    super("money-action-expired-before-dispatch");
-    this.name = "MoneyActionExpiredBeforeDispatchError";
-  }
-}
-
-function assertMoneyActionDispatchable(
-  action: PreparedMoneyAction,
-  assertActive: () => void,
-): void {
-  assertActive();
-  const expiresAt = Date.parse(action.expiresAt);
-  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-    throw new MoneyActionExpiredBeforeDispatchError();
-  }
-}
-
-function waitForPoll(): Promise<void> {
-  return new Promise((resolve) =>
-    window.setTimeout(resolve, TRANSFER_CONFIRMATION_POLL_MS),
-  );
-}
-
-async function waitForEmbeddedTransactionCandidate(
-  userOperationHash: `0x${string}`,
-  smartAccount: `0x${string}`,
-  getOperation: NonNullable<AccountWalletSdkBoundary["getUserOperation"]>,
-  assertActive: () => void,
-  expectedCalls?: PreparedMoneyAction["calls"],
-  failOnProviderUnavailable = false,
-): Promise<{ transactionHash: `0x${string}`; deadline: number }> {
-  const normalizedUserOperationHash = normalizeTransactionHash(userOperationHash);
-  const deadline = Date.now() + TRANSFER_CONFIRMATION_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    assertActive();
-    let result: GetUserOperationResult;
-    try {
-      result = await getOperation({
-        userOperationHash: normalizedUserOperationHash,
-        evmSmartAccount: smartAccount,
-        network: "base",
-      });
-    } catch {
-      if (failOnProviderUnavailable) throw new TransferExecutionError("unavailable");
-      await waitForPoll();
-      continue;
-    }
-    assertActive();
-    if (expectedCalls) {
-      const observation = await parseEmbeddedMoneyActionObservation(
-        result,
-        normalizedUserOperationHash,
-        expectedCalls,
-      );
-      if (observation.status === "failed") throw new TransferExecutionError("failed");
-      if (observation.status === "dropped") throw new TransferExecutionError("submission-unknown");
-      if (observation.status === "complete" && observation.transactionHash) {
-        return { transactionHash: observation.transactionHash, deadline };
-      }
-    } else {
-      if (
-        result.status === "failed" ||
-        result.receipts?.some((receipt) => receipt.revert !== undefined)
-      ) {
-        throw new TransferExecutionError("failed");
-      }
-      if (result.status === "dropped") throw new TransferExecutionError("submission-unknown");
-      if (result.status === "complete") {
-        try {
-          return { transactionHash: normalizeTransactionHash(result.transactionHash), deadline };
-        } catch {
-          await waitForPoll();
-          continue;
-        }
-      }
-    }
-    await waitForPoll();
-  }
-  throw new TransferExecutionError("confirmation-timeout");
-}
-
-async function waitForEmbeddedReceipt(
-  userOperationHash: `0x${string}`,
-  smartAccount: `0x${string}`,
-  getOperation: NonNullable<AccountWalletSdkBoundary["getUserOperation"]>,
-  accountProvider: VerifiedAccountSession["accountProvider"],
-  authentication: "cdp" | "native-base",
-  getAccessToken: () => Promise<string | null>,
-  sessionFetch: SessionFetch | undefined,
-  assertActive: () => void,
-  expectedCalls?: PreparedMoneyAction["calls"],
-): Promise<`0x${string}`> {
-  const candidate = await waitForEmbeddedTransactionCandidate(
-    userOperationHash,
-    smartAccount,
-    getOperation,
-    assertActive,
-    expectedCalls,
-  );
-  return waitForBaseReceipt(
-    candidate.transactionHash,
-    accountProvider,
-    authentication,
-    getAccessToken,
-    sessionFetch,
-    assertActive,
-    candidate.deadline,
-    {
-      userOperationHash: normalizeTransactionHash(userOperationHash),
-      sender: smartAccount,
-    },
-  );
-}
-
-type MoneyActionSubmissionReference = {
-  submissionId?: string;
-  transactionHash?: `0x${string}`;
-  userOperationHash?: `0x${string}`;
-};
-
-async function acknowledgeRecoveredMoneyActionSubmission(
-  fetchApi: MoneyActionApiFetch,
-  action: PreparedMoneyAction,
-  reference: MoneyActionSubmissionReference,
-  assertActive: () => void,
-): Promise<StoredMoneyActionOperation> {
-  let operation: StoredMoneyActionOperation;
-  try {
-    operation = await recordMoneyActionSubmission(fetchApi, action.id, reference, action);
-    assertActive();
-  } catch (error) {
-    if (errorStatus(error) !== 409) throw error;
-    operation = await readMoneyAction(fetchApi, action.id, action);
-    assertActive();
-  }
-  if (!submissionReferenceMatches(operation, reference)) {
-    throw new TransferExecutionError("submission-unknown");
-  }
-  return operation;
-}
-
-function submissionReferenceMatches(
-  operation: StoredMoneyActionOperation,
-  reference: MoneyActionSubmissionReference,
-): boolean {
-  return (
-    (reference.submissionId === undefined || operation.submissionId === reference.submissionId) &&
-    (reference.transactionHash === undefined || operation.transactionHash === reference.transactionHash) &&
-    (reference.userOperationHash === undefined || operation.userOperationHash === reference.userOperationHash)
-  );
-}
-
-function errorStatus(error: unknown): number | null {
-  return error && typeof error === "object" && "status" in error &&
-    typeof (error as { status?: unknown }).status === "number"
-    ? (error as { status: number }).status
-    : null;
-}
-
-async function waitForBaseReceipt(
-  transactionHash: `0x${string}`,
-  accountProvider: VerifiedAccountSession["accountProvider"],
-  authentication: "cdp" | "native-base",
-  getAccessToken: () => Promise<string | null>,
-  sessionFetch: SessionFetch | undefined,
-  assertActive: () => void,
-  deadline = Date.now() + TRANSFER_CONFIRMATION_TIMEOUT_MS,
-  operation?: { userOperationHash: `0x${string}`; sender: `0x${string}` },
-): Promise<`0x${string}`> {
-  const normalizedHash = normalizeTransactionHash(transactionHash);
-  const parameters = new URLSearchParams({ hash: normalizedHash });
-  if (operation) {
-    parameters.set("userOpHash", operation.userOperationHash);
-    parameters.set("sender", operation.sender);
-  }
-  while (Date.now() < deadline) {
-    assertActive();
-    let accessToken: string | null = null;
-    if (authentication === "cdp") {
-      accessToken = await getAccessToken();
-      assertActive();
-      if (!accessToken) {
-        throw new TransferExecutionError("stale-session");
-      }
-    }
-
-    let response: Response;
-    try {
-      response = await (sessionFetch ?? fetch)(
-        `/api/transfer-receipt?${parameters.toString()}`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            ...(authentication === "cdp"
-              ? { Authorization: `Bearer ${accessToken}` }
-              : {}),
-            [ACCOUNT_PROVIDER_HEADER]: accountProvider,
-          },
-          cache: "no-store",
-          credentials: "same-origin",
-        },
-      );
-    } catch {
-      await waitForPoll();
-      continue;
-    }
-    assertActive();
-    if (response.status === 401) {
-      throw new TransferExecutionError("stale-session");
-    }
-    if (!response.ok) {
-      await waitForPoll();
-      continue;
-    }
-
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      await waitForPoll();
-      continue;
-    }
-    assertActive();
-    if (!isRecord(payload) || payload.transactionHash !== normalizedHash) {
-      await waitForPoll();
-      continue;
-    }
-    if (payload.status === "confirmed") {
-      if (payload.success !== true) {
-        throw new TransferExecutionError("failed");
-      }
-      return normalizedHash;
-    }
-    if (payload.status !== "pending" && payload.status !== "unresolved") {
-      await waitForPoll();
-      continue;
-    }
-    await waitForPoll();
-  }
-  throw new TransferExecutionError("confirmation-timeout");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function useMoneyActionExecution({
@@ -451,11 +68,7 @@ export function useMoneyActionExecution({
   ownerFence,
   sdkSendUserOperation,
   sdkGetUserOperation,
-  getAccessToken,
-  sessionFetch,
-  authentication = "cdp",
   baseConnection,
-  providerHandleJournal,
   transport,
 }: {
   session: VerifiedAccountSession | null;
@@ -468,774 +81,158 @@ export function useMoneyActionExecution({
   sessionFetch?: SessionFetch;
   authentication?: "cdp" | "native-base";
   baseConnection: MutableRefObject<ConnectedBaseAccount | null>;
-  providerHandleJournal: ProviderHandleJournal;
   transport: AuthenticatedTransport;
 }) {
-  const { fetchPortfolio, fetchMoneyActionApi } = transport;
-  const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null);
-  const pendingTransferRef = useRef<PendingTransfer | null>(null);
-  const transferSequence = useRef(0);
-  const transferInProgress = useRef(false);
+  const preparedGeneration = useRef(new Map<string, number>());
+  const confirmedPlans = useRef(new Map<string, ConfirmedPlan>());
+  const providerDispatches = useRef(new Map<string, Promise<string>>());
+  const { fetchAccountResource } = transport;
 
-  const updatePendingTransfer = useCallback((value: PendingTransfer | null) => {
-    pendingTransferRef.current = value;
-    setPendingTransfer(value);
-  }, []);
-
-  const visibleTransferBoundary =
-    session && ownerKey ? transferBoundaryKey(ownerKey, session) : null;
-  const currentTransferBoundary = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    if (currentTransferBoundary.current !== visibleTransferBoundary) {
-      transferSequence.current += 1;
-      transferInProgress.current = false;
-      updatePendingTransfer(null);
-      currentTransferBoundary.current = visibleTransferBoundary;
-    }
-  }, [updatePendingTransfer, visibleTransferBoundary]);
-
-  const reset = useCallback(() => {
-    transferSequence.current += 1;
-    transferInProgress.current = false;
-    updatePendingTransfer(null);
-  }, [updatePendingTransfer]);
-
-  const fetchOperations = useCallback(
-    (signal?: AbortSignal) => fetchMoneyActionApi("/api/actions/operations", { method: "GET", signal }),
-    [fetchMoneyActionApi],
-  );
-  const prepareMoneyAction = useCallback(
-    async (endpoint: string, input: unknown): Promise<PreparedMoneyAction> => {
-      const value = await fetchMoneyActionApi(endpoint, {
-        method: "POST",
-        body: JSON.stringify(input),
-      });
-      if (
-        !isRecord(value) ||
-        typeof value.id !== "string" ||
-        typeof value.reviewHash !== "string" ||
-        !isRecord(value.owner) ||
-        !session?.smartAccount ||
-        value.owner.subject !== session.user.subject ||
-        typeof value.owner.address !== "string" ||
-        value.owner.address.toLowerCase() !== session.smartAccount.address.toLowerCase() ||
-        value.owner.chainId !== BASE_CHAIN_ID ||
-        value.owner.accountProvider !== session.accountProvider ||
-        !Array.isArray(value.calls) ||
-        !Array.isArray(value.amounts) ||
-        !Array.isArray(value.warnings)
-      ) {
-        throw new TransferExecutionError("unavailable");
-      }
-      return value as unknown as PreparedMoneyAction;
-    },
-    [fetchMoneyActionApi, session],
-  );
-
-  const recoverBaseMoneyAction = useCallback(
-    async (
-      operation: StoredMoneyActionOperation,
-      prepared: PreparedMoneyAction,
-      connection: ConnectedBaseAccount,
-      assertStillActive: () => void,
-    ): Promise<OperationResult> => {
-      const submissionId = operation.submissionId;
-      if (!submissionId || !connection.getCallsStatus) {
-        throw new TransferExecutionError("submission-unknown");
-      }
-      const deadline = Date.now() + TRANSFER_CONFIRMATION_TIMEOUT_MS;
-      while (Date.now() < deadline) {
-        assertStillActive();
-        let result: Awaited<ReturnType<NonNullable<ConnectedBaseAccount["getCallsStatus"]>>>;
-        try {
-          result = await connection.getCallsStatus(submissionId);
-        } catch {
-          if (operation.status === "included") {
-            assertStillActive();
-            return operationResult(operation);
-          }
-          await waitForPoll();
-          continue;
-        }
-        assertStillActive();
-        if (result.status === "failed") {
-          if (operation.status === "included") return operationResult(operation);
-          return operationResult(
-            await recordMoneyActionStatus(fetchMoneyActionApi, prepared.id, "unknown"),
-          );
-        }
-        if (result.status === "complete") {
-          const acknowledged = await acknowledgeRecoveredMoneyActionSubmission(
-            fetchMoneyActionApi,
-            prepared,
-            { submissionId, transactionHash: result.transactionHash },
-            assertStillActive,
-          );
-          if (["confirmed", "failed", "rejected", "expired"].includes(acknowledged.status)) {
-            return operationResult(acknowledged);
-          }
-          await waitForBaseReceipt(
-            result.transactionHash,
-            "base-account",
-            authentication,
-            getAccessToken,
-            sessionFetch,
-            assertStillActive,
-            deadline,
-          );
-          return operationResult(
-            await readMoneyAction(fetchMoneyActionApi, prepared.id, prepared),
-          );
-        }
-        await waitForPoll();
-      }
-      throw new TransferExecutionError("confirmation-timeout");
-    },
-    [authentication, fetchMoneyActionApi, getAccessToken, sessionFetch],
-  );
-
-  const reconcileRecordedMoneyAction = useCallback(
-    async (
-      operation: StoredMoneyActionOperation,
-      prepared: PreparedMoneyAction,
-      assertStillActive: () => void,
-      markReferenceFreeSubmittingUnknown: boolean,
-    ): Promise<OperationResult> => {
-      if (["prepared", "confirmed", "failed", "rejected", "expired"].includes(operation.status)) {
-        return operationResult(operation);
-      }
-      if (operation.transactionHash) {
-        await waitForBaseReceipt(
-          operation.transactionHash,
-          prepared.owner.accountProvider,
-          authentication,
-          getAccessToken,
-          sessionFetch,
-          assertStillActive,
-          undefined,
-          operation.userOperationHash
-            ? { userOperationHash: operation.userOperationHash, sender: prepared.owner.address }
-            : undefined,
-        );
-        return operationResult(await readMoneyAction(fetchMoneyActionApi, prepared.id, prepared));
-      }
-      if (operation.userOperationHash && sdkGetUserOperation) {
-        let candidate: { transactionHash: `0x${string}`; deadline: number };
-        try {
-          candidate = await waitForEmbeddedTransactionCandidate(
-            operation.userOperationHash,
-            prepared.owner.address,
-            sdkGetUserOperation,
-            assertStillActive,
-            prepared.calls,
-            operation.status === "included",
-          );
-        } catch (error) {
-          if (
-            operation.status === "included" &&
-            error instanceof TransferExecutionError &&
-            (error.reason === "failed" || error.reason === "unavailable")
-          ) {
-            assertStillActive();
-            return operationResult(operation);
-          }
-          throw error;
-        }
-        const acknowledged = await acknowledgeRecoveredMoneyActionSubmission(
-          fetchMoneyActionApi,
-          prepared,
-          {
-            userOperationHash: operation.userOperationHash,
-            transactionHash: candidate.transactionHash,
-          },
-          assertStillActive,
-        );
-        if (["confirmed", "failed", "rejected", "expired"].includes(acknowledged.status)) {
-          return operationResult(acknowledged);
-        }
-        await waitForBaseReceipt(
-          candidate.transactionHash,
-          prepared.owner.accountProvider,
-          authentication,
-          getAccessToken,
-          sessionFetch,
-          assertStillActive,
-          candidate.deadline,
-          { userOperationHash: operation.userOperationHash, sender: prepared.owner.address },
-        );
-        return operationResult(
-          await readMoneyAction(fetchMoneyActionApi, prepared.id, prepared),
-        );
-      }
-      if (operation.submissionId && baseConnection.current?.getCallsStatus) {
-        return recoverBaseMoneyAction(
-          operation,
-          prepared,
-          baseConnection.current,
-          assertStillActive,
-        );
-      }
-      if (markReferenceFreeSubmittingUnknown && operation.status === "submitting") {
-        return operationResult(
-          await recordMoneyActionStatus(fetchMoneyActionApi, prepared.id, "unknown"),
-        );
-      }
-      return operationResult(operation);
-    },
-    [
-      authentication,
-      fetchMoneyActionApi,
-      getAccessToken,
-      recoverBaseMoneyAction,
-      sdkGetUserOperation,
-      sessionFetch,
-    ],
-  );
-
-  const checkMoneyAction = useCallback(
-    async (action: PreparedMoneyAction): Promise<OperationResult> => {
-      if (
-        transferInProgress.current ||
-        !session?.smartAccount ||
-        !ownerKey ||
-        status !== "verified" ||
-        !isMoneyActionOwnedBySession(action, session)
-      ) {
-        throw new TransferExecutionError("stale-session");
-      }
-      const boundary = transferBoundaryKey(ownerKey, session);
-      if (!boundary || currentTransferBoundary.current !== boundary) {
-        throw new TransferExecutionError("stale-session");
-      }
-      const sequence = transferSequence.current;
-      const ownerIdentity = ownerFence.capture(ownerKey, boundary);
-      const assertActive = () => {
-        if (!ownerFence.isCurrent(ownerIdentity) || transferSequence.current !== sequence || currentTransferBoundary.current !== boundary) {
-          throw new TransferExecutionError("stale-session");
-        }
-      };
-      transferInProgress.current = true;
-      try {
-        let operation = await readMoneyAction(fetchMoneyActionApi, action.id, action);
-        assertActive();
-        if (!isMoneyActionOwnedBySession(operation.action, session)) {
-          throw new TransferExecutionError("stale-session");
-        }
-        const journalRecovery = await recoverJournaledProviderHandle({
-          fetchApi: fetchMoneyActionApi,
-          journal: providerHandleJournal,
-          action: operation.action,
-          operation,
-          assertActive,
-        });
-        operation = journalRecovery.operation;
-        if (["retained", "conflict", "inconsistent"].includes(journalRecovery.kind)) {
-          return operationResult(operation);
-        }
-        return await reconcileRecordedMoneyAction(
-          operation,
-          operation.action,
-          assertActive,
-          false,
-        );
-      } finally {
-        if (transferSequence.current === sequence) transferInProgress.current = false;
-      }
-    },
-    [fetchMoneyActionApi, ownerKey, providerHandleJournal, reconcileRecordedMoneyAction, session, status],
-  );
-
-  const executeMoneyAction = useCallback(
-    async (action: PreparedMoneyAction): Promise<OperationResult> => {
-      if (
-        transferInProgress.current ||
-        !session?.smartAccount ||
-        !ownerKey ||
-        status !== "verified" ||
-        !isMoneyActionOwnedBySession(action, session)
-      ) {
-        throw new TransferExecutionError("stale-session");
-      }
-      const boundary = transferBoundaryKey(ownerKey, session);
-      if (!boundary || currentTransferBoundary.current !== boundary) {
-        throw new TransferExecutionError("stale-session");
-      }
-      const sequence = transferSequence.current;
-      const ownerIdentity = ownerFence.capture(ownerKey, boundary);
-      const assertActive = () => {
-        if (!ownerFence.isCurrent(ownerIdentity) || transferSequence.current !== sequence || currentTransferBoundary.current !== boundary) {
-          throw new TransferExecutionError("stale-session");
-        }
-      };
-      transferInProgress.current = true;
-      try {
-        let durable = await readMoneyAction(fetchMoneyActionApi, action.id, action);
-        assertActive();
-        if (!isMoneyActionOwnedBySession(durable.action, session)) {
-          throw new TransferExecutionError("stale-session");
-        }
-        const journalRecovery = await recoverJournaledProviderHandle({
-          fetchApi: fetchMoneyActionApi,
-          journal: providerHandleJournal,
-          action: durable.action,
-          operation: durable,
-          assertActive,
-        });
-        durable = journalRecovery.operation;
-        if (["retained", "conflict", "inconsistent"].includes(journalRecovery.kind)) {
-          return operationResult(durable);
-        }
-        if (["confirmed", "failed", "rejected", "expired"].includes(durable.status)) {
-          return operationResult(durable);
-        }
-        if (durable.status === "prepared" && journalRecovery.issues.includes("storage-corrupt")) {
-          throw new TransferExecutionError("unavailable");
-        }
-        if (durable.status === "prepared" && !providerHandleJournal.canRetain()) {
-          throw new TransferExecutionError("unavailable");
-        }
-
-        if (durable.status === "prepared" && action.kind === "send") {
-          const spend = action.amounts.find((amount) => amount.direction === "spend");
-          if (!spend || (spend.assetId !== "usdc" && spend.assetId !== "eth")) {
-            throw new TransferExecutionError("invalid-request");
-          }
-          if (session.accountProvider === "base-account") {
-            const connection = baseConnection.current;
-            if (
-              !connection ||
-              !connection.sendCalls ||
-              !connection.getCallsStatus ||
-              connection.address.toLowerCase() !== session.smartAccount.address.toLowerCase()
-            ) {
-              throw new TransferExecutionError("stale-session");
-            }
-          } else if (!sdkSendUserOperation || !sdkGetUserOperation) {
-            throw new TransferExecutionError("unavailable");
-          }
-          const portfolio = parsePortfolioSnapshot(await fetchPortfolio(), {
-            subject: session.user.subject,
-            smartAccountAddress: session.smartAccount.address,
-            chainId: BASE_CHAIN_ID,
-          });
-          assertActive();
-          if (BigInt(spend.amountBaseUnits) > findTransferBalance(portfolio.assets, spend.assetId)) {
-            throw new TransferExecutionError("insufficient-balance");
-          }
-        }
-
-        const claim = await claimMoneyAction(fetchMoneyActionApi, action);
-        assertActive();
-        const canonicalAction = claim.action;
-        if (claim.disposition === "recover") {
-          return await reconcileRecordedMoneyAction(
-            claim.operation,
-            canonicalAction,
-            assertActive,
-            true,
-          );
-        }
-
-        const calls = canonicalAction.calls.map((call) => ({
-          to: call.to,
-          data: call.data,
-          value: BigInt(call.value),
-        }));
-        assertActive();
-        // Freeze the reviewed owner/action/provider binding before crossing the wallet boundary.
-        const providerHandleBinding = structuredClone(canonicalAction);
-
-        if (session.accountProvider === "base-account") {
-          const connection = baseConnection.current;
-          if (
-            !connection ||
-            !connection.sendCalls ||
-            !connection.getCallsStatus ||
-            connection.address.toLowerCase() !== session.smartAccount.address.toLowerCase()
-          ) {
-            await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "failed");
-            throw new TransferExecutionError("stale-session");
-          }
-          let submissionId: string;
-          try {
-            submissionId = await connection.sendCalls(
-              calls,
-              canonicalAction.id,
-              async () => assertMoneyActionDispatchable(canonicalAction, assertActive),
-            );
-          } catch (error) {
-            if (error instanceof MoneyActionExpiredBeforeDispatchError) {
-              return operationResult(
-                await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "expired"),
-              );
-            }
-            if (error instanceof TransferExecutionError) {
-              throw error;
-            }
-            if (error instanceof BaseAccountConnectorError && error.reason === "cancelled") {
-              await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "rejected");
-              throw new TransferExecutionError("rejected", error);
-            }
-            await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "unknown");
-            throw new TransferExecutionError("submission-unknown", error);
-          }
-          const retained = providerHandleJournal.retain(providerHandleBinding, {
-            kind: "submission-id",
-            provider: "base-account",
-            value: submissionId,
-          });
-          if (!retained.retained) {
-            throw new TransferExecutionError("submission-unknown");
-          }
-          await providerHandleJournal.persist(retained.entry!);
-          assertActive();
-          const journaled = await recoverJournaledProviderHandle({
-            fetchApi: fetchMoneyActionApi,
-            journal: providerHandleJournal,
-            action: providerHandleBinding,
-            operation: claim.operation,
-            assertActive,
-          });
-          if (journaled.kind !== "acknowledged") {
-            throw new TransferExecutionError("submission-unknown");
-          }
-          if (["confirmed", "failed", "rejected", "expired"].includes(journaled.operation.status)) {
-            return operationResult(journaled.operation);
-          }
-          return await recoverBaseMoneyAction(
-            journaled.operation,
-            canonicalAction,
-            connection,
-            assertActive,
-          );
-        }
-
-        if (!sdkSendUserOperation || !sdkGetUserOperation) {
-          await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "failed");
-          throw new TransferExecutionError("unavailable");
-        }
-        try {
-          assertMoneyActionDispatchable(canonicalAction, assertActive);
-        } catch (error) {
-          if (error instanceof MoneyActionExpiredBeforeDispatchError) {
-            return operationResult(
-              await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "expired"),
-            );
-          }
-          throw error;
-        }
-        let userOperationHash: `0x${string}`;
-        try {
-          const submission = await sdkSendUserOperation({
-            evmSmartAccount: session.smartAccount.address,
-            network: "base",
-            calls,
-            idempotencyKey: canonicalAction.id,
-          });
-          userOperationHash = normalizeTransactionHash(submission.userOperationHash);
-        } catch (error) {
-          await recordMoneyActionStatus(fetchMoneyActionApi, canonicalAction.id, "unknown");
-          throw new TransferExecutionError("submission-unknown", error);
-        }
-        const retained = providerHandleJournal.retain(providerHandleBinding, {
-          kind: "user-operation-hash",
-          provider: "cdp-embedded",
-          value: userOperationHash,
-        });
-        if (!retained.retained) {
-          throw new TransferExecutionError("submission-unknown");
-        }
-        await providerHandleJournal.persist(retained.entry!);
-        assertActive();
-        const journaled = await recoverJournaledProviderHandle({
-          fetchApi: fetchMoneyActionApi,
-          journal: providerHandleJournal,
-          action: providerHandleBinding,
-          operation: claim.operation,
-          assertActive,
-        });
-        if (journaled.kind !== "acknowledged") {
-          throw new TransferExecutionError("submission-unknown");
-        }
-        if (["confirmed", "failed", "rejected", "expired"].includes(journaled.operation.status)) {
-          return operationResult(journaled.operation);
-        }
-        return await reconcileRecordedMoneyAction(
-          journaled.operation,
-          canonicalAction,
-          assertActive,
-          false,
-        );
-      } finally {
-        if (transferSequence.current === sequence) transferInProgress.current = false;
-      }
-    },
-    [
-      fetchMoneyActionApi,
-      fetchPortfolio,
-      ownerKey,
-      providerHandleJournal,
-      reconcileRecordedMoneyAction,
-      recoverBaseMoneyAction,
-      sdkGetUserOperation,
-      sdkSendUserOperation,
-      session,
-      status,
-    ],
-  );
-
-  const confirmPendingTransfer = useCallback(
-    async (
-      handle: PendingTransfer,
-      assertActive: () => void,
-    ): Promise<ConfirmedTransfer> => {
-      try {
-        let transactionHash: `0x${string}`;
-        if (handle.userOperationHash) {
-          if (!sdkGetUserOperation || !session?.smartAccount) {
-            throw new TransferExecutionError("unavailable");
-          }
-          transactionHash = await waitForEmbeddedReceipt(
-            handle.userOperationHash,
-            session.smartAccount.address,
-            sdkGetUserOperation,
-            handle.provider,
-            authentication,
-            getAccessToken,
-            sessionFetch,
-            assertActive,
-          );
-        } else if (handle.transactionHash) {
-          transactionHash = await waitForBaseReceipt(
-            handle.transactionHash,
-            handle.provider,
-            authentication,
-            getAccessToken,
-            sessionFetch,
-            assertActive,
-          );
-        } else {
-          throw new TransferExecutionError("submission-unknown");
-        }
-        updatePendingTransfer(null);
-        return {
-          assetId: handle.assetId,
-          recipient: handle.recipient,
-          amountBaseUnits: handle.amountBaseUnits,
-          transactionHash,
-        };
-      } catch (error) {
-        const normalized = transferError(error);
-        if (normalized.reason === "failed") {
-          updatePendingTransfer(null);
-        } else if (normalized.reason === "submission-unknown") {
-          updatePendingTransfer({ ...handle, state: "unknown" });
-        }
-        throw normalized;
-      }
-    },
-    [
-      authentication,
-      getAccessToken,
-      sdkGetUserOperation,
-      session,
-      sessionFetch,
-      updatePendingTransfer,
-    ],
-  );
-
-  const sendTransfer = useCallback(
-    async (request: TransferRequest, intentId: string): Promise<ConfirmedTransfer> => {
-      assertTransferRequest(request);
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(intentId)) {
-        throw new TransferExecutionError("invalid-request");
-      }
-      if (
-        transferInProgress.current ||
-        pendingTransferRef.current ||
-        !session?.smartAccount ||
-        !ownerKey ||
-        status !== "verified" ||
-        session.smartAccount.chainId !== BASE_CHAIN_ID
-      ) {
-        throw new TransferExecutionError(
-          pendingTransferRef.current ? "submission-pending" : "unavailable",
-        );
-      }
-
-      const boundary = transferBoundaryKey(ownerKey, session);
-      if (!boundary || currentTransferBoundary.current !== boundary) {
-        throw new TransferExecutionError("stale-session");
-      }
-      const sequence = transferSequence.current;
-      const ownerIdentity = ownerFence.capture(ownerKey, boundary);
-      const assertActive = () => {
-        if (
-          !ownerFence.isCurrent(ownerIdentity) ||
-          transferSequence.current !== sequence ||
-          currentTransferBoundary.current !== boundary
-        ) {
-          throw new TransferExecutionError("stale-session");
-        }
-      };
-
-      transferInProgress.current = true;
-      let dispatched = false;
-      let handle: PendingTransfer | null = null;
-      try {
-        assertActive();
-        const portfolioPayload = await fetchPortfolio();
-        assertActive();
-        const portfolio = parsePortfolioSnapshot(portfolioPayload, {
-          subject: session.user.subject,
-          smartAccountAddress: session.smartAccount.address,
-          chainId: BASE_CHAIN_ID,
-        });
-        const balance = findTransferBalance(portfolio.assets, request.assetId);
-        if (BigInt(request.amountBaseUnits) > balance) {
-          throw new TransferExecutionError("insufficient-balance");
-        }
-
-        const call = buildTransferCall(request);
-
-        if (session.accountProvider === "base-account") {
-          const connection = baseConnection.current;
-          if (
-            !connection ||
-            connection.address.toLowerCase() !== session.smartAccount.address.toLowerCase() ||
-            !connection.sendTransaction
-          ) {
-            throw new TransferExecutionError("stale-session");
-          }
-          await connection.assertUnchanged();
-          assertActive();
-          handle = {
-            ...request,
-            intentId,
-            provider: session.accountProvider,
-            state: "unknown",
-          };
-          updatePendingTransfer(handle);
-          dispatched = true;
-          const transactionHash = normalizeTransactionHash(
-            await connection.sendTransaction(call),
-          );
-          handle = { ...handle, state: "submitted", transactionHash };
-          updatePendingTransfer(handle);
-          await connection.assertUnchanged();
-          assertActive();
-        } else {
-          if (!sdkSendUserOperation || !sdkGetUserOperation) {
-            throw new TransferExecutionError("unavailable");
-          }
-          handle = {
-            ...request,
-            intentId,
-            provider: session.accountProvider,
-            state: "unknown",
-          };
-          updatePendingTransfer(handle);
-          dispatched = true;
-          const submission = await sdkSendUserOperation({
-            evmSmartAccount: session.smartAccount.address,
-            network: "base",
-            calls: [call],
-            idempotencyKey: intentId,
-          });
-          const userOperationHash = normalizeTransactionHash(
-            submission.userOperationHash,
-          );
-          handle = { ...handle, state: "submitted", userOperationHash };
-          updatePendingTransfer(handle);
-          assertActive();
-        }
-
-        return await confirmPendingTransfer(handle, assertActive);
-      } catch (error) {
-        const normalized = transferError(error);
-        if (!dispatched) {
-          updatePendingTransfer(null);
-          throw normalized;
-        }
-        if (handle && !handle.transactionHash && !handle.userOperationHash) {
-          updatePendingTransfer({ ...handle, state: "unknown" });
-          throw new TransferExecutionError("submission-unknown", normalized);
-        }
-        if (normalized.reason === "failed") {
-          updatePendingTransfer(null);
-          throw normalized;
-        }
-        throw normalized;
-      } finally {
-        if (transferSequence.current === sequence) {
-          transferInProgress.current = false;
-        }
-      }
-    },
-    [
-      confirmPendingTransfer,
-      fetchPortfolio,
-      ownerKey,
-      sdkGetUserOperation,
-      sdkSendUserOperation,
-      session,
-      status,
-      updatePendingTransfer,
-    ],
-  );
-
-  const checkPendingTransfer = useCallback(async (): Promise<ConfirmedTransfer> => {
-    const handle = pendingTransferRef.current;
-    if (
-      transferInProgress.current ||
-      !handle ||
-      !session?.smartAccount ||
-      !ownerKey ||
-      status !== "verified"
-    ) {
-      throw new TransferExecutionError("unavailable");
-    }
-    const boundary = transferBoundaryKey(ownerKey, session);
-    if (!boundary || currentTransferBoundary.current !== boundary) {
+  const assertReady = useCallback(() => {
+    if (!session?.smartAccount || !ownerKey || status !== "verified") {
       throw new TransferExecutionError("stale-session");
     }
-    const sequence = transferSequence.current;
-    const assertActive = () => {
-      if (
-        transferSequence.current !== sequence ||
-        currentTransferBoundary.current !== boundary
-      ) {
-        throw new TransferExecutionError("stale-session");
-      }
-    };
-    transferInProgress.current = true;
+    return session;
+  }, [ownerKey, session, status]);
+
+  const prepareMoneyAction = useCallback(async (kind: string, params: unknown) => {
+    const active = assertReady();
+    if (!kind || !isRecord(params)) throw new TransferExecutionError("invalid-request");
+    const generation = ownerFence.capture();
+    ownerFence.assertCurrent(generation);
+    const value = await fetchAccountResource("/api/actions/prepare", {
+      method: "POST",
+      body: { kind, params },
+    });
+    ownerFence.assertCurrent(generation);
+    if (!validPrepared(value, active)) throw new TransferExecutionError("unavailable");
+    preparedGeneration.current.set(value.id, generation);
+    return value;
+  }, [assertReady, fetchAccountResource, ownerFence]);
+
+  const postHandle = useCallback(async (
+    id: string,
+    generation: number,
+    body: { providerHandle?: string; transactionHash?: string },
+  ) => {
+    ownerFence.assertCurrent(generation);
+    await fetchAccountResource(`/api/actions/${id}/handle`, { method: "POST", body });
+    ownerFence.assertCurrent(generation);
+  }, [fetchAccountResource, ownerFence]);
+
+  const resolveTransaction = useCallback(async (
+    action: PreparedMoneyAction,
+    generation: number,
+    providerHandle: string,
+  ) => {
     try {
-      return await confirmPendingTransfer(handle, assertActive);
-    } finally {
-      if (transferSequence.current === sequence) {
-        transferInProgress.current = false;
+      if (action.owner.accountProvider === "cdp-embedded" && sdkGetUserOperation && hashPattern.test(providerHandle)) {
+        ownerFence.assertCurrent(generation);
+        const result = await sdkGetUserOperation({
+          userOperationHash: providerHandle as `0x${string}`,
+          evmSmartAccount: action.owner.address,
+          network: "base",
+        });
+        ownerFence.assertCurrent(generation);
+        if (
+          result.status === "complete" &&
+          typeof result.transactionHash === "string" &&
+          hashPattern.test(result.transactionHash)
+        ) {
+          await postHandle(action.id, generation, { transactionHash: result.transactionHash });
+        }
       }
+      if (action.owner.accountProvider === "base-account") {
+        const connection = baseConnection.current;
+        if (!connection?.getCallsStatus) return;
+        ownerFence.assertCurrent(generation);
+        const result = await connection.getCallsStatus(action.id);
+        ownerFence.assertCurrent(generation);
+        if (result.status === "complete") {
+          await postHandle(action.id, generation, { transactionHash: result.transactionHash });
+        }
+      }
+    } catch {
+      // The confirmed row remains pending/unknown and Activity will eventually win.
     }
-  }, [confirmPendingTransfer, ownerKey, session, status]);
+  }, [baseConnection, ownerFence, postHandle, sdkGetUserOperation]);
 
-  const startNewTransfer = useCallback(() => {
-    if (!transferInProgress.current) {
-      updatePendingTransfer(null);
+  const executeMoneyAction = useCallback(async (action: PreparedMoneyAction): Promise<OperationResult> => {
+    const active = assertReady();
+    const generation = preparedGeneration.current.get(action.id);
+    if (generation === undefined) throw new TransferExecutionError("stale-session");
+    ownerFence.assertCurrent(generation);
+    if (active.user.subject !== action.owner.subject || active.accountProvider !== action.owner.accountProvider) {
+      throw new TransferExecutionError("stale-session");
     }
-  }, [updatePendingTransfer]);
 
+    let providerHandle: string;
+    try {
+      providerHandle = await executeActionOnce({
+        id: action.id,
+        generation,
+        fence: ownerFence,
+        confirmedPlans: confirmedPlans.current,
+        providerDispatches: providerDispatches.current,
+        confirm: async () => {
+          const response = await fetchAccountResource(`/api/actions/${action.id}/confirm`, { method: "POST", body: {} });
+          if (!isRecord(response) || !Array.isArray(response.calls)) throw new TransferExecutionError("unavailable");
+          return { calls: response.calls as ConfirmedPlan["calls"] };
+        },
+        dispatch: async (plan) => {
+          const calls = plan.calls.map((call) => ({ ...call, value: BigInt(call.value) }));
+          if (action.owner.accountProvider === "base-account") {
+            const connection = baseConnection.current;
+            if (!connection?.sendCalls || connection.address.toLowerCase() !== action.owner.address.toLowerCase()) {
+              throw new TransferExecutionError("stale-session");
+            }
+            await connection.sendCalls(calls, action.id, async () => ownerFence.assertCurrent(generation));
+            return action.id;
+          }
+          if (!sdkSendUserOperation) throw new TransferExecutionError("unavailable");
+          ownerFence.assertCurrent(generation);
+          const result = await sdkSendUserOperation({
+            evmSmartAccount: action.owner.address,
+            network: "base",
+            calls,
+            idempotencyKey: action.id,
+          });
+          return result.userOperationHash;
+        },
+        recordHandle: (handle) => postHandle(action.id, generation, { providerHandle: handle }),
+      });
+    } catch (error) {
+      if (error instanceof TransferExecutionError) throw error;
+      throw new TransferExecutionError("submission-unknown", error);
+    }
+    void resolveTransaction(action, generation, providerHandle);
+    return {
+      id: action.id,
+      status: "submitted",
+      ...(hashPattern.test(providerHandle) ? { userOperationHash: providerHandle as `0x${string}` } : {}),
+    };
+  }, [assertReady, baseConnection, fetchAccountResource, ownerFence, postHandle, resolveTransaction, sdkSendUserOperation]);
+
+  const fetchOperations = useCallback((signal?: AbortSignal) =>
+    fetchAccountResource("/api/actions", { signal }), [fetchAccountResource]);
+
+  const reset = useCallback(() => {
+    preparedGeneration.current.clear();
+    confirmedPlans.current.clear();
+    providerDispatches.current.clear();
+  }, []);
 
   return {
     fetchOperations,
     prepareMoneyAction,
-    checkMoneyAction,
     executeMoneyAction,
-    pendingTransfer,
-    sendTransfer,
-    checkPendingTransfer,
-    startNewTransfer,
+    pendingTransfer: null,
     reset,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 export type MoneyActionExecution = ReturnType<typeof useMoneyActionExecution>;

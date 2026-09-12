@@ -141,6 +141,23 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    files: ["{app,client,components}/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
+    ignores: ["client/account/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@coinbase/cdp-*", "@coinbase/cdp-*/*", "@base-org/account", "@base-org/account/*"],
+              message: "browser wallet provider SDKs belong behind the client/account owner-generation fence",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["server/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
     rules: {
       "no-restricted-imports": [
