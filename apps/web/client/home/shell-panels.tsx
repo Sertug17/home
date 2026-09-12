@@ -95,7 +95,7 @@ export function DashboardShell({
       <main ref={mainRef} className="app-main app-main-authenticated">
         {isUnavailable ? (
           <div className="dashboard-notice" role="alert">
-            <span>{unavailableMessage ?? "Your private details remain hidden."}</span>
+            <span>{unavailableMessage ?? "Account check unavailable."}</span>
             <button type="button" onClick={() => void retrySessionValidation()}>
               Retry account check
             </button>

@@ -128,7 +128,6 @@ export function FundingOrderFlow({ binding, fetchAccountResource, queryOwnerKey,
     <>
       <Stack className={`${modal.body} ${styles.statusStack}`} space="2">
         {binding.paymentMethods.length > 1 ? <label>Payment method<select value={method} onChange={(event) => setMethod(event.currentTarget.value)}>{binding.paymentMethods.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label> : null}
-        {binding.kyc?.terms ? <a href={binding.kyc.terms.url} target="_blank" rel="noreferrer">Review {binding.displayName} terms</a> : null}
         {binding.kyc?.fields?.map((field) => <label key={field.name}>{field.label}{field.type === "select" ? <select value={fields[field.name] ?? ""} onChange={(event) => setFields((current) => ({ ...current, [field.name]: event.currentTarget.value }))}><option value="">Choose</option>{field.options?.map((option) => <option key={option}>{option}</option>)}</select> : <input type={field.type} value={fields[field.name] ?? ""} onChange={(event) => setFields((current) => ({ ...current, [field.name]: event.currentTarget.value }))} />}</label>)}
         <MoneyAmountDisplay amount={amount} onAmountChange={setAmount} assetId={binding.assetId} assetLabel={binding.currency} assetCurrency={binding.currency} assetLocked pricing={{ status: "unpriced" }} nativeSymbol={binding.currency} />
         <MoneyNumpad value={amount} maxDecimals={2} onChange={setAmount} disabled={busy} />
@@ -144,7 +143,7 @@ function QuoteReview({ binding, draft, busy, confirmationAttempted, error, onCon
 }
 function ProviderEconomicsReview({ binding, order, onContinue }: { binding: FundingBinding; order: FundingOrderSummary; onContinue: () => void }) {
   const fees = order.fees ?? [];
-  return <><Stack className={`${modal.body} ${styles.statusStack}`} space="2"><h3>Review payment details</h3><p>Receive: {atomicToDecimal(order.expectedTokenAmountAtomic!, binding.assetDecimals)} {binding.assetSymbol}</p>{fees.length ? <section aria-label="Provider fees"><h4>Fees</h4>{fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : <p>Fees: None</p>}<p>These details came from {binding.displayName}. Review them before using the payment instructions.</p></Stack><MoneyModalFooter primaryLabel="View payment instructions" onPrimary={onContinue} /></>;
+  return <><Stack className={`${modal.body} ${styles.statusStack}`} space="2"><h3>Review payment details</h3><p>Receive: {atomicToDecimal(order.expectedTokenAmountAtomic!, binding.assetDecimals)} {binding.assetSymbol}</p>{fees.length ? <section aria-label="Provider fees"><h4>Fees</h4>{fees.map((fee, index) => <p key={`${fee.label}:${index}`}>{fee.label}: {fee.amount} {fee.currency}</p>)}</section> : <p>Fees: None</p>}</Stack><MoneyModalFooter primaryLabel="View payment instructions" onPrimary={onContinue} /></>;
 }
 function OrderStatus({ order, onBack }: { order: FundingOrderSummary; onBack: () => void }) {
   const copy = stateCopy(order.state);

@@ -453,9 +453,6 @@ export function AccountSignInSheet({
                 <Text as="strong" textStyle="row-label">
                   Sign-out did not finish.
                 </Text>
-                <Text textStyle="secondary" tone="muted">
-                  Your account details remain hidden.
-                </Text>
                 <Button
                   className={styles.statusAction}
                   variant="secondary"
@@ -468,9 +465,6 @@ export function AccountSignInSheet({
               <div className={styles.statusPanel} role="alert">
                 <Text as="strong" textStyle="row-label">
                   We could not verify this session.
-                </Text>
-                <Text textStyle="secondary" tone="muted">
-                  Your account details remain hidden.
                 </Text>
                 <Button
                   className={styles.statusAction}

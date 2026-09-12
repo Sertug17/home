@@ -345,18 +345,16 @@ export function SavingsExperience({
       {loadState.status === "loading" ? (
         <section
           className={styles.vaults}
-          aria-labelledby="savings-vaults-title"
+          aria-label="Vaults"
           aria-busy="true"
         >
-          <h3 id="savings-vaults-title" className={styles.vaultKicker}>Vault</h3>
           <VaultListSkeleton />
           <span className="sr-status" role="status">Loading vaults…</span>
         </section>
       ) : loadState.status === "error" ? (
         <p className={styles.status} role="alert">Vaults are temporarily unavailable.</p>
       ) : !coldLoading && !positionFailed && candidates.length > 0 ? (
-        <section className={styles.vaults} aria-labelledby="savings-vaults-title">
-          <h3 id="savings-vaults-title" className={styles.vaultKicker}>Vault</h3>
+        <section className={styles.vaults} aria-label="Vaults">
           <Stack className={styles.vaultList} space={{ custom: "10px" }} role="radiogroup" aria-label="Vault">
             {candidates.map((candidate) => {
               const isSelected = selected?.vaultAddress === candidate.vaultAddress;

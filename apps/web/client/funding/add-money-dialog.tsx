@@ -197,8 +197,7 @@ export function MethodBody({
           <button className={`${styles.method} surface-primary`} type="button" onClick={onSelectBuy}>
             <CurrencyMark currency="USD" symbol="$" />
             <span className={styles.methodCopy}>
-              <span className={styles.methodTitle}>Deposit USD</span>
-              <span className={styles.methodHint}>Use Coinbase to deposit USD</span>
+              <span className={styles.methodTitle}>Deposit USD with Coinbase</span>
             </span>
             <span className={styles.methodChevron} aria-hidden="true">›</span>
           </button>
@@ -306,10 +305,7 @@ export function BuyBody() {
   return (
     <div className={`${modal.body} ${styles.buy}`}>
       <CurrencyMark currency="USD" symbol="$" />
-      <h3 className={styles.buyTitle}>Use Coinbase to deposit USD</h3>
-      <p className={styles.buyLead}>
-        Continue to Coinbase&apos;s hosted onramp to deposit into this account.
-      </p>
+      <h3 className={styles.buyTitle}>Coinbase</h3>
     </div>
   );
 }
@@ -368,11 +364,9 @@ export function OtherOnrampsBody({
                 <span className={styles.methodTitle}>
                   Use {onramp.provider} to deposit {onramp.currency}
                 </span>
-                <span className={styles.methodHint}>
-                  {canOpen
-                    ? "Available without changing your saved country"
-                    : "Unavailable for your selected country"}
-                </span>
+                {!canOpen ? (
+                  <span className={styles.methodHint}>Unavailable</span>
+                ) : null}
               </span>
               {canOpen ? (
                 <span className={styles.methodChevron} aria-hidden="true">›</span>

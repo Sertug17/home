@@ -2,17 +2,13 @@
 
 import Link from "next/link";
 import { Button, Heading, Text } from "@home/ui";
-import { useMemo, useState, type ReactNode } from "react";
-import { CopyableValue } from "@/components/copyable-value";
+import { useMemo, useState } from "react";
 import { useAccountWallet } from "@/client/account/cdp-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import { MoneyActionReview } from "@/client/money-actions/review";
 import { useMoneyDataRefresh } from "@/client/money-actions/refresh";
 import type { OperationResult, PreparedMoneyAction } from "@/shared/money-actions/types";
-import {
-  formatAddress,
-  formatPresentationDate,
-} from "@/shared/formatting";
+import { formatPresentationDate } from "@/shared/formatting";
 import {
   readAnonymousCountryPreference,
 } from "@/config/country-preference";
@@ -22,10 +18,8 @@ import {
 } from "@/config/regions";
 import {
   BORROW_COLLATERAL_TOKEN,
-  BORROW_LLTV_WAD,
   BORROW_LOAN_TOKEN,
   BORROW_MARKET_ID,
-  BORROW_ORACLE_ADDRESS,
   MORPHO_BLUE_ADDRESS,
 } from "@/shared/borrowing/config";
 import type {
@@ -183,39 +177,8 @@ function BorrowExperienceInner({
           <Text as="span" textStyle="metadata" tone="muted">Home · Base</Text>
         </nav>
         <header className={styles.header}>
-          <div>
-            <Text as="p" textStyle="metadata" tone="muted" className={styles.kicker}>Borrow</Text>
-            <Heading level={1} textStyle="page-title" id="borrow-title">USDC against cbBTC</Heading>
-          </div>
-          <Text as="span" textStyle="metadata" tone="muted">Base · Morpho Blue</Text>
+          <Heading level={1} textStyle="page-title" id="borrow-title">USDC against cbBTC</Heading>
         </header>
-
-        <section className={styles.market} aria-labelledby="market-title">
-          <div className={styles.sectionHeading}>
-            <Heading level={2} textStyle="section-title" id="market-title">Supported market</Heading>
-            <Text as="span" textStyle="metadata" tone="muted">One verified market</Text>
-          </div>
-          <dl className={styles.addresses}>
-            <Fact label="Market ID" value={shortHash(BORROW_MARKET_ID)} title={BORROW_MARKET_ID} />
-            <Fact
-              label="Morpho"
-              value={copyableAddress(MORPHO_BLUE_ADDRESS)}
-            />
-            <Fact
-              label="Collateral"
-              value={<>cbBTC · {copyableAddress(BORROW_COLLATERAL_TOKEN.address)}</>}
-            />
-            <Fact
-              label="Loan"
-              value={<>USDC · {copyableAddress(BORROW_LOAN_TOKEN.address)}</>}
-            />
-            <Fact
-              label="Oracle"
-              value={copyableAddress(BORROW_ORACLE_ADDRESS)}
-            />
-            <Fact label="LLTV" value={`${formatWadPercent(BORROW_LLTV_WAD.toString())}%`} />
-          </dl>
-        </section>
 
         {!sessionKey ? (
           <div className={styles.notice} role="status">
@@ -225,13 +188,12 @@ function BorrowExperienceInner({
         {sessionKey && state.status === "loading" ? (
           <div className={styles.notice} role="status">
             <Text as="strong" textStyle="row-label">Loading current market state</Text>
-            <Text as="span" textStyle="secondary" tone="muted">Oracle, liquidity, limits, and position are read from Base RPC.</Text>
           </div>
         ) : null}
         {sessionKey && state.status === "error" ? (
           <div className={styles.notice} role="alert">
             <Text as="strong" textStyle="row-label">Borrowing state unavailable</Text>
-            <Text as="span" textStyle="secondary" tone="muted">Oracle, liquidity, rate, position, or limits could not be verified. Actions remain unavailable.</Text>
+            <Text as="span" textStyle="secondary" tone="muted">Refresh to try again.</Text>
             <Button type="button" variant="secondary" onClick={() => void refresh()}>Retry</Button>
           </div>
         ) : null}
@@ -239,7 +201,6 @@ function BorrowExperienceInner({
         {snapshot ? (
           <>
             <div className={styles.asOf}>
-              <Text as="span" textStyle="metadata" tone="muted">RPC block {snapshot.source.blockNumber}</Text>
               <time dateTime={blockTime(snapshot.source.blockTimestamp)}>As of {formatTime(blockTime(snapshot.source.blockTimestamp), regionId)}</time>
             </div>
             <section className={styles.metrics} aria-labelledby="position-title">
@@ -247,27 +208,26 @@ function BorrowExperienceInner({
                 <Heading level={2} textStyle="section-title" id="position-title">Wallet and position</Heading>
                 <Button type="button" variant="secondary" onClick={() => void refresh()}>Refresh</Button>
               </div>
-              {emptyWallet ? <Text as="p" textStyle="secondary" tone="muted" className={styles.empty}>This verified wallet has no cbBTC, USDC, or position in the supported market.</Text> : null}
+              {emptyWallet ? <Text as="p" textStyle="secondary" tone="muted" className={styles.empty}>This wallet has no cbBTC, USDC, or borrow position.</Text> : null}
               <dl className={styles.metricGrid}>
                 <Metric label="cbBTC wallet" value={`${formatUnits(snapshot.wallet.collateralBalanceRaw, 8)} cbBTC`} />
                 <Metric label="USDC wallet" value={`${formatUnits(snapshot.wallet.loanBalanceRaw, 6)} USDC`} />
                 <Metric label="Collateral supplied" value={`${formatUnits(snapshot.position.collateralRaw, 8)} cbBTC`} />
                 <Metric label="Current debt" value={`${formatUnits(snapshot.position.debtAssetsRaw, 6)} USDC`} note="Rounded up from Morpho borrow shares" />
                 <Metric label="Current borrow capacity" value={`${formatUnits(snapshot.position.borrowCapacityAssetsRaw, 6)} USDC`} note="Lower of collateral limit and indexed liquidity" />
-                <Metric label="Currently withdrawable" value={`${formatUnits(snapshot.position.withdrawableCollateralRaw, 8)} cbBTC`} note="At the pinned oracle price; not a promise" />
+                <Metric label="Currently withdrawable" value={`${formatUnits(snapshot.position.withdrawableCollateralRaw, 8)} cbBTC`} note="At the displayed oracle price" />
                 <Metric label="Health factor" value={formatHealth(snapshot.position.healthFactorWad)} note={healthNote(snapshot.position.healthFactorWad)} />
                 <Metric label="Liquidation price" value={snapshot.position.liquidationPriceRaw ? `${formatOracleUsd(snapshot.position.liquidationPriceRaw)} USDC / cbBTC` : "No debt"} />
                 <Metric label="Oracle price" value={`${formatOracleUsd(snapshot.state.oraclePriceRaw)} USDC / cbBTC`} />
                 <Metric label="Variable borrow APR" value={`${formatWadPercent(snapshot.state.borrowAprWad)}%`} note="Current per-second rate annualized; not fixed" />
                 <Metric label="Indexed liquidity" value={`${formatUnits(snapshot.state.liquidityAssetsRaw, 6)} USDC`} />
-                <Metric label="Market state updated" value={formatTime(blockTime(snapshot.state.lastUpdateTimestamp), regionId)} note="Debt is accrued locally to the pinned block" />
+                <Metric label="Market state updated" value={formatTime(blockTime(snapshot.state.lastUpdateTimestamp), regionId)} />
               </dl>
             </section>
 
             <form className={styles.form} onSubmit={submitPreview}>
               <div className={styles.sectionHeading}>
                 <Heading level={2} textStyle="section-title">Preview action</Heading>
-                <Text as="span" textStyle="metadata" tone="muted">Destination: verified wallet</Text>
               </div>
               <label>
                 Action
@@ -328,29 +288,6 @@ function BorrowExperienceInner({
         />
       ) : null}
     </main>
-  );
-}
-
-function copyableAddress(value: string) {
-  return (
-    <CopyableValue
-      value={value}
-      display={formatAddress(value)}
-      valueKind="address"
-    />
-  );
-}
-
-function Fact({ label, value, title }: { label: string; value: ReactNode; title?: string }) {
-  return (
-    <div>
-      <dt><Text as="span" textStyle="metadata" tone="muted">{label}</Text></dt>
-      <dd>
-        <Text as="span" textStyle="row-value">
-          {title ? <code title={title}>{value}</code> : value}
-        </Text>
-      </dd>
-    </div>
   );
 }
 
@@ -419,7 +356,7 @@ function healthNote(raw: string | null) {
   if (health < BigInt("1000000000000000000")) return "At or below the indexed liquidation threshold";
   if (health < BigInt("1100000000000000000")) return "Very close to liquidation";
   if (health < BigInt("1250000000000000000")) return "Limited liquidation buffer";
-  return "Current indexed ratio; not a safety guarantee";
+  return "Above the indexed liquidation threshold";
 }
 
 function blockTime(seconds: string) {
@@ -442,7 +379,6 @@ function usePersistedPresentationRegion(): RegionId {
   return regionId;
 }
 
-function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function readableResourceError(error: unknown) {
   if (error instanceof Error && error.message && error.message !== "Authenticated resource is unavailable.") return error.message;

@@ -73,7 +73,7 @@ export function TradeActions({
   if (status.status === "eligibility-required") {
     return (
       <div className={layout === "sticky" ? styles.lockedSticky : styles.locked} role="note">
-        Stock execution requires verified issuer and provider eligibility.
+        Stocks aren&apos;t available yet.
       </div>
     );
   }
@@ -466,7 +466,7 @@ function messageForTradeError(error: unknown): string {
     case "SIGNER_UNSUPPORTED": return "This verified account cannot sign this trade.";
     case "PERMIT_EXPIRED": return "The permit signing window expired. Request a fresh quote.";
     case "PERMIT_USED": return "This Permit2 nonce was already used. Request a fresh quote.";
-    case "STOCK_EXECUTION_UNAVAILABLE": return "Stock execution remains locked until issuer and provider eligibility can be verified.";
+    case "STOCK_EXECUTION_UNAVAILABLE": return "Stocks aren’t available yet.";
     case "HOSTED_SWAP_UNAVAILABLE": return "Swaps aren’t available right now. No trade was submitted. Try again later.";
     case "QUOTE_REJECTED": return "CDP returned a quote that did not match the reviewed token, amount, Permit2, or slippage constraints.";
     case "INVALID_TRADE_FINALIZATION": return "The signature did not match this reviewed trade. Request a fresh quote.";
