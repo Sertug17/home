@@ -19,11 +19,11 @@ const row: ActionRow = {
   handle_recorded_at: null,
 };
 
-function authorize(subject = "owner-a") {
+function authorize(subject = "owner-a", accountProvider: "cdp-embedded" | "base-account" = "cdp-embedded") {
   return async () => Response.json({
     user: { subject },
     smartAccount: { address: ADDRESS, chainId: 8453 },
-    accountProvider: "cdp-embedded",
+    accountProvider,
   });
 }
 
@@ -88,5 +88,44 @@ describe("actions HTTP handlers", () => {
     expect(response.status).toBe(200);
     expect(confirmedCalls).toEqual([CALL]);
     expect((await response.json()).calls).toEqual([CALL]);
+  });
+
+  test("confirms a trade using the moved Permit2 finalizer", async () => {
+    const signature = `0x${"ab".repeat(65)}` as const;
+    const permitHash = `0x${"cd".repeat(32)}` as const;
+    const trade = {
+      ...row,
+      provider: "base-account" as const,
+      kind: "trade",
+      pending: {
+        calls: [CALL], permitHash,
+        signingTypedData: {
+          domain: { name: "Coinbase Smart Wallet", version: "1", chainId: 8453, verifyingContract: ADDRESS },
+          types: {
+            EIP712Domain: [
+              { name: "name", type: "string" },
+              { name: "version", type: "string" },
+              { name: "chainId", type: "uint256" },
+              { name: "verifyingContract", type: "address" },
+            ],
+            CoinbaseSmartWalletMessage: [{ name: "hash", type: "bytes32" }],
+          },
+          primaryType: "CoinbaseSmartWalletMessage" as const,
+          message: { hash: permitHash },
+        },
+        signerAddress: ADDRESS, signerOwnerIndex: 0 as const, signerDeployed: false, swapCallIndex: 0,
+      },
+    } satisfies ActionRow;
+    let confirmedCalls: unknown;
+    const handler = createConfirmActionHandler({
+      authorize: authorize("owner-a", "base-account"), now: () => new Date("2026-09-12T12:05:00.000Z"),
+      store: { get: async () => trade, confirm: async (_owner, _id, calls) => {
+        confirmedCalls = calls;
+        return { ...trade, confirmed_at: "2026-09-12T12:05:00.000Z", pending: { calls: calls ?? [] } };
+      } },
+    });
+    const response = await handler(request(`/api/actions/${ID}/confirm`, { method: "POST", headers: { "X-Home-Account-Provider": "base-account" }, body: JSON.stringify({ signature }) }), context());
+    expect(response.status).toBe(200);
+    expect(confirmedCalls).toEqual([{ ...CALL, data: `0x1234${"41".padStart(64, "0")}${signature.slice(2)}` }]);
   });
 });

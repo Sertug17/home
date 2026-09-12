@@ -20,17 +20,9 @@ export const ACTIVITY_READ_REASONS = [
   "primary-source",
 ] as const;
 export const ACTIVITY_READ_SOURCES = ["none", "cdp-sql"] as const;
-export const ACTIVITY_RECORDED_OPERATIONS_STATES = [
-  "not-started",
-  "available",
-  "unavailable",
-] as const;
-
 export type ActivityReadOutcome = (typeof ACTIVITY_READ_OUTCOMES)[number];
 export type ActivityReadReason = (typeof ACTIVITY_READ_REASONS)[number];
 export type ActivityReadSource = (typeof ACTIVITY_READ_SOURCES)[number];
-export type ActivityRecordedOperationsState =
-  (typeof ACTIVITY_RECORDED_OPERATIONS_STATES)[number];
 
 export type PortfolioBalanceSourceReason =
   | "not-configured"
@@ -75,7 +67,6 @@ export type ObservabilityEvent =
       sourceAttemptCount: number;
       pageCount: number;
       rowCount: number;
-      recordedOperations: ActivityRecordedOperationsState;
     };
 
 type ObservabilityLogBase = {
@@ -121,8 +112,7 @@ export type ObservabilityLogLine = ObservabilityLogBase &
         sourceAttemptCount: number;
         pageCount: number;
         rowCount: number;
-        recordedOperations: ActivityRecordedOperationsState;
-      }
+        }
   );
 
 function sanitizeMethod(value: string | undefined): string | undefined {
@@ -157,11 +147,6 @@ export function normalizeObservabilityEvent(
       sourceAttemptCount: boundedInteger(event.sourceAttemptCount, 10),
       pageCount: boundedInteger(event.pageCount, 10),
       rowCount: boundedInteger(event.rowCount, 10_000),
-      recordedOperations: allowedValue(
-        event.recordedOperations,
-        ACTIVITY_RECORDED_OPERATIONS_STATES,
-        "not-started",
-      ),
     };
   }
 

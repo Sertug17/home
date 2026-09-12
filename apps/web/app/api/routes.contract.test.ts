@@ -132,19 +132,6 @@ const protectedRoutes: ReadonlyArray<{
       };
     },
   },
-  {
-    name: "GET /api/transfer-receipt",
-    invoke: async () => {
-      const route = await import("./transfer-receipt/route");
-      return {
-        runtime: route.runtime,
-        dynamic: route.dynamic,
-        response: await route.GET(new Request(
-          `http://home.test/api/transfer-receipt?hash=0x${"ab".repeat(32)}`,
-        )),
-      };
-    },
-  },
 ];
 
 const publicRoutes: ReadonlyArray<{

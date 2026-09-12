@@ -110,7 +110,6 @@ function pageFor(
   return {
     walletAddress,
     chainId: 8453,
-    recordedOperations: "available",
     window: { from, to },
     transfers: options.empty
       ? []
@@ -189,7 +188,6 @@ describe("ActivityPanel", () => {
         id: "event-2",
         blockNumber: "19",
       });
-      second.recordedOperations = "unavailable";
       second.source.stale = false;
       second.source.executionTimestamp = new Date(
         new Date(second.window.to).getTime() - 1_000,

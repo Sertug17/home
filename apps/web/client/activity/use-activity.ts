@@ -180,9 +180,6 @@ function mergeActivityPages(pages: ActivityPage[]): ActivityPage {
   const last = pages.at(-1) ?? first;
   return {
     ...first,
-    recordedOperations: pages.some((page) => page.recordedOperations === "unavailable")
-      ? "unavailable"
-      : "available",
     transfers,
     nextCursor: last.nextCursor,
   };

@@ -7,8 +7,7 @@ import {
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import type { AccessTokenValidator } from "@/server/cdp/session";
 import { resolveBaseRpcUrl, PORTFOLIO_RPC_TIMEOUT_MS } from "@/server/portfolio/rpc";
-import { nonceBitmapPosition, PERMIT2_ADDRESS } from "./permit2";
-import { TradePreparationError } from "./prepare";
+import { nonceBitmapPosition, PERMIT2_ADDRESS, TradePreparationError } from "./permit2";
 import type {
   Address,
   Hex,

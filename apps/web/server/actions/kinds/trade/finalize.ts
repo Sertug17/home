@@ -10,8 +10,8 @@ import {
   appendPermit2Signature,
   recoverTradeSigner,
   wrapSmartAccountSignature,
+  TradePreparationError,
 } from "./permit2";
-import { TradePreparationError } from "./prepare";
 
 export type PendingTradeConfirmation = {
   calls: MoneyActionCall[];

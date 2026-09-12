@@ -10,7 +10,29 @@ import type {
   Hex,
   Permit2TypedData,
 } from "@/shared/trading/server-types";
-import { TradePreparationError } from "./prepare";
+export type TradePreparationFailure =
+  | "invalid-request"
+  | "stock-eligibility"
+  | "smart-account-unavailable"
+  | "signer-unsupported"
+  | "insufficient-balance"
+  | "no-liquidity"
+  | "stale-quote"
+  | "quote-rejected"
+  | "permit-expired"
+  | "permit-used"
+  | "invalid-finalization"
+  | "provider-unavailable";
+
+export class TradePreparationError extends Error {
+  readonly reason: TradePreparationFailure;
+
+  constructor(reason: TradePreparationFailure, cause?: unknown) {
+    super(reason, { cause });
+    this.name = "TradePreparationError";
+    this.reason = reason;
+  }
+}
 
 export const BASE_CHAIN_ID = 8453 as const;
 export const PERMIT2_ADDRESS =

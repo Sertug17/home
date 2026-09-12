@@ -2,14 +2,11 @@ import {
   ACCOUNT_PROVIDER_HEADER,
   type AccountProvider,
 } from "@/shared/account/session-types";
-import type { MoneyActionOwner } from "@/shared/money-actions/types";
 import { ChainDataError } from "@/server/chain-data/errors";
-import { writeObservabilityEvent } from "@/server/observability/log";
 import type { ObservabilityEvent } from "@/server/observability/schema";
-import type { ActivityReader, RecordedOperationsReader } from "./types";
+import type { ActivityReader } from "./types";
 
 export type SessionAuthorizer = (request: Request) => Promise<Response>;
-export type RecordedOperationsFailureReporter = () => unknown | PromiseLike<unknown>;
 
 type ActivityReadObservation = Extract<
   ObservabilityEvent,
@@ -24,15 +21,10 @@ const privateResponseHeaders = {
   Pragma: "no-cache",
   Vary: `Authorization, ${ACCOUNT_PROVIDER_HEADER}`,
 } as const;
-const DEFAULT_RECORDED_OPERATIONS_TIMEOUT_MS = 2_000;
-const MAX_RECORDED_OPERATIONS_TIMEOUT_MS = 5_000;
 
 export function createActivityHandler(dependencies: {
   authorize: SessionAuthorizer;
   readActivity: ActivityReader;
-  readRecordedOperations?: RecordedOperationsReader;
-  recordedOperationsTimeoutMs?: number;
-  reportRecordedOperationsFailure?: RecordedOperationsFailureReporter;
   now?: () => Date;
   clock?: () => number;
   observe?: ActivityObservationSink;
@@ -128,7 +120,6 @@ export function createActivityHandler(dependencies: {
       sourceAttemptCount: 1,
       pageCount: 0,
       rowCount: 0,
-      recordedOperations: "not-started",
     });
 
     let primaryFinishedAt: number | null = null;
@@ -145,18 +136,6 @@ export function createActivityHandler(dependencies: {
       primaryFinishedAt = clock();
       throwIfAborted(request.signal);
 
-      const recordedOperations = await readRecordedOperationsAvailability(
-        dependencies,
-        {
-          subject: session.subject,
-          address: session.smartAccount.address,
-          chainId: 8453,
-          accountProvider: session.accountProvider,
-        },
-        request.signal,
-      );
-      throwIfAborted(request.signal);
-
       const finishedAt = clock();
       emitActivityObservation(observe, {
         kind: "activity-read",
@@ -169,9 +148,8 @@ export function createActivityHandler(dependencies: {
         sourceAttemptCount: 1,
         pageCount: 1,
         rowCount: page.transfers.length,
-        recordedOperations,
       });
-      return privateJson({ ...page, recordedOperations }, 200);
+      return privateJson(page, 200);
     } catch (error) {
       const finishedAt = clock();
       emitActivityObservation(observe, {
@@ -188,7 +166,6 @@ export function createActivityHandler(dependencies: {
         sourceAttemptCount: 1,
         pageCount: 0,
         rowCount: 0,
-        recordedOperations: "not-started",
       });
       return activityReadError(error);
     }
@@ -213,7 +190,6 @@ function finalObservation(input: {
     sourceAttemptCount: 0,
     pageCount: 0,
     rowCount: 0,
-    recordedOperations: "not-started",
   };
 }
 
@@ -228,76 +204,6 @@ function emitActivityObservation(
     });
   } catch {
     // Synchronous observation failure must never change response behavior.
-  }
-}
-
-async function readRecordedOperationsAvailability(
-  dependencies: {
-    readRecordedOperations?: RecordedOperationsReader;
-    recordedOperationsTimeoutMs?: number;
-    reportRecordedOperationsFailure?: RecordedOperationsFailureReporter;
-  },
-  owner: MoneyActionOwner,
-  requestSignal: AbortSignal,
-): Promise<"available" | "unavailable"> {
-  if (!dependencies.readRecordedOperations) return "available";
-  throwIfAborted(requestSignal);
-
-  const controller = new AbortController();
-  const abortFromRequest = () => controller.abort(requestSignal.reason);
-  requestSignal.addEventListener("abort", abortFromRequest, { once: true });
-  if (requestSignal.aborted) abortFromRequest();
-  const timeout = setTimeout(
-    () =>
-      controller.abort(
-        new DOMException("Recorded operations timed out.", "TimeoutError"),
-      ),
-    recordedOperationsTimeoutMs(dependencies.recordedOperationsTimeoutMs),
-  );
-  try {
-    await dependencies.readRecordedOperations(owner, controller.signal);
-    throwIfAborted(controller.signal);
-    return "available";
-  } catch (error) {
-    if (requestSignal.aborted) throw error;
-    reportRecordedOperationsFailure(dependencies.reportRecordedOperationsFailure);
-    return "unavailable";
-  } finally {
-    clearTimeout(timeout);
-    requestSignal.removeEventListener("abort", abortFromRequest);
-    if (!controller.signal.aborted) {
-      controller.abort(
-        new DOMException("Recorded operations read settled.", "AbortError"),
-      );
-    }
-  }
-}
-
-function recordedOperationsTimeoutMs(value: number | undefined): number {
-  if (!Number.isSafeInteger(value) || (value ?? 0) <= 0) {
-    return DEFAULT_RECORDED_OPERATIONS_TIMEOUT_MS;
-  }
-  return Math.min(value!, MAX_RECORDED_OPERATIONS_TIMEOUT_MS);
-}
-
-function reportRecordedOperationsFailure(
-  reporter: RecordedOperationsFailureReporter | undefined,
-): void {
-  try {
-    const result = reporter
-      ? reporter()
-      : writeObservabilityEvent({
-          kind: "unhandled-server-error",
-          route: "/api/activity/recorded-operations",
-          method: "GET",
-          errorName: "RecordedOperationsUnavailable",
-          routeType: "secondary-source",
-        });
-    void Promise.resolve(result).catch(() => {
-      // Asynchronous reporting rejection must not escape the request.
-    });
-  } catch {
-    // Synchronous reporting failure must not change the readable onchain response.
   }
 }
 

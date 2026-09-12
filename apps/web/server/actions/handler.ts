@@ -1,11 +1,11 @@
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import type { MoneyActionOwner, PreparedMoneyAction } from "@/shared/money-actions/types";
-import { createTransferReceiptReader, type TransferReceiptStatus } from "@/server/money-actions/receipt";
+import { createTransferReceiptReader, type TransferReceiptStatus } from "./receipt";
 import { readAuthorizedMoneyActionSession, moneyActionOwner } from "@/server/money-actions/session";
 import { getActionsStore, type ActionRow, type ActionsStore, type PendingAction } from "./store";
 import { deriveActionStatus, type ActionReceiptState } from "./status";
-import { finalizeTradeCalls, type PendingTradeConfirmation } from "@/server/trading/finalize";
-import { createSmartAccountSignatureVerifier } from "@/server/trading/signer";
+import { finalizeTradeCalls, type PendingTradeConfirmation } from "./kinds/trade/finalize";
+import { createSmartAccountSignatureVerifier } from "./kinds/trade/signer";
 import type { SmartAccountSignatureVerifier } from "@/shared/trading/server-types";
 
 export type ActionAuthorizer = (request: Request) => Promise<Response>;
@@ -51,7 +51,7 @@ export function createGetActionHandler(dependencies: {
     let receipt: ActionReceiptState | null = null;
     if (row.transaction_hash && hashPattern.test(row.transaction_hash)) {
       try {
-        const readReceipt = dependencies.readReceipt ?? ((hash: `0x${string}`, signal?: AbortSignal) => createTransferReceiptReader()(hash, undefined, signal));
+        const readReceipt = dependencies.readReceipt ?? ((hash: `0x${string}`, signal?: AbortSignal) => createTransferReceiptReader()(hash, signal));
         receipt = receiptState(await readReceipt(row.transaction_hash.toLowerCase() as `0x${string}`, request.signal));
       } catch {
         receipt = "unavailable";
@@ -143,7 +143,7 @@ export function createListActionsHandler(dependencies: {
     const owner = await authorizeOwner(request, dependencies.authorize);
     if (owner instanceof Response) return owner;
     const store = dependencies.store ?? getActionsStore();
-    const readReceipt = dependencies.readReceipt ?? ((hash, signal) => createTransferReceiptReader()(hash, undefined, signal));
+    const readReceipt = dependencies.readReceipt ?? ((hash, signal) => createTransferReceiptReader()(hash, signal));
     const rows = await store.list(owner);
     const actions = await Promise.all(rows.map(async (row) => {
       let receipt: ActionReceiptState | null = null;
