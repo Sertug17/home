@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
+import { PORTFOLIO_NATIVE_ASSET_KEY } from "@/config/portfolio-assets";
 import {
   readAnonymousCountryPreference,
   writeAnonymousCountryPreference,
@@ -1619,7 +1620,9 @@ function availableSendBalances(
   const cashUsd = availableItems.find(
     (item) => item.group === "cash" && item.currencyCode === "USD",
   );
-  const eth = availableItems.find((item) => item.detail === "ETH");
+  // Send availability keys off canonical asset identity, never a display
+  // string: recognized (non-configured) rows can never match here.
+  const eth = availableItems.find((item) => item.assetKey === PORTFOLIO_NATIVE_ASSET_KEY);
   return {
     ...(cashUsd?.displayBalance ? { usdc: cashUsd.displayBalance } : {}),
     ...(eth ? { eth: eth.displayContext ?? eth.displayBalance } : {}),
