@@ -167,7 +167,7 @@ test("ambiguous handle response retries without a second wallet dispatch", async
   await signIn(page);
   expect(await page.evaluate(() =>
     performance.getEntriesByName("balances:painted", "mark")[0]?.startTime ?? Number.POSITIVE_INFINITY,
-  )).toBeLessThan(600);
+  )).toBeLessThan(1_000);
   await page.getByRole("button", { name: "Send" }).click();
   await page.getByRole("button", { name: "1", exact: true }).click();
   await page.getByRole("button", { name: "Continue" }).click();

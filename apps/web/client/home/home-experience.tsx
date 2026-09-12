@@ -420,9 +420,10 @@ function HomeExperienceView({
     account.status === "restoring" || account.status === "validating";
   const isVerified = account.status === "verified";
   useEffect(() => {
-    if (!isVerified || !account.session?.smartAccount) return;
-    markHomePerformance("session:verified");
-    markHomePerformance("wallet:ready");
+    if (isVerified) markHomePerformance("session:verified");
+    if (isVerified && account.session?.smartAccount) {
+      markHomePerformance("wallet:ready");
+    }
   }, [account.session?.smartAccount, isVerified]);
   useEffect(() => {
     if (
