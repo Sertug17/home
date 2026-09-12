@@ -21,6 +21,11 @@ export class FundingProviderFetchError extends Error {
 }
 
 type Environment = Readonly<Record<string, string | undefined>>;
+const providerFetchImplementations = new WeakMap<typeof fetch, typeof fetch>();
+
+export function providerFetchImplementation(providerFetch: typeof fetch): typeof fetch {
+  return providerFetchImplementations.get(providerFetch) ?? providerFetch;
+}
 
 export function createProviderContext(options: {
   manifest: FundingProviderManifest;
@@ -134,6 +139,7 @@ export function createProviderContext(options: {
     }
   }) as typeof fetch;
 
+  providerFetchImplementations.set(boundedFetch, fetchImplementation);
   return Object.freeze({
     binding: Object.freeze({
       region: binding.region,

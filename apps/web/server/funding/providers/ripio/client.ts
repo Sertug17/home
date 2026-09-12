@@ -1,16 +1,53 @@
 import "server-only";
 
-import {
-  exactRipioEntitlement,
-  RIPIO_ASSETS,
-  type RipioCountry,
-  type RipioEnabledCountry,
-  type RipioQuote,
-  type RipioQuoteRequest,
-  type RipioRailInstructions,
-} from "@/shared/funding/ripio-contract";
+import { fundingAssets } from "@/shared/funding/assets";
 
 const RIPIO_PRODUCTION_ORIGIN = "https://skala.ripio.com";
+const RIPIO_BASE_CHAIN = "BASE" as const;
+type RipioCountry = "AR" | "BR" | "CO";
+type RipioEnabledCountry = keyof typeof RIPIO_ASSETS;
+type RipioPaymentMethod = "bank_transfer" | "breb" | "r2p_bancolombia" | "r2p_nequi";
+type RipioQuoteRequest = {
+  country: RipioEnabledCountry;
+  fromCurrency: "ARS" | "COP";
+  toCurrency: "wARS" | "wCOP";
+  fromAmount: string;
+  chain: typeof RIPIO_BASE_CHAIN;
+  paymentMethodType: RipioPaymentMethod;
+  destination: `0x${string}`;
+};
+type RipioQuote = {
+  quoteId: string;
+  fromCurrency: string;
+  toCurrency: string;
+  fromAmount: string;
+  finalFromAmount: string;
+  toAmount: string;
+  finalToAmount: string;
+  rate: string;
+  expiration: string;
+  fees: Array<{ amount: string; type: string; currency: string; appliesOnFromAmount: boolean; appliesOnToAmount: boolean }>;
+};
+type RipioRailInstructions =
+  | { kind: "ar-bank-transfer"; cvu: string; alias?: string }
+  | { kind: "co-payment-url"; paymentUrl: string }
+  | { kind: "co-breb"; brebKey: string }
+  | { kind: "co-r2p-nequi"; phoneNumber: string };
+
+const RIPIO_ASSETS = {
+  AR: {
+    fiatCurrency: "ARS",
+    token: "wARS",
+    tokenAddress: fundingAssets["base:wars"].address,
+    paymentMethods: ["bank_transfer"] as const,
+  },
+  CO: {
+    fiatCurrency: "COP",
+    token: "wCOP",
+    tokenAddress: fundingAssets["base:wcop"].address,
+    paymentMethods: ["bank_transfer", "breb", "r2p_bancolombia", "r2p_nequi"] as const,
+  },
+} as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_RESPONSE_HEADER_BYTES = 16 * 1024;
@@ -434,6 +471,16 @@ function isRecord(value: unknown): value is Record<string, unknown> { return typ
 function validUuid(value: unknown): value is string { return typeof value === "string" && UUID.test(value); }
 function validAddress(value: unknown): value is `0x${string}` { return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value); }
 function validDecimal(value: unknown): value is string { return typeof value === "string" && /^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(value); }
+function exactRipioEntitlement(input: RipioQuoteRequest): boolean {
+  const asset = RIPIO_ASSETS[input.country];
+  return input.fromCurrency === asset.fiatCurrency
+    && input.toCurrency === asset.token
+    && input.chain === RIPIO_BASE_CHAIN
+    && /^0x[0-9a-fA-F]{40}$/.test(input.destination)
+    && asset.paymentMethods.includes(input.paymentMethodType as never)
+    && validDecimal(input.fromAmount)
+    && /[1-9]/.test(input.fromAmount);
+}
 function sameDecimal(left: string, right: string): boolean {
   if (!validDecimal(left) || !validDecimal(right)) return false;
   const normalize = (value: string) => value.replace(/\.0+$/, "").replace(/(\.[0-9]*?)0+$/, "$1");

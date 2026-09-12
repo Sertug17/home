@@ -54,6 +54,18 @@ function wrapQueryable(
   };
 }
 
+let runtimeExecutor: SqlExecutor | null = null;
+
+export function getSqlExecutor(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): SqlExecutor {
+  if (runtimeExecutor) return runtimeExecutor;
+  const connectionString = env.DATABASE_URL?.trim();
+  if (!connectionString) throw new Error("DATABASE_URL is required for PostgreSQL persistence");
+  runtimeExecutor = createNeonSqlExecutor(connectionString);
+  return runtimeExecutor;
+}
+
 export function createNeonSqlExecutor(
   connectionString: string,
   options: Readonly<{ schema?: string }> = {},
