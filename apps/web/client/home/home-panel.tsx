@@ -1,6 +1,7 @@
 "use client";
 
 import { PiggyBank } from "lucide-react";
+import { MoneyTicker } from "@home/ui/money-ticker";
 import type { FetchActivity } from "@/client/activity";
 import { FundingActions } from "@/client/funding/funding-actions";
 import { TransferActions } from "@/client/transfers";
@@ -99,7 +100,9 @@ export function HomePanel({
             aria-hidden="true"
           />
         ) : (
-          <p className="balance-hero-total">{assetBalances?.displayTotal ?? "—"}</p>
+          <p className="balance-hero-total">
+            <MoneyTicker value={assetBalances?.displayTotal ?? "—"} />
+          </p>
         )}
         {showBalanceStatus ? (
           <p className="balance-status" data-total-status={assetBalances?.totalStatus}>

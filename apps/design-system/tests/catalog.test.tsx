@@ -25,6 +25,10 @@ test("catalog renders real package exports and deterministic specimen controls",
   expect(container.querySelector("[data-layout='custom']")?.getAttribute("data-space")).toBe("custom");
   expect(container.querySelectorAll("[data-surface]")).toHaveLength(4);
   expect(container.querySelector("[data-surface='tinted-accent']")?.classList.contains("surface-tinted")).toBe(true);
+  const ticker = container.querySelector<HTMLElement>("[data-ticker-specimen]");
+  expect(ticker?.getAttribute("aria-label")).toBe("$1,234.56");
+  fireEvent.click(page.getByRole("button", { name: "Update balance ticker" }));
+  expect(ticker?.getAttribute("aria-label")).toBe("$9,876.54");
   expect(page.getByRole("button", { name: "Confirm" }).hasAttribute("hapticfeedback")).toBe(false);
   fireEvent.click(button);
   expect(page.getByRole("status").textContent).toBe("Activations: 1");
@@ -51,6 +55,7 @@ test("fallback, width, and 200% text are explicit and clean up on unmount", () =
   fireEvent.change(page.getByRole("combobox", { name: "Text size" }), { target: { value: "200" } });
   expect(document.documentElement.style.fontSize).toBe("200%");
   expect(page.getAllByText("$1,234,567,890.12").length).toBeGreaterThan(0);
+  expect(container.querySelector("[data-ticker-specimen]")?.getAttribute("aria-label")).toBe("$1,234.56");
   expect(page.getByText("₹12,34,56,789.00")).not.toBeNull();
   unmount();
   expect(document.documentElement.style.fontSize).toBe("");

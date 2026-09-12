@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Stack } from "@home/ui";
+import { MoneyTicker } from "@home/ui/money-ticker";
 import { CopyableValue } from "@/components/copyable-value";
 import { useOptionalAppChrome } from "@/components/app-chrome";
 import { useAccountWallet } from "@/client/account/cdp-client";
@@ -288,7 +289,7 @@ export function SavingsExperience({
             <p
               className={`${styles.heroAmount} ${funded ? "" : styles.heroAmountEmpty}`.trim()}
             >
-              {formatUsdcUsd(availableBalance.totalBaseUnits)}
+              <MoneyTicker value={formatUsdcUsd(availableBalance.totalBaseUnits)} />
             </p>
             {funded && portfolioSummary ? (
               loadState.status === "loading" ? (
@@ -322,7 +323,9 @@ export function SavingsExperience({
           </>
         ) : !sessionKey ? (
           <>
-            <p className={`${styles.heroAmount} ${styles.heroAmountEmpty}`}>$0.00</p>
+            <p className={`${styles.heroAmount} ${styles.heroAmountEmpty}`}>
+              <MoneyTicker value="$0.00" />
+            </p>
             <p className={styles.heroCaption}>Nothing saved yet</p>
             {selected && loadState.status === "ready" ? (
               <p className={styles.heroMeta}>
@@ -333,7 +336,7 @@ export function SavingsExperience({
           </>
         ) : (
           <>
-            <p className={styles.heroAmount}>—</p>
+            <p className={styles.heroAmount}><MoneyTicker value="—" /></p>
             <p className={styles.heroCaption} role="status">Balance unavailable</p>
           </>
         )}

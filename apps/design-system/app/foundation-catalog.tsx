@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Bleed, Button, Heading, IconButton, Inline, Inset, Stack, Text, type TextStyle } from "@home/ui";
+import { MoneyTicker } from "@home/ui/money-ticker";
 import { ArrowRightIcon, CheckIcon, PlusIcon, XIcon } from "@home/ui/icons";
 
 const textStyles: TextStyle[] = [
@@ -23,6 +24,7 @@ export function FoundationCatalog() {
   const [textScale, setTextScale] = useState("100");
   const [width, setWidth] = useState("fluid");
   const [activations, setActivations] = useState(0);
+  const [tickerValue, setTickerValue] = useState("$1,234.56");
   const primaryRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -153,6 +155,23 @@ export function FoundationCatalog() {
               </Inset>
             ))}
           </Inline>
+        </section>
+
+        <section className="catalog-section bg-home-ui-surface" aria-labelledby="ticker-title">
+          <Heading id="ticker-title" level={2} textStyle="section-title">Balance ticker</Heading>
+          <Text textStyle="secondary" tone="muted">Already-formatted money with anchored symbols and separators.</Text>
+          <MoneyTicker
+            className="home-ui-text"
+            data-text-style="row-value"
+            data-ticker-specimen
+            value={tickerValue}
+          />
+          <Button
+            variant="secondary"
+            onClick={() => setTickerValue((current) => current === "$1,234.56" ? "$9,876.54" : "$1,234.56")}
+          >
+            Update balance ticker
+          </Button>
         </section>
 
         <section className="catalog-section bg-home-ui-surface" aria-labelledby="amounts-title">
