@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createRipioClient, RipioProviderError, ripioCredentialState } from "./ripio-client";
+import { createRipioClient, RIPIO_PRODUCTION_ASSETS, RipioProviderError, ripioCredentialState } from "./client";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const CUSTOMER = "22222222-2222-4222-8222-222222222222";
@@ -16,7 +16,7 @@ function token() {
 }
 
 function arCatalog() {
-  return Response.json([{ network_name: "BASE", assets: [{ name: "wARS", contract_address: "0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D" }] }]);
+  return Response.json([{ network_name: "BASE", assets: [{ name: "wARS", contract_address: RIPIO_PRODUCTION_ASSETS.AR.tokenAddress }] }]);
 }
 
 const expectedBinding = { customerId: CUSTOMER, quoteId: QUOTE, externalRef: EXTERNAL, destination: DESTINATION, fromCurrency: "ARS", toCurrency: "wARS", chain: "BASE", paymentMethodType: "bank_transfer", finalToAmount: "2100" } as const;
