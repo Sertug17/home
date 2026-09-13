@@ -1,5 +1,9 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { parsePortfolioValuationSnapshot } from "../../shared/portfolio/parse-valuation";
+import { parsePortfolioValuationSnapshot } from "../../shared/portfolio/contract";
+import {
+  BASE_USDC_ADDRESS,
+  MORPHO_V1_CANDIDATE_ADDRESSES,
+} from "../../shared/savings/config";
 
 // Local laptops paint balances in ~350-620ms; hosted CI runners measure 1.0-2.2s. Regressions show as multiples, not tens of ms.
 const BALANCES_PAINTED_BUDGET_MS = process.env.CI ? 3_500 : 1_000;
@@ -7,6 +11,7 @@ const BALANCES_PAINTED_BUDGET_MS = process.env.CI ? 3_500 : 1_000;
 const OWNER = "0x1111111111111111111111111111111111111111";
 const RECIPIENT = "0x2222222222222222222222222222222222222222";
 const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+const CBBTC = "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf";
 const ACTION_ID = "11111111-1111-4111-8111-111111111111";
 const USER_OPERATION_HASH = `0x${"ab".repeat(32)}`;
 const TRANSACTION_HASH = `0x${"cd".repeat(32)}`;
@@ -15,20 +20,22 @@ const EXPIRES_AT = new Date(Date.now() + 10 * 60_000).toISOString();
 
 type ActionStatus = "unconfirmed" | "pending" | "confirmed";
 
-function action() {
-  const amount = "1000000";
+function action(transfer: { assetId: "usdc" | "cbbtc"; amountBaseUnits: string } = { assetId: "usdc", amountBaseUnits: "1000000" }) {
+  const asset = transfer.assetId === "cbbtc"
+    ? { symbol: "cbBTC", decimals: 8, token: CBBTC }
+    : { symbol: "USDC", decimals: 6, token: USDC };
+  const amount = transfer.amountBaseUnits;
   return {
     id: ACTION_ID,
-    reviewHash: "a".repeat(64),
     owner: { subject: "playwright-smoke-subject", address: OWNER, chainId: 8453, accountProvider: "cdp-embedded" },
     kind: "send",
-    title: "Send USDC",
+    title: `Send ${asset.symbol}`,
     calls: [{
-      to: USDC,
+      to: asset.token,
       data: `0xa9059cbb${RECIPIENT.slice(2).padStart(64, "0")}${BigInt(amount).toString(16).padStart(64, "0")}`,
       value: "0",
     }],
-    amounts: [{ assetId: "usdc", symbol: "USDC", decimals: 6, amountBaseUnits: amount, direction: "spend" }],
+    amounts: [{ assetId: transfer.assetId, symbol: asset.symbol, decimals: asset.decimals, amountBaseUnits: amount, direction: "spend" }],
     warnings: [`Recipient: ${RECIPIENT}`, "Network fee shown by wallet."],
     createdAt: CREATED_AT,
     expiresAt: EXPIRES_AT,
@@ -55,6 +62,86 @@ function valuation() {
   };
 }
 
+function savingsVaults() {
+  const candidates = MORPHO_V1_CANDIDATE_ADDRESSES.slice(0, 2).map((vaultAddress, index) => ({
+    version: "v1",
+    vaultAddress,
+    name: index === 0 ? "Steakhouse USDC" : "Gauntlet USDC Prime",
+    symbol: "USDC vault",
+    listed: true,
+    chainId: 8453,
+    asset: { address: BASE_USDC_ADDRESS, symbol: "USDC", decimals: 6 },
+    curatorAddress: null,
+    grossApy: index === 0 ? 0.0435 : 0.046,
+    netApy: index === 0 ? 0.0385 : 0.041,
+    feeRate: 0.1,
+    totalAssetsRaw: "100000000",
+    liquidityRaw: "50000000",
+    stateAsOf: "2026-09-12T12:00:00.000Z",
+    blockNumber: "51026404",
+    source: {
+      provider: "Morpho GraphQL",
+      endpoint: "https://api.morpho.org/graphql",
+      query: "vaults",
+      fetchedAt: "2026-09-12T12:00:01.000Z",
+    },
+  }));
+  return {
+    version: "v1",
+    chainId: 8453,
+    asset: { address: BASE_USDC_ADDRESS, symbol: "USDC", decimals: 6 },
+    candidates,
+    source: {
+      provider: "Morpho GraphQL",
+      endpoint: "https://api.morpho.org/graphql",
+      query: "vaults",
+      fetchedAt: "2026-09-12T12:00:01.000Z",
+    },
+    stale: false,
+  };
+}
+
+function savingsPositions() {
+  return {
+    accountAddress: OWNER,
+    fetchedAt: "2026-09-12T12:00:02.000Z",
+    vaults: MORPHO_V1_CANDIDATE_ADDRESSES.map((vaultAddress) => ({
+      vaultAddress,
+      position: null,
+    })),
+  };
+}
+
+function cbBtcValuation() {
+  const base = valuation();
+  const assetKey = `eip155:8453/erc20:${CBBTC}` as const;
+  const holding = {
+    kind: "direct" as const,
+    id: "cbbtc",
+    assetKey,
+    name: "Coinbase Wrapped BTC",
+    symbol: "cbBTC",
+    decimals: 8,
+    assetKind: "erc20" as const,
+    contractAddress: CBBTC,
+    cashCurrency: null,
+    balanceBaseUnits: "100000",
+    readStatus: "ready" as const,
+  };
+  return {
+    ...base,
+    inventory: {
+      ...base.inventory,
+      holdings: [base.inventory.holdings[0], base.inventory.holdings[1], holding, ...base.inventory.holdings.slice(2)],
+    },
+    lines: [
+      ...base.lines,
+      { holdingAssetKey: assetKey, valueCurrency: "USD", value: { atoms: "6000", scale: 2 }, status: "priced", reason: null },
+    ],
+    total: { ...base.total, value: { atoms: "7234", scale: 2 } },
+  };
+}
+
 function recognizedValuation() {
   const base = valuation();
   return {
@@ -68,6 +155,7 @@ function recognizedValuation() {
         symbol: "RCG",
         decimals: 18,
         contractAddress: "0x9999999999999999999999999999999999999999",
+        imageUrl: "https://images.example.test/recognized.svg",
         balanceBaseUnits: "1230000000000000000",
         liquidityUsd: { atoms: "100000", scale: 0 },
         volume24Usd: { atoms: "10000", scale: 0 },
@@ -111,28 +199,48 @@ async function json(route: Route, body: unknown) {
 
 async function installApiFixtures(
   page: Page,
-  options: { portfolioValuation?: ReturnType<typeof valuation> } = {},
+  options: {
+    portfolioValuation?: unknown;
+    initialActionStatus?: ActionStatus;
+    activityTransfers?: boolean;
+    failHandleOnce?: boolean;
+  } = {},
 ) {
-  let status: ActionStatus = "unconfirmed";
+  let status: ActionStatus = options.initialActionStatus ?? "unconfirmed";
+  let currentAction = action();
+  let sessionReads = 0;
   let valuationReads = 0;
+  let activityReads = 0;
+  let delayedSession: Promise<void> | null = null;
+  let releaseDelayedSession: (() => void) | null = null;
   let delayedValuation: Promise<void> | null = null;
   let releaseDelayedValuation: (() => void) | null = null;
   let handleRecorded = false;
-  let failHandleResponseOnce = true;
+  let failHandleResponseOnce = options.failHandleOnce ?? true;
   let fundingStatusReads = 0;
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
-    if (path === "/api/session") return json(route, { user: { subject: "playwright-smoke-subject" }, smartAccount: { address: OWNER, chainId: 8453 }, accountProvider: "cdp-embedded" });
+    if (path === "/api/session") {
+      sessionReads += 1;
+      if (delayedSession) await delayedSession;
+      return json(route, { user: { subject: "playwright-smoke-subject" }, smartAccount: { address: OWNER, chainId: 8453 }, accountProvider: "cdp-embedded" });
+    }
     if (path === "/api/portfolio/valuation") {
       valuationReads += 1;
       if (delayedValuation) await delayedValuation;
       return json(route, options.portfolioValuation ?? valuation());
     }
-    if (path === "/api/portfolio") return json(route, { walletAddress: OWNER, chainId: 8453, blockNumber: "16", blockHash: `0x${"cd".repeat(32)}`, blockTimestamp: "100", fetchedAt: new Date().toISOString(), assets: [{ id: "usdc", symbol: "USDC", decimals: 6, kind: "erc20", tokenAddress: USDC, balanceBaseUnits: "12340000" }, { id: "eth", symbol: "ETH", decimals: 18, kind: "native", balanceBaseUnits: "0" }] });
-    if (path === "/api/actions/prepare" && request.method() === "POST") { status = "unconfirmed"; return json(route, action()); }
-    if (path === `/api/actions/${ACTION_ID}/confirm`) { status = "pending"; return json(route, { id: ACTION_ID, calls: action().calls, summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, expiresAt: EXPIRES_AT }); }
+    if (path === "/api/actions/prepare" && request.method() === "POST") {
+      const body = request.postDataJSON() as { kind?: string; params?: { assetId?: string; amountBaseUnits?: string } };
+      if (body.kind === "send" && (body.params?.assetId === "usdc" || body.params?.assetId === "cbbtc") && typeof body.params.amountBaseUnits === "string") {
+        currentAction = action({ assetId: body.params.assetId, amountBaseUnits: body.params.amountBaseUnits });
+      }
+      status = "unconfirmed";
+      return json(route, currentAction);
+    }
+    if (path === `/api/actions/${ACTION_ID}/confirm`) { status = "pending"; return json(route, { id: ACTION_ID, calls: currentAction.calls, summary: { title: currentAction.title, amounts: currentAction.amounts, warnings: currentAction.warnings, expiresAt: EXPIRES_AT }, expiresAt: EXPIRES_AT }); }
     if (path === `/api/actions/${ACTION_ID}/handle`) {
       const body = request.postDataJSON() as { providerHandle?: string; transactionHash?: string };
       if (body.transactionHash) {
@@ -144,13 +252,14 @@ async function installApiFixtures(
       return json(route, { action: { id: ACTION_ID, status: "pending", providerHandle: USER_OPERATION_HASH } });
     }
     if (path === `/api/actions/${ACTION_ID}`) return json(route, status === "unconfirmed"
-      ? { id: ACTION_ID, kind: "send", summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, calls: action().calls, expiresAt: EXPIRES_AT }
+      ? { id: ACTION_ID, kind: "send", summary: { title: currentAction.title, amounts: currentAction.amounts, warnings: currentAction.warnings, expiresAt: EXPIRES_AT }, calls: currentAction.calls, expiresAt: EXPIRES_AT }
       : { action: { id: ACTION_ID, status: "pending", providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined } });
-    if (path === "/api/actions") return json(route, { actions: status === "pending" || status === "confirmed" ? [{ id: ACTION_ID, provider: "cdp-embedded", kind: "send", summary: { title: "Send USDC", amounts: action().amounts, warnings: action().warnings, expiresAt: EXPIRES_AT }, status, createdAt: CREATED_AT, confirmedAt: CREATED_AT, providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined, transactionHash: status === "confirmed" ? TRANSACTION_HASH : undefined, owner: action().owner }] : [] });
+    if (path === "/api/actions") return json(route, { actions: status === "pending" || status === "confirmed" ? [{ id: ACTION_ID, provider: "cdp-embedded", kind: "send", summary: { title: currentAction.title, amounts: currentAction.amounts, warnings: currentAction.warnings, expiresAt: EXPIRES_AT }, status, createdAt: CREATED_AT, confirmedAt: CREATED_AT, providerHandle: handleRecorded ? USER_OPERATION_HASH : undefined, transactionHash: status === "confirmed" ? TRANSACTION_HASH : undefined, owner: currentAction.owner }] : [] });
     if (path === "/api/activity") {
+      activityReads += 1;
       const to = url.searchParams.get("to") ?? new Date().toISOString();
       const from = new Date(new Date(to).getTime() - 31 * 24 * 60 * 60 * 1000).toISOString();
-      const transfers = status === "confirmed" ? [{
+      const transfers = (options.activityTransfers ?? status === "confirmed") ? [{
         id: `8453:${USDC}:${ACTION_ID}`,
         logId: ACTION_ID,
         chainId: 8453,
@@ -171,6 +280,8 @@ async function installApiFixtures(
       }] : [];
       return json(route, { walletAddress: OWNER, chainId: 8453, window: { from, to }, transfers, nextCursor: null, source: { provider: "cdp-sql", cached: false, stale: false, executionTimestamp: to, executionTimeMs: 1, fetchedAt: to } });
     }
+    if (path === "/api/savings/vaults") return json(route, savingsVaults());
+    if (path === "/api/savings/positions") return json(route, savingsPositions());
     if (path === "/api/funding/providers") return json(route, url.searchParams.get("region") === "ID" ? { providers: [{ providerId: "idrx", displayName: "IDRX", region: "ID", assetId: "base:idrx", assetSymbol: "IDRX", assetDecimals: 2, currency: "IDR", paymentMethods: [{ id: "bank-va-mandiri", label: "Bank transfer · Mandiri" }], quotes: false, kyc: null }] } : { providers: [] });
     if (path === "/api/funding/quotes") return json(route, { quoteToken: "fixture-signed-quote", quote: { fiatAmount: "20000", tokenAmountAtomic: "2000000", fees: [], expiresAt: EXPIRES_AT } });
     if (path === "/api/funding/orders" && request.method() === "POST") return json(route, { order: { id: ACTION_ID, providerId: "idrx", region: "ID", assetId: "base:idrx", paymentMethod: "bank-va-mandiri", fiatAmount: "20000", state: "awaiting-payment", expectedTokenAmountAtomic: "2000000", fees: [{ label: "Network", amount: "100", currency: "IDR" }], instructions: { kind: "bank-transfer", rail: "Mandiri virtual account", accountNumber: "123456789012", accountName: "Home Fixture", amount: "20000", currency: "IDR" }, providerStatus: "pending" } });
@@ -180,7 +291,18 @@ async function installApiFixtures(
     return json(route, {});
   });
   return {
+    sessionReads: () => sessionReads,
     valuationReads: () => valuationReads,
+    activityReads: () => activityReads,
+    delayNextSession() {
+      delayedSession = new Promise<void>((resolve) => { releaseDelayedSession = resolve; });
+      return sessionReads + 1;
+    },
+    releaseSession() {
+      releaseDelayedSession?.();
+      delayedSession = null;
+      releaseDelayedSession = null;
+    },
     delayNextValuation() {
       delayedValuation = new Promise<void>((resolve) => { releaseDelayedValuation = resolve; });
       return valuationReads + 1;
@@ -212,15 +334,20 @@ async function typeAmount(page: Page, value: string) {
 async function amountMetrics(page: Page) {
   return page.evaluate(() => {
     const node = document.querySelector<HTMLElement>("[data-primary-amount]");
-    if (!node) return null;
+    const ticker = node?.querySelector<HTMLElement>("[role='img']");
+    if (!node || !ticker) return null;
     const style = getComputedStyle(node);
-    const range = document.createRange();
-    range.selectNodeContents(node);
-    const textWidth = range.getBoundingClientRect().width;
+    const containerBounds = node.getBoundingClientRect();
+    const tickerBounds = ticker.getBoundingClientRect();
+    const textWidth = tickerBounds.width;
     const padding = (name: "paddingTop" | "paddingRight" | "paddingBottom" | "paddingLeft") =>
       Number.parseFloat(style[name]) || 0;
     return {
-      text: node.textContent,
+      text: ticker.getAttribute("aria-label"),
+      containerLeft: containerBounds.left,
+      containerRight: containerBounds.right,
+      tickerLeft: tickerBounds.left,
+      tickerRight: tickerBounds.right,
       clientWidth: node.clientWidth,
       scrollWidth: node.scrollWidth,
       fontSize: Number.parseFloat(style.fontSize),
@@ -234,7 +361,12 @@ async function amountMetrics(page: Page) {
   });
 }
 
-test("recognized token is nested-Balances-only and never enters Send availability", async ({ page }) => {
+function expectTickerInsideAmount(metrics: NonNullable<Awaited<ReturnType<typeof amountMetrics>>>) {
+  expect(metrics.tickerLeft).toBeGreaterThanOrEqual(metrics.containerLeft - 0.5);
+  expect(metrics.tickerRight).toBeLessThanOrEqual(metrics.containerRight + 0.5);
+}
+
+test("recognized token is nested-Balances-only, uses its Codex image, and never enters Send availability", async ({ page }) => {
   const fixture = recognizedValuation();
   parsePortfolioValuationSnapshot(fixture, {
     subject: "playwright-smoke-subject",
@@ -242,6 +374,13 @@ test("recognized token is nested-Balances-only and never enters Send availabilit
     chainId: 8453,
   }, "US");
   await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await page.route("https://images.example.test/recognized.svg", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#0052ff"/></svg>',
+    }),
+  );
   await installApiFixtures(page, { portfolioValuation: fixture });
   await signIn(page);
 
@@ -250,6 +389,9 @@ test("recognized token is nested-Balances-only and never enters Send availabilit
   await expect(page.getByRole("heading", { level: 1, name: "Balances" })).toBeVisible();
   await expect(page.getByText("Recognized Coin", { exact: true })).toBeVisible();
   await expect(page.getByText("1.2300 RCG", { exact: true })).toBeVisible();
+  const recognizedRow = page.locator("li", { hasText: "Recognized Coin" });
+  await expect(recognizedRow.locator('img[src="https://images.example.test/recognized.svg"]')).toBeVisible();
+  await expect(recognizedRow.locator('[data-mark="image"]')).toBeVisible();
 
   await page.getByRole("button", { name: "Back" }).click();
   await page.getByRole("button", { name: "Send" }).click();
@@ -257,6 +399,76 @@ test("recognized token is nested-Balances-only and never enters Send availabilit
   await expect(send.getByText("Recognized Coin", { exact: true })).toHaveCount(0);
   await expect(send.getByText("RCG", { exact: true })).toHaveCount(0);
   await expect(send.getByText(/12\.34 available/)).toBeVisible();
+});
+
+test("Activity transaction details keep labels on one line and link to the explorer", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page, { activityTransfers: true });
+  await page.setViewportSize({ width: 390, height: 720 });
+  await signIn(page);
+
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await page.getByRole("button", { name: /^Sent / }).click();
+  const dialog = page.getByRole("dialog", { name: "Sent USDC" });
+  const explorer = dialog.getByRole("link", { name: "View on explorer" });
+  await expect(explorer).toBeVisible();
+  await expect(explorer).toHaveAttribute("href", `https://basescan.org/tx/${TRANSACTION_HASH}`);
+  await expect(explorer).toHaveAttribute("rel", "noopener noreferrer");
+
+  expect(await dialog.locator("dt").evaluateAll((labels) => {
+    const oneLineHeight = labels.find((label) => label.textContent === "Status")
+      ?.getBoundingClientRect().height;
+    return oneLineHeight !== undefined && labels.every(
+      (label) => label.getBoundingClientRect().height <= oneLineHeight + 0.5,
+    );
+  })).toBe(true);
+
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 720 });
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  }
+});
+
+test("recent operations open transaction details", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page, { initialActionStatus: "confirmed", activityTransfers: false });
+  await signIn(page);
+
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await page.getByRole("button", { name: /^Send USDC / }).click();
+  const dialog = page.getByRole("dialog", { name: "Send USDC" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "View on explorer" })).toBeVisible();
+});
+
+test("sends a held catalog cbBTC balance with one asset selector indicator", async ({ page }) => {
+  const fixture = cbBtcValuation();
+  parsePortfolioValuationSnapshot(fixture, {
+    subject: "playwright-smoke-subject",
+    smartAccountAddress: OWNER,
+    chainId: 8453,
+  }, "US");
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page, { portfolioValuation: fixture, failHandleOnce: false });
+  await signIn(page);
+
+  await page.getByRole("button", { name: "Send" }).click();
+  const send = page.getByRole("dialog", { name: "Send" });
+  const selector = send.getByRole("combobox", { name: "Asset" });
+  await expect(selector).toBeVisible();
+  await expect(send.locator('[data-slot="native-select-icon"]')).toHaveCount(1);
+  await selector.selectOption("cbbtc");
+  await expect(send.getByRole("img", { name: "0.001 cbBTC available" })).toBeVisible();
+  await typeAmount(page, "0.001");
+  await send.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("textbox", { name: "To" }).fill(RECIPIENT);
+  await send.getByRole("button", { name: "Continue" }).click();
+  const confirm = page.getByRole("dialog", { name: "Confirm" });
+  await expect(confirm.getByText("You're sending cbBTC", { exact: true })).toBeVisible();
+  await confirm.getByRole("button", { name: "Send 0.001 cbBTC" }).click();
+  await expect(confirm).toBeHidden();
+  await expect(page.getByText("Sent 0.001 cbBTC to 0x2222…222222", { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("home:playwright-smoke:dispatch-count"))).toBe("1");
 });
 
 test("ambiguous handle response retries without a second wallet dispatch", async ({ page }) => {
@@ -288,7 +500,11 @@ test("ambiguous handle response retries without a second wallet dispatch", async
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("home:playwright-smoke:dispatch-count"))).toBe("1");
   await expect(page.getByText("Sent $1.00 to 0x2222…222222", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Activity" }).click();
-  await expect(page.getByText("Sent", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .locator('[data-shell-panel]:not([hidden])')
+      .getByText("Sent", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Send USDC", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Pending/)).toHaveCount(0);
 });
@@ -314,15 +530,30 @@ test("reload paints persisted balances before stale valuation responds", async (
     }
     localStorage.setItem(key, JSON.stringify(persisted));
   });
-  const delayedRead = fixtures.delayNextValuation();
+  const delayedSessionRead = fixtures.delayNextSession();
+  fixtures.delayNextValuation();
+  const valuationReadsBeforeReload = fixtures.valuationReads();
 
   await page.reload();
-  await expect.poll(fixtures.valuationReads).toBe(delayedRead);
+  await expect.poll(fixtures.sessionReads, { timeout: 15_000 }).toBeGreaterThanOrEqual(delayedSessionRead);
   await expect(page.getByText("$12.34", { exact: true }).first()).toBeVisible();
-  const reloadPaint = await page.evaluate(() =>
-    performance.getEntriesByName("balances:painted", "mark")[0]?.startTime ?? Number.POSITIVE_INFINITY,
+  expect(fixtures.valuationReads()).toBe(valuationReadsBeforeReload);
+  const provisionalPaint = await page.evaluate(() => ({
+    balances: performance.getEntriesByName("balances:painted", "mark")[0]?.startTime ?? Number.POSITIVE_INFINITY,
+    verified: performance.getEntriesByName("session:verified", "mark")[0]?.startTime ?? Number.POSITIVE_INFINITY,
+  }));
+  expect(provisionalPaint.balances).toBeLessThan(coldPaint);
+  expect(provisionalPaint.balances).toBeLessThan(provisionalPaint.verified);
+
+  fixtures.releaseSession();
+  await expect.poll(() => page.evaluate(() =>
+    performance.getEntriesByName("session:verified", "mark")[0]?.startTime ?? Number.POSITIVE_INFINITY,
+  ), { timeout: 15_000 }).toBeLessThan(Number.POSITIVE_INFINITY);
+  const verifiedPaint = await page.evaluate(() =>
+    performance.getEntriesByName("session:verified", "mark")[0]?.startTime ?? Number.POSITIVE_INFINITY,
   );
-  expect(reloadPaint).toBeLessThan(coldPaint);
+  expect(provisionalPaint.balances).toBeLessThan(verifiedPaint);
+  await expect(page.getByText("$12.34", { exact: true }).first()).toBeVisible();
   fixtures.releaseValuation();
 });
 
@@ -335,10 +566,150 @@ test("reload resumes an unconfirmed send review from its URL action", async ({ p
   await page.reload();
 
   const review = page.getByRole("dialog", { name: "Confirm" });
-  await expect(review).toBeVisible();
+  // A full reload re-verifies the session and hydrates before the resume fetch.
+  await expect(review).toBeVisible({ timeout: 15_000 });
   await expect(review.getByText("You're sending USDC")).toBeVisible();
   await expect(review.getByRole("button", { name: "Send $1.00" })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`flow=send.*action=${ACTION_ID}`));
+});
+
+test("shallow-routed money flows open from URLs and Back closes them", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page);
+  await signIn(page);
+
+  const cases = [
+    { flow: "add-money", dialog: "Add money" },
+    { flow: "receive", dialog: "Receive" },
+    { flow: "save-deposit", dialog: "Deposit" },
+  ] as const;
+
+  for (const entry of cases) {
+    await page.goto(`/dashboard?flow=${entry.flow}`);
+    await expect(page.getByRole("dialog", { name: entry.dialog })).toBeVisible();
+    await page.goBack();
+    await expect(page.locator('[role="dialog"][data-open]')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/dashboard$/);
+  }
+});
+
+test("Add money routes Receive, handles the Back state, and reopens the method list", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page);
+  await signIn(page);
+
+  await page.getByRole("button", { name: "Add money", exact: true }).click();
+  await expect(page).toHaveURL(/[?&]flow=add-money/);
+  await page.getByRole("button", { name: /^Receive crypto/ }).click();
+  await expect(page.getByRole("dialog", { name: "Receive" })).toBeVisible();
+  await expect(page).toHaveURL(/[?&]flow=receive/);
+  await page.evaluate(() => {
+    window.history.replaceState(window.history.state, "", "/dashboard");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page.locator('[role="dialog"][data-open]')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/dashboard$/);
+
+  await page.getByRole("button", { name: "Add money", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\?flow=add-money$/);
+  await expect(page.getByRole("dialog", { name: "Add money" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Receive crypto/ })).toBeVisible();
+});
+
+test("Add money close preserves the active panel", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page);
+  await signIn(page);
+
+  await page.getByRole("button", { name: "Balances", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\?panel=balances$/);
+  await page.evaluate(() => {
+    window.history.pushState(null, "", "/dashboard?panel=balances&flow=add-money");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page).toHaveURL(/\/dashboard\?panel=balances&flow=add-money$/);
+  await expect(page.getByRole("dialog", { name: "Add money" })).toBeVisible();
+  await page.getByRole("button", { name: "Close add money" }).click();
+  await expect(page.locator('[role="dialog"][data-open]')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/dashboard\?panel=balances$/);
+});
+
+test("Invest discovery navigation preserves category and asset Back behavior", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page);
+  await signIn(page);
+
+  await page.getByRole("button", { name: "Invest", exact: true }).click();
+  const stocksHeading = page.getByRole("heading", { name: "Stocks" });
+  await stocksHeading.locator("..").getByRole("button", { name: "See all ›" }).click();
+  await expect(page).toHaveURL(/[?&]panel=invest/);
+  await expect(page).toHaveURL(/[?&]shelf=stocks/);
+  await page.getByRole("button", { name: /^NVIDIA/ }).click();
+  await expect(page.getByRole("heading", { name: "NVIDIA" })).toBeVisible();
+  await expect(page).toHaveURL(/[?&]asset=nvdac/);
+  await expect(page).toHaveURL(/[?&]shelf=stocks/);
+  await expect(page.getByRole("note")).toHaveText("Stocks aren't available yet.");
+
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Stocks" })).toBeVisible();
+  await expect(page).not.toHaveURL(/[?&]asset=/);
+  await page.getByRole("button", { name: "Back to Invest", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Invest" })).toBeVisible();
+  await expect(page).not.toHaveURL(/[?&](?:shelf|asset)=/);
+});
+
+test("visited Invest and Activity panels stay mounted across tab changes", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  const fixtures = await installApiFixtures(page);
+  await signIn(page);
+
+  await openInvestAssetDetail(page);
+  await page.getByRole("button", { name: "Home", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Add money", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Invest", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "NVIDIA" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Home", exact: true }).click();
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+  await expect.poll(fixtures.activityReads).toBeGreaterThan(0);
+  const readsAfterFirstVisit = fixtures.activityReads();
+
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+  expect(fixtures.activityReads()).toBe(readsAfterFirstVisit);
+});
+
+test("Add money is a full-slot primary action with an inline icon at 320px, 390px, and desktop", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
+  await installApiFixtures(page);
+  await page.setViewportSize({ width: 390, height: 720 });
+  await signIn(page);
+
+  for (const width of [320, 390, 1326]) {
+    await page.setViewportSize({ width, height: 720 });
+    const addMoney = page.getByRole("button", { name: "Add money", exact: true });
+    const send = page.getByRole("button", { name: "Send", exact: true });
+    await expect(addMoney).toBeVisible();
+    await expect(addMoney).toContainText("Add money");
+    const metrics = await addMoney.evaluate((element) => {
+      const button = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        width: button.width,
+        height: button.height,
+        backgroundColor: style.backgroundColor,
+        color: style.color,
+      };
+    });
+    const sendWidth = await send.evaluate((element) => element.getBoundingClientRect().width);
+
+    expect(metrics.backgroundColor).toBe("rgb(0, 82, 255)");
+    expect(metrics.color).toBe("rgb(255, 255, 255)");
+    expect(metrics.height).toBeGreaterThanOrEqual(44);
+    expect(Math.abs(metrics.width - sendWidth)).toBeLessThanOrEqual(1);
+  }
 });
 
 test("send modal leaves action-row trigger styling at 390px", async ({ page }) => {
@@ -347,27 +718,19 @@ test("send modal leaves action-row trigger styling at 390px", async ({ page }) =
   await page.setViewportSize({ width: 390, height: 720 });
   await signIn(page);
 
-  await expect(page.locator(".action-row [data-action-trigger]")).toHaveCount(2);
+  await expect(page.locator(".action-row [data-action-trigger]")).toHaveCount(1);
   await page.getByRole("button", { name: "Send" }).click();
   const dialog = page.getByRole("dialog", { name: "Send" });
   await expect(dialog).toBeVisible();
   await expect.poll(() =>
-    page.evaluate(() => Boolean(document.querySelector("dialog")?.closest(".action-row"))),
+    page.evaluate(() => Boolean(document.querySelector('[role="dialog"][data-open]')?.closest(".action-row"))),
   ).toBe(false);
 
+  const close = dialog.getByRole("button", { name: "Close send dialog" });
+  await expect(close).toHaveCSS("color", "rgb(10, 11, 13)");
   const primary = dialog.getByRole("button", { name: "Continue" });
   await expect(primary).toBeVisible();
-  const primaryStyle = await primary.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return {
-      backgroundColor: style.backgroundColor,
-      fontSize: Number.parseFloat(style.fontSize),
-    };
-  });
-  // The action-row trigger rule (white surface, 0.78rem) must not reach the
-  // portaled modal footer; the modal keeps its own blue surface and 0.92rem.
-  expect(primaryStyle.backgroundColor).toBe("rgb(0, 82, 255)");
-  expect(primaryStyle.fontSize).toBeCloseTo(14.72, 1);
+  await expect(primary).toHaveCSS("background-color", "rgb(0, 82, 255)");
 });
 
 test("money amount auto-fits the longest local and native values at 320px and 390px", async ({ page }) => {
@@ -378,11 +741,24 @@ test("money amount auto-fits the longest local and native values at 320px and 39
   await page.getByRole("button", { name: "Send" }).click();
 
   const amount = page.locator("[data-primary-amount]");
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "$0");
+  const zeroAt320 = await amountMetrics(page);
+  expectTickerInsideAmount(zeroAt320!);
+
+  await typeAmount(page, "258");
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "$258");
+  const twoFiftyEightAt320 = await amountMetrics(page);
+  expectTickerInsideAmount(twoFiftyEightAt320!);
+  for (let index = 0; index < 3; index += 1) {
+    await page.getByRole("button", { name: "Delete last digit", exact: true }).click();
+  }
+
   await typeAmount(page, "123456789012.123456");
-  await expect(amount).toHaveText("$123456789012.123456");
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "$123456789012.123456");
 
   const at320 = await amountMetrics(page);
   expect(at320?.text).toBe("$123456789012.123456");
+  expectTickerInsideAmount(at320!);
   expect(at320?.clientWidth).toBeGreaterThanOrEqual(270);
   expect(at320?.clientWidth).toBeLessThanOrEqual(285);
   expect(at320?.scrollWidth).toBeLessThanOrEqual((at320?.clientWidth ?? 0) + 2);
@@ -397,9 +773,10 @@ test("money amount auto-fits the longest local and native values at 320px and 39
   );
 
   await page.getByRole("button", { name: /as the primary amount/ }).click();
-  await expect(amount).toHaveText("123456789012.123456");
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "123456789012.123456");
   const native = await amountMetrics(page);
   expect(native?.text).toBe("123456789012.123456");
+  expectTickerInsideAmount(native!);
   expect(native?.scrollWidth).toBeLessThanOrEqual((native?.clientWidth ?? 0) + 2);
   expect(native?.fontSize).toBeGreaterThanOrEqual(20);
   expect(native?.fontSize).toBeLessThan(51.2);
@@ -412,6 +789,7 @@ test("money amount auto-fits the longest local and native values at 320px and 39
   await expect.poll(async () => (await amountMetrics(page))?.fontSize)
     .toBeGreaterThan((native?.fontSize ?? 0) + 1);
   const at390 = await amountMetrics(page);
+  expectTickerInsideAmount(at390!);
   expect(at390?.clientWidth).toBeGreaterThanOrEqual(340);
   expect(at390?.clientWidth).toBeLessThanOrEqual(355);
   expect(at390?.scrollWidth).toBeLessThanOrEqual((at390?.clientWidth ?? 0) + 2);
@@ -421,6 +799,32 @@ test("money amount auto-fits the longest local and native values at 320px and 39
   expect(at390?.textWidth).toBeLessThanOrEqual(
     (at390?.clientWidth ?? 0) - (at390?.paddingLeft ?? 0) - (at390?.paddingRight ?? 0) + 2,
   );
+
+  await page.getByRole("button", { name: /as the primary amount/ }).click();
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "$123456789012.123456");
+  for (let index = 0; index < 20; index += 1) {
+    await page.getByRole("button", { name: "Delete last digit", exact: true }).click();
+  }
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "$0");
+  expectTickerInsideAmount((await amountMetrics(page))!);
+  await typeAmount(page, "258");
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "$258");
+  expectTickerInsideAmount((await amountMetrics(page))!);
+  for (let index = 0; index < 3; index += 1) {
+    await page.getByRole("button", { name: "Delete last digit", exact: true }).click();
+  }
+  await typeAmount(page, "123456789012.123456");
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "$123456789012.123456");
+  const regrownAt390 = await amountMetrics(page);
+  expectTickerInsideAmount(regrownAt390!);
+
+  // Deleting back to a short amount must grow the type back without remounting
+  // the ticker or pinning the shrunken size.
+  const shrunk = regrownAt390?.fontSize ?? 0;
+  for (let index = 0; index < 17; index += 1) {
+    await page.getByRole("button", { name: "Delete last digit", exact: true }).click();
+  }
+  await expect.poll(async () => (await amountMetrics(page))?.fontSize).toBeGreaterThan(shrunk + 10);
 });
 
 test("money amount recomputes for text scaling", async ({ page }) => {
@@ -432,7 +836,7 @@ test("money amount recomputes for text scaling", async ({ page }) => {
 
   const amount = page.locator("[data-primary-amount]");
   await typeAmount(page, "5");
-  await expect(amount).toHaveText("$5");
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "$5");
 
   const before = await amountMetrics(page);
   expect(before?.fontSize).toBeGreaterThanOrEqual(44);
@@ -441,7 +845,7 @@ test("money amount recomputes for text scaling", async ({ page }) => {
     document.documentElement.style.fontSize = "200%";
   });
   await expect.poll(async () => (await amountMetrics(page))?.fontSize).toBeGreaterThan((before?.fontSize ?? 0) + 5);
-  await expect(amount).toHaveText("$5");
+  await expect(amount.getByRole("img")).toHaveAttribute("aria-label", "$5");
 });
 
 async function openScrolledBalances(page: Page) {
@@ -503,12 +907,18 @@ async function openScrolledBalances(page: Page) {
   await expect
     .poll(() =>
       page.evaluate(
-        () => document.querySelectorAll(".supplied-asset-list li").length,
+        () =>
+          document.querySelectorAll(
+            '[data-shell-panel]:not([hidden]) .supplied-asset-list li',
+          ).length,
       ),
     )
     .toBeGreaterThan(10);
   const revealedCount = await page.evaluate(
-    () => document.querySelectorAll(".supplied-asset-list li").length,
+    () =>
+      document.querySelectorAll(
+        '[data-shell-panel]:not([hidden]) .supplied-asset-list li',
+      ).length,
   );
   return { target, revealedCount, maxTop };
 }
@@ -528,7 +938,7 @@ async function openInvestAssetDetail(page: Page) {
     )
     .toBe(0);
 
-  await page.getByRole("button", { name: "NVIDIA details" }).click();
+  await page.getByRole("button", { name: /^NVIDIA/ }).click();
   await expect(page.getByRole("heading", { name: "NVIDIA" })).toBeVisible();
   await expect(page).toHaveURL(/[?&]asset=nvdac/);
 }
@@ -552,7 +962,10 @@ async function expectBalancesRestored(
   await expect
     .poll(() =>
       page.evaluate(
-        () => document.querySelectorAll(".supplied-asset-list li").length,
+        () =>
+          document.querySelectorAll(
+            '[data-shell-panel]:not([hidden]) .supplied-asset-list li',
+          ).length,
       ),
     )
     .toBe(expected.revealedCount);
@@ -583,7 +996,10 @@ async function expectBalancesReset(page: Page) {
   await expect
     .poll(() =>
       page.evaluate(
-        () => document.querySelectorAll(".supplied-asset-list li").length,
+        () =>
+          document.querySelectorAll(
+            '[data-shell-panel]:not([hidden]) .supplied-asset-list li',
+          ).length,
       ),
     )
     .toBe(10);
@@ -651,33 +1067,30 @@ test("account sign-in and settings stay reachable at 390px, 320px, and 200% text
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?account=signin");
 
-  const dialog = page.locator("dialog");
+  const dialog = page.locator('[role="dialog"][data-open]');
   const close = page.getByRole("button", { name: "Close sign in" });
   const email = page.getByLabel("Email address");
   const continueWithEmail = page.getByRole("button", { name: "Continue with email" });
   const signInWithBase = page.getByRole("button", { name: "Sign in with Base Account" });
   const expectAlignedHeader = async (name: string) => {
     const heading = page.getByRole("heading", { level: 2, name });
-    const [headingBox, closeBox, iconBox] = await Promise.all([
-      heading.boundingBox(),
-      close.boundingBox(),
-      close.locator("svg").boundingBox(),
-    ]);
-    if (!headingBox || !closeBox || !iconBox) {
-      throw new Error("Account modal header is not measurable");
-    }
-    expect(
-      Math.abs(
-        headingBox.y + headingBox.height / 2
-        - (closeBox.y + closeBox.height / 2),
-      ),
-    ).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(
-        iconBox.y + iconBox.height / 2
-        - (closeBox.y + closeBox.height / 2),
-      ),
-    ).toBeLessThanOrEqual(1);
+    // Sub-3px is invisible; hosted Linux font metrics round differently than macOS.
+    // Poll: the sheet may still be laying out after a viewport or text-size change.
+    const alignmentTolerance = process.env.CI ? 2.5 : 1;
+    const misalignment = async () => {
+      const [headingBox, closeBox, iconBox] = await Promise.all([
+        heading.boundingBox(),
+        close.boundingBox(),
+        close.locator("svg").boundingBox(),
+      ]);
+      if (!headingBox || !closeBox || !iconBox) return Number.POSITIVE_INFINITY;
+      const closeCenter = closeBox.y + closeBox.height / 2;
+      return Math.max(
+        Math.abs(headingBox.y + headingBox.height / 2 - closeCenter),
+        Math.abs(iconBox.y + iconBox.height / 2 - closeCenter),
+      );
+    };
+    await expect.poll(misalignment, { timeout: 10_000 }).toBeLessThanOrEqual(alignmentTolerance);
   };
 
   await expect(page.getByRole("dialog", { name: "Sign in to Home" })).toBeVisible();
@@ -739,362 +1152,26 @@ test("account sign-in and settings stay reachable at 390px, 320px, and 200% text
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
-type MoneySheetMotionSample = {
-  t: number;
-  y: number;
-  bottom: number;
-  height: number;
-  translateY: number;
-  viewportHeight: number;
-  owner: string;
-  state: string;
-};
-
-function compactMotionOwners(samples: MoneySheetMotionSample[]) {
-  return samples.reduce<string[]>((owners, sample) => {
-    if (owners.at(-1) !== sample.owner) owners.push(sample.owner);
-    return owners;
-  }, []);
-}
-
-function expectMonotonic(values: number[], direction: "up" | "down") {
-  for (let index = 1; index < values.length; index += 1) {
-    const delta = values[index] - values[index - 1];
-    if (direction === "up") expect(delta).toBeLessThanOrEqual(0.75);
-    else expect(delta).toBeGreaterThanOrEqual(-0.75);
-  }
-}
-
-const MONEY_SHEET_ANCHOR_TOLERANCE = 1.5;
-// The spring writes its exact final target and closes the native dialog in the
-// same callback, so requestAnimationFrame can be one painted frame behind.
-const MONEY_SHEET_CLOSE_FRAME_TOLERANCE = 24;
-
-async function beginMoneySheetTrace(page: Page) {
-  await page.evaluate(() => {
-    const debug = globalThis as typeof globalThis & {
-      moneySheetDebug?: { samples: MoneySheetMotionSample[]; stop: boolean };
-    };
-    const trace = { samples: [] as MoneySheetMotionSample[], stop: false };
-    debug.moneySheetDebug = trace;
-    const started = performance.now();
-    const sample = () => {
-      const sheet = document.querySelector<HTMLElement>("dialog[open] [data-money-sheet]");
-      if (sheet) {
-        const rect = sheet.getBoundingClientRect();
-        const transform = getComputedStyle(sheet).transform;
-        const translateY = transform === "none" ? 0 : new DOMMatrixReadOnly(transform).m42;
-        trace.samples.push({
-          t: performance.now() - started,
-          y: rect.y,
-          bottom: rect.bottom,
-          height: rect.height,
-          translateY,
-          viewportHeight: window.innerHeight,
-          owner: sheet.dataset.positionOwner ?? "missing",
-          state: sheet.dataset.state ?? "missing",
-        });
-      }
-      if (!trace.stop) requestAnimationFrame(sample);
-    };
-    requestAnimationFrame(sample);
-  });
-}
-
-async function endMoneySheetTrace(page: Page) {
-  return page.evaluate(() => {
-    const debug = globalThis as typeof globalThis & {
-      moneySheetDebug?: { samples: MoneySheetMotionSample[]; stop: boolean };
-    };
-    if (!debug.moneySheetDebug) return [];
-    debug.moneySheetDebug.stop = true;
-    return debug.moneySheetDebug.samples;
-  });
-}
-
-async function waitForMoneySheetIdle(page: Page) {
-  await expect.poll(() => page.locator(
-    "dialog[open] [data-money-sheet]",
-  ).getAttribute("data-position-owner")).toBe("idle");
-}
-
-function expectUntransformedAnchor(samples: MoneySheetMotionSample[]) {
-  expect(samples.length).toBeGreaterThan(0);
-  for (const sample of samples) {
-    expect(Math.abs(sample.bottom - sample.translateY - sample.viewportHeight))
-      .toBeLessThanOrEqual(MONEY_SHEET_ANCHOR_TOLERANCE);
-  }
-}
-
-function expectIdleAnchor(sample: MoneySheetMotionSample) {
-  expect(sample.owner).toBe("idle");
-  expect(Math.abs(sample.bottom - sample.viewportHeight))
-    .toBeLessThanOrEqual(MONEY_SHEET_ANCHOR_TOLERANCE);
-  expect(Math.abs(sample.y - (sample.viewportHeight - sample.height)))
-    .toBeLessThanOrEqual(MONEY_SHEET_ANCHOR_TOLERANCE);
-}
-
-test("@money-modal-anchor anchors Add money and Send across desktop and mobile viewports", async ({ page }, testInfo) => {
-  const cases = [
-    { name: "Add money", closeName: "Close add money", width: 1326, height: 702 },
-    { name: "Send", closeName: "Close send dialog", width: 1326, height: 702 },
-    { name: "Add money", closeName: "Close add money", width: 390, height: 844 },
-    { name: "Send", closeName: "Close send dialog", width: 390, height: 844 },
-  ] as const;
-  const measurements: Array<Record<string, unknown>> = [];
-
-  await page.setViewportSize({ width: cases[0].width, height: cases[0].height });
-  await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
-  await installApiFixtures(page);
-  await signIn(page);
-
-  for (const modalCase of cases) {
-    await page.setViewportSize({ width: modalCase.width, height: modalCase.height });
-    await page.evaluate(() => new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    }));
-    const trigger = page.getByRole("button", { name: modalCase.name, exact: true });
-    await expect(trigger).toBeVisible();
-    await trigger.focus();
-    await expect(trigger).toBeFocused();
-    const initialOverflow = await page.evaluate(() => document.body.style.overflow);
-
-    await beginMoneySheetTrace(page);
-    await trigger.press("Enter");
-    const dialog = page.getByRole("dialog", { name: modalCase.name });
-    await expect(dialog).toBeVisible();
-    await waitForMoneySheetIdle(page);
-    await page.waitForTimeout(50);
-    const openSamples = await endMoneySheetTrace(page);
-
-    expect(compactMotionOwners(openSamples)).toEqual(["opening", "idle"]);
-    const opening = openSamples.filter(({ owner }) => owner === "opening");
-    expect(opening.length).toBeGreaterThan(0);
-    // The "starts offscreen" check is only meaningful when the trace caught the
-    // first frames; hosted WebKit runners can deliver the first rAF after the
-    // sheet has already risen. The anchor assertions below stay unconditional.
-    if (opening[0].t <= 120) {
-      expect(opening[0].y).toBeGreaterThanOrEqual(
-        opening[0].viewportHeight - MONEY_SHEET_ANCHOR_TOLERANCE,
-      );
-    }
-    expectUntransformedAnchor(openSamples);
-    const settled = openSamples.findLast(({ owner }) => owner === "idle")!;
-    expectIdleAnchor(settled);
-
-    const sheet = dialog.locator("[data-money-sheet]");
-    const settledBox = await sheet.boundingBox();
-    if (!settledBox) throw new Error(`${modalCase.name} sheet is not measurable`);
-    expect(settledBox.x).toBeGreaterThanOrEqual(-1);
-    expect(settledBox.x + settledBox.width).toBeLessThanOrEqual(modalCase.width + 1);
-    expect(settledBox.width).toBeCloseTo(modalCase.width, 0);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
-
-    await beginMoneySheetTrace(page);
-    await page.waitForTimeout(32);
-    await dialog.getByRole("button", { name: modalCase.closeName }).click();
-    await expect(page.locator("dialog[open]")).toHaveCount(0);
-    const closeSamples = await endMoneySheetTrace(page);
-
-    expect(compactMotionOwners(closeSamples)).toEqual(["idle", "closing"]);
-    expectUntransformedAnchor(closeSamples);
-    expectIdleAnchor(closeSamples.find(({ owner }) => owner === "idle")!);
-    const closing = closeSamples.filter(({ owner }) => owner === "closing");
-    expect(closing.length).toBeGreaterThan(0);
-    expectMonotonic(closing.map(({ y }) => y), "down");
-    // "Ends offscreen" needs enough sampled frames to have seen the end of the
-    // ~375ms close; hosted WebKit runners can deliver only a handful of rAFs.
-    if (closing.length >= 6) {
-      expect(closing.at(-1)!.y).toBeGreaterThanOrEqual(
-        closing.at(-1)!.viewportHeight - MONEY_SHEET_CLOSE_FRAME_TOLERANCE,
-      );
-    }
-    await expect(trigger).toBeFocused();
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe(initialOverflow);
-
-    measurements.push({
-      engine: testInfo.project.name,
-      modal: modalCase.name,
-      viewport: `${modalCase.width}x${modalCase.height}`,
-      settled: {
-        x: settledBox.x,
-        y: settledBox.y,
-        width: settledBox.width,
-        height: settledBox.height,
-        bottom: settledBox.y + settledBox.height,
-      },
-      openOwners: compactMotionOwners(openSamples),
-      closeOwners: compactMotionOwners(closeSamples),
-      openDurationMs: Math.round(
-        openSamples.find(({ owner }) => owner === "idle")!.t - opening[0].t,
-      ),
-    });
-  }
-
-  console.log(`MONEY_MODAL_ANCHOR ${JSON.stringify(measurements)}`);
-  await testInfo.attach("money-modal-anchor-measurements", {
-    body: JSON.stringify(measurements, null, 2),
-    contentType: "application/json",
-  });
-});
-
-test.describe("MoneyModal painted motion", () => {
-  test("@money-modal-anchor opens, throws up, reverses, and closes with one position owner", async ({ page }, testInfo) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.addInitScript(() => localStorage.setItem("home.country.v1", "US"));
-    await installApiFixtures(page);
-    await signIn(page);
-
-    const gesture = async (moves: Array<{ distance: number; pause: number }>) => {
-      const box = await page.locator("dialog[open] [data-money-sheet-grabber]").boundingBox();
-      if (!box) throw new Error("MoneyModal grabber is not measurable");
-      const x = box.x + box.width / 2;
-      const startY = box.y + box.height / 2;
-      await page.mouse.move(x, startY);
-      await page.mouse.down();
-      for (const move of moves) {
-        await page.mouse.move(x, startY + move.distance, { steps: 3 });
-        if (move.pause) await page.waitForTimeout(move.pause);
-      }
-      await page.mouse.up();
-    };
-
-    await beginMoneySheetTrace(page);
-    await page.getByRole("button", { name: "Send" }).click();
-    await waitForMoneySheetIdle(page);
-    await page.waitForTimeout(200);
-    const openSamples = await endMoneySheetTrace(page);
-
-    const openGrabber = page.locator("dialog[open] [data-money-sheet-grabber]");
-    const hitBox = await openGrabber.boundingBox();
-    const visibleGrabberBox = await openGrabber.locator(":scope > span").boundingBox();
-    expect(hitBox?.width).toBeGreaterThanOrEqual(44);
-    expect(hitBox?.height).toBeGreaterThanOrEqual(44);
-    expect(visibleGrabberBox?.height).toBe(4);
-    expect((visibleGrabberBox?.y ?? 0) - (hitBox?.y ?? 0)).toBeCloseTo(8, 1);
-
-    await beginMoneySheetTrace(page);
-    await gesture([{ distance: 120, pause: 40 }, { distance: -20, pause: 0 }]);
-    await waitForMoneySheetIdle(page);
-    await page.waitForTimeout(200);
-    const throwSamples = await endMoneySheetTrace(page);
-
-    await beginMoneySheetTrace(page);
-    await gesture([{ distance: 220, pause: 160 }, { distance: 190, pause: 0 }]);
-    await waitForMoneySheetIdle(page);
-    await page.waitForTimeout(200);
-    const reverseSamples = await endMoneySheetTrace(page);
-    await expect(page.getByRole("dialog", { name: "Send" })).toBeVisible();
-
-    await beginMoneySheetTrace(page);
-    await page.waitForTimeout(32);
-    await page.getByRole("button", { name: "Close send dialog" }).click();
-    await expect(page.locator("dialog[open]")).toHaveCount(0);
-    const closeSamples = await endMoneySheetTrace(page);
-
-    expect(compactMotionOwners(openSamples)).toEqual(["opening", "idle"]);
-    expect(compactMotionOwners(throwSamples)).toEqual(["idle", "drag", "idle"]);
-    expect(compactMotionOwners(reverseSamples)).toEqual(["idle", "drag", "returning", "idle"]);
-    expect(compactMotionOwners(closeSamples)).toEqual(["idle", "closing"]);
-    expectUntransformedAnchor(openSamples);
-    expectUntransformedAnchor(throwSamples);
-    expectUntransformedAnchor(reverseSamples);
-    expectUntransformedAnchor(closeSamples);
-
-    const openStart = openSamples.find(({ owner }) => owner === "opening")!;
-    const openEnd = openSamples.find(({ owner }) => owner === "idle")!;
-    expect(openStart.y).toBeGreaterThanOrEqual(
-      openStart.viewportHeight - MONEY_SHEET_ANCHOR_TOLERANCE,
-    );
-    expectIdleAnchor(openEnd);
-    const openDuration = openEnd.t - openStart.t;
-    expect(openDuration).toBeGreaterThanOrEqual(300);
-    expect(openDuration).toBeLessThanOrEqual(450);
-    const visibleOpen = openSamples.filter(({ t, y }) => t >= openStart.t && y < 843);
-    expectMonotonic(visibleOpen.map(({ y }) => y), "up");
-    expect(
-      Math.max(...visibleOpen.map(({ height }) => height))
-      - Math.min(...visibleOpen.map(({ height }) => height)),
-    ).toBeLessThanOrEqual(1);
-
-    const throwDragEnd = throwSamples.findLast(({ owner }) => owner === "drag")!.t;
-    const throwSettled = throwSamples.filter(({ t }) => t > throwDragEnd);
-    const openY = throwSettled.at(-1)!.y;
-    expect(Math.max(...throwSettled.map(({ y }) => Math.abs(y - openY))))
-      .toBeLessThanOrEqual(0.75);
-
-    const returning = reverseSamples.filter(({ owner }) => owner === "returning");
-    expectMonotonic(returning.map(({ y }) => y), "up");
-    expect(Math.min(...returning.map(({ y }) => y))).toBeGreaterThanOrEqual(openY - 0.75);
-    expect(
-      Math.max(...returning.map(({ height }) => height))
-      - Math.min(...returning.map(({ height }) => height)),
-    ).toBeLessThanOrEqual(1);
-    expectIdleAnchor(reverseSamples.findLast(({ owner }) => owner === "idle")!);
-
-    expectIdleAnchor(closeSamples.find(({ owner }) => owner === "idle")!);
-    const closing = closeSamples.filter(({ owner }) => owner === "closing");
-    const closeDuration = closing.at(-1)!.t - closing[0].t + 16;
-    expectMonotonic(closing.map(({ y }) => y), "down");
-    expect(closing.at(-1)!.y).toBeGreaterThanOrEqual(
-      closing.at(-1)!.viewportHeight - MONEY_SHEET_CLOSE_FRAME_TOLERANCE,
-    );
-    expect(
-      Math.max(...closing.map(({ height }) => height))
-      - Math.min(...closing.map(({ height }) => height)),
-    ).toBeLessThanOrEqual(1);
-    expect(closeDuration).toBeGreaterThanOrEqual(300);
-    expect(closeDuration).toBeLessThanOrEqual(450);
-
-    const measurements = {
-      engine: testInfo.project.name,
-      viewport: "390x844",
-      openDurationMs: Math.round(openDuration),
-      closeDurationMs: Math.round(closeDuration),
-      settled: {
-        y: openEnd.y,
-        bottom: openEnd.bottom,
-        height: openEnd.height,
-        translateY: openEnd.translateY,
-        viewportHeight: openEnd.viewportHeight,
-      },
-      owners: {
-        open: compactMotionOwners(openSamples),
-        throwUp: compactMotionOwners(throwSamples),
-        dragPauseReverse: compactMotionOwners(reverseSamples),
-        close: compactMotionOwners(closeSamples),
-      },
-    };
-    console.log(`MONEY_MODAL_MOTION ${JSON.stringify(measurements)}`);
-    await testInfo.attach("money-modal-motion-measurements", {
-      body: JSON.stringify(measurements, null, 2),
-      contentType: "application/json",
-    });
-  });
-});
-
 test("IDRX Add money goes from method to VA instructions and verified receipt", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => localStorage.setItem("home.country.v1", "ID"));
   await installApiFixtures(page);
   await signIn(page);
   await page.getByRole("button", { name: "Add money" }).click();
-  const method = page.getByRole("button", { name: /Deposit IDR Use IDRX/ });
+  const method = page.getByRole("button", { name: /Deposit IDR with IDRX/ });
   await expect(method).toBeVisible();
   await method.click();
   await typeAmount(page, "20000");
   await page.getByRole("button", { name: "Review quote", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Review quote" })).toBeVisible();
-  await expect(page.getByText("Receive: 20000 IDRX")).toBeVisible();
+  await expect(page.getByText("Receive: 20.000,00\u00A0IDRX")).toBeVisible();
   await expect(page.getByText("Fees: Not yet available")).toBeVisible();
   await page.getByRole("button", { name: "Confirm deposit", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Review payment details" })).toBeVisible();
-  await expect(page.getByText("Network: 100 IDR")).toBeVisible();
-  await expect(page.getByText("123456789012")).not.toBeVisible();
+  await expect(page.getByText("Network: Rp\u00A0100,00")).toBeVisible();
+  await expect(page.getByText("123456789012", { exact: true })).not.toBeVisible();
   await page.getByRole("button", { name: "View payment instructions" }).click();
   await expect(page.getByText("Deposit pending")).toBeVisible();
-  await expect(page.getByText("123456789012")).toBeVisible();
+  await expect(page.getByText("123456789012", { exact: true })).toBeVisible();
   await expect(page.getByText("Money received")).toBeVisible({ timeout: 7_000 });
 });

@@ -5,9 +5,10 @@ export {
 } from "./transfer-actions";
 export {
   TRANSFER_ASSETS,
-  encodeUsdcTransfer,
   formatSendConfirmAmount,
   formatTransferAmount,
+  getTransferAsset,
+  getTransferAssets,
   isTransferRecipient,
   normalizeTransferRecipient,
   parseTransferAmount,
@@ -15,6 +16,8 @@ export {
 export {
   TransferExecutionError,
   type ConfirmedTransfer,
+  type TransferAsset,
+  type TransferAssetAvailability,
   type TransferAssetId,
   type TransferRequest,
 } from "@/shared/transfers/types";

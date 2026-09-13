@@ -15,8 +15,8 @@ Nothing is live today. The database is disposable. We choose the smallest thing 
 3. Auth scope. A request acts only for the verified CDP subject or Base SIWE address, its smart account, chain 8453, and the declared provider. Client-supplied user ids and `?wallet=` never widen scope.
 4. One owner fence (rules below).
 5. A thin record of user-initiated actions, so a confirmed action survives reload and shows in Activity before the indexer catches up.
-6. User settings.
-7. Funding orders and provider integrations (`server/funding`, untouched by this reset).
+6. User preferences (country) — client-side in localStorage; no server table (D2, Sept 12).
+7. Funding orders and provider integrations (`server/funding`; Coinbase Onramp is a manifest provider since Sept 12).
 
 ## What Home does not own (delete)
 
@@ -27,7 +27,7 @@ Nothing is live today. The database is disposable. We choose the smallest thing 
 
 ## Data model
 
-Neon Postgres stays. Ours is two tables; funding's tables are unchanged. One shared executor `server/db/sql.ts` serves both (funding's `ripio-store.ts` currently imports `SqlExecutor` from `money-actions/postgres-sql.ts`; the executor lands first).
+Neon Postgres stays. Deliberate durable state is `actions`, funding's provider tables, and `schema_migrations`, which exists only to make the single `bun run db:migrate` command idempotent. One shared executor `server/db/sql.ts` serves both. Native Base SIWE challenges are stateless: the signed HttpOnly challenge cookie carries the address, origin, message hash, nonce, issue time, and five-minute expiry, so authentication creates no database row.
 
 ```sql
 create table actions (
@@ -45,12 +45,6 @@ create table actions (
 );
 create index actions_owner_recent on actions (owner_key, confirmed_at desc) where confirmed_at is not null;
 
-create table user_settings (
-  owner_key        text primary key,
-  country          text,
-  display_currency text,
-  updated_at       timestamptz not null default now()
-);
 ```
 
 - No `status` column and no `plan_hash` (the server never observes the dispatch, so a hash enforces nothing). Status is derived at read time:
@@ -91,7 +85,7 @@ One `ownerGeneration` counter replaces the four-field fence in `cdp-session-life
 
 ## Performance
 
-- Startup gate: verified session plus wallet address renders the shell with cached balances; every other surface streams in afterward.
+- Startup gate: the shell may provisionally paint the same device's persisted balances for the SDK-identified owner; every request and provider call still requires server verification, and every other surface streams in afterward.
 - Frame budget: never call `setState` for each pointer move or price tick. Use transforms, opacity, motion values, or imperative text writes.
 - Mark `shell:paint`, `session:verified`, `wallet:ready`, `balances:painted`, and `action:first-interactive`; CI budgets `balances:painted`.
 
@@ -111,7 +105,7 @@ One `ownerGeneration` counter replaces the four-field fence in `cdp-session-life
 
 ## Gate for the reset PR
 
-1. `bun check` green; the Postgres CI job is repurposed to run the new schema (`actions`, `user_settings`) plus funding's stores against a real Postgres — not deleted, it is the only real-Postgres job.
+1. `bun check` green; the Postgres CI job is repurposed to run `db:migrate` then the `actions` and funding store contracts against a real Postgres — not deleted, it is the only real-Postgres job.
 2. Behavioral contract test stubbing cdp-core's transport: exactly one `POST …/send` with `X-Idempotency-Key === action.id` per confirm, including after a resolve-then-throw retry.
 3. Playwright with `smoke-fixture-provider.tsx` (already counts dispatches): `sendUserOperation` resolves-then-throws once → dispatch count 1 after retry, handle recorded, row shows `pending`.
 4. Fence test: prepare generation ≠ confirm generation → zero provider calls, zero server POSTs.

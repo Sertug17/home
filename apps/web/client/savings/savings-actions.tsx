@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { AccountWalletClient } from "@/client/account/cdp-client";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
+import { activityOwnerKey } from "@/client/activity/use-activity";
+import { useHomeToast } from "@/client/home/use-home-toast";
 import {
   MoneyAmountDisplay,
   MoneyConfirmSummary,
@@ -13,6 +16,7 @@ import {
   decimalFromBaseUnits,
   isPositiveDecimalAmount,
   useMoneyAssetPricing,
+  type MoneyAmountChangeSource,
 } from "@/client/money-modal";
 import type {
   OperationResult,
@@ -21,7 +25,6 @@ import type {
 import { formatApy, formatUsdcUsd, parseUsdcAmount } from "@/client/savings/format";
 import type { MorphoVaultCandidate } from "@/shared/savings/types";
 import modal from "@/client/money-modal/money-modal.module.css";
-import styles from "./savings-actions.module.css";
 
 export type SavingsActionMode = "deposit" | "withdraw";
 
@@ -53,13 +56,16 @@ export function SavingsMoneyDialog({
   onConfirmed,
 }: SavingsMoneyDialogProps) {
   const [amount, setAmount] = useState("");
+  const [amountChangeSource, setAmountChangeSource] =
+    useState<MoneyAmountChangeSource>("programmatic");
   const [amountBaseUnits, setAmountBaseUnits] = useState<string | null>(null);
   const [preparedAction, setPreparedAction] = useState<PreparedMoneyAction | null>(null);
   const [attemptedAction, setAttemptedAction] = useState(false);
   const [step, setStep] = useState<DialogStep>("amount");
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<{ mode: SavingsActionMode; amount: string } | null>(null);
+  const [success, setSuccess] = useState<{ mode: SavingsActionMode; amount: string; candidateName: string } | null>(null);
   const [openedAt] = useState(() => Date.now());
+  const { add: addToast } = useHomeToast(activityOwnerKey(session));
   const expiredPrepared = preparedAction
     ? Date.parse(preparedAction.expiresAt) <= openedAt
     : false;
@@ -73,12 +79,30 @@ export function SavingsMoneyDialog({
 
   useEffect(() => {
     if (!success) return;
-    const timer = window.setTimeout(() => setSuccess(null), 6000);
-    return () => window.clearTimeout(timer);
-  }, [success]);
+    addToast({
+      id: `savings:${success.mode}:${success.amount}`,
+      tone: "success",
+      role: "status",
+      duration: 6_000,
+      onClose: () => setSuccess(null),
+      message: (
+        <div className="flex flex-col gap-1">
+          <strong className="text-row-label font-semibold">
+            {success.mode === "deposit" ? "Deposited" : "Withdrew"} {success.amount}
+          </strong>
+          <p className="text-metadata text-muted-foreground">Save · {success.candidateName}</p>
+        </div>
+      ),
+    });
+  }, [addToast, success]);
+
+  function changeAmount(value: string, source: MoneyAmountChangeSource) {
+    setAmountChangeSource(source);
+    setAmount(value);
+  }
 
   function reset() {
-    setAmount("");
+    changeAmount("", "programmatic");
     setAmountBaseUnits(null);
     setPreparedAction(null);
     setAttemptedAction(false);
@@ -121,7 +145,7 @@ export function SavingsMoneyDialog({
         amountBaseUnits: nextAmount,
       });
       if (
-        action.kind !== (mode === "deposit" ? "save-deposit" : "save-withdraw") ||
+        action.kind !== (mode === "deposit" ? "savings-deposit" : "savings-withdraw") ||
         action.owner.subject !== session.user.subject ||
         action.owner.accountProvider !== session.accountProvider ||
         action.owner.address.toLowerCase() !== session.smartAccount.address.toLowerCase()
@@ -147,7 +171,7 @@ export function SavingsMoneyDialog({
     try {
       const result = await executeMoneyAction(preparedAction);
       setAttemptedAction(true);
-      if (result.status === "rejected" || result.status === "expired" || result.status === "failed") {
+      if (result.status === "rejected" || result.status === "failed") {
         setError(messageForActionStatus(result.status, mode));
         setStep(result.status === "failed" ? "failed" : "error");
         return;
@@ -158,7 +182,7 @@ export function SavingsMoneyDialog({
       } catch {
         // A parent refresh failure must not relabel a dispatched action.
       }
-      setSuccess({ mode, amount: confirmedAmount });
+      setSuccess({ mode, amount: confirmedAmount, candidateName: candidate.name });
       reset();
       onClose();
     } catch {
@@ -194,7 +218,8 @@ export function SavingsMoneyDialog({
             <>
               <MoneyAmountDisplay
                 amount={amount}
-                onAmountChange={setAmount}
+                amountChangeSource={amountChangeSource}
+                onAmountChange={changeAmount}
                 availableLabel={availableLabel}
                 availableAmount={decimalFromBaseUnits(availableBaseUnits ?? "", 6)}
                 assetId="usdc"
@@ -204,7 +229,7 @@ export function SavingsMoneyDialog({
                 pricing={pricing}
                 nativeSymbol="USDC"
               />
-              <MoneyNumpad value={amount} maxDecimals={6} onChange={setAmount} />
+              <MoneyNumpad value={amount} maxDecimals={6} onChange={changeAmount} />
             </>
           ) : null}
 
@@ -220,19 +245,19 @@ export function SavingsMoneyDialog({
                 ]}
               />
               {step === "pending" ? (
-                <div id="savings-action-pending" className={modal.pending} role="status">
+                <StatusMessage id="savings-action-pending" className={modal.pending}>
                   <span className={modal.spinner} aria-hidden="true" />
                   Waiting for your wallet…
-                </div>
+                </StatusMessage>
               ) : null}
             </>
           ) : null}
 
-          {error ? <p className={modal.error} role="alert">{error}</p> : null}
+          {error ? <StatusMessage tone="error" role="alert">{error}</StatusMessage> : null}
           {expiredPrepared && !attemptedAction && step === "confirm" ? (
-            <p className={modal.error} role="alert">
+            <StatusMessage tone="error" role="alert">
               This {mode} expired. Go back and continue again.
-            </p>
+            </StatusMessage>
           ) : null}
         </div>
 
@@ -271,18 +296,23 @@ export function SavingsMoneyDialog({
         ) : null}
       </MoneyModal>
 
-      {success ? (
-        <div className={styles.toast} role="status">
-          <span className={styles.toastMark} aria-hidden="true">✓</span>
-          <div>
-            <strong>
-              {success.mode === "deposit" ? "Deposited" : "Withdrew"} {success.amount}
-            </strong>
-            <p>Save · {candidate.name}</p>
-          </div>
-        </div>
-      ) : null}
     </>
+  );
+}
+
+function StatusMessage({
+  children,
+  tone = "neutral",
+  role,
+  ...props
+}: Omit<ComponentProps<typeof Alert>, "children"> & {
+  children: ReactNode;
+  tone?: "neutral" | "error";
+}) {
+  return (
+    <Alert variant={tone === "error" ? "destructive" : "default"} role={role ?? (tone === "error" ? "alert" : "status")} {...props}>
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -290,8 +320,6 @@ function messageForActionStatus(status: string, mode: SavingsActionMode): string
   switch (status) {
     case "rejected":
       return "The wallet request was rejected.";
-    case "expired":
-      return `This ${mode} expired. Go back and continue again.`;
     case "failed":
       return `The ${mode} did not succeed onchain.`;
     default:

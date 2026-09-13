@@ -1,8 +1,17 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Button, Heading, Text } from "@home/ui";
-import { ArrowRightIcon } from "@home/ui/icons";
+import { ChevronRight } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
 import { CopyableValue } from "@/components/copyable-value";
 import { CountrySelect } from "@/components/country-select";
 import { CurrencyMark } from "@/components/currency-mark";
@@ -50,58 +59,52 @@ export function AccountSettings({
   return (
     <div className={styles.page}>
       <section className={styles.section} aria-labelledby="preferences-heading">
-        <Heading
-          id="preferences-heading"
-          level={2}
-          textStyle="section-title"
-        >
+        <h2 id="preferences-heading" className="text-section-title font-semibold">
           Preferences
-        </Heading>
-        <div className={styles.card}>
-          <div className={styles.countryRow}>
-            <CurrencyMark
-              currency={region.currency.code}
-              symbol={region.currency.symbol}
-            />
-            <div className={styles.countryCopy}>
-              <Text as="span" textStyle="row-label">
-                Country
-              </Text>
-              <Text
-                id="country-help"
-                textStyle="metadata"
-                tone="muted"
-              >
+        </h2>
+        <ul className={styles.card}>
+          <Item render={<li />} className={styles.countryRow}>
+            <ItemMedia>
+              <CurrencyMark
+                currency={region.currency.code}
+                symbol={region.currency.symbol}
+              />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle className="text-row-label!">Country</ItemTitle>
+              <ItemDescription id="country-help" className="line-clamp-none text-metadata!">
                 Sets how money is shown
-              </Text>
-            </div>
-            <CountrySelect
-              value={regionId}
-              onValueChange={onRegionChange}
-              describedBy="country-help preference-status"
-              variant="settings"
-            />
-          </div>
-        </div>
-        <p id="preference-status" className="sr-status" aria-live="polite">
-          {preferenceMessage ||
-            (isPreferenceReady
-              ? `${sourceLabels[resolutionSource]}.`
-              : "Checking saved country preference.")}
-        </p>
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions className={styles.countryAction}>
+              <CountrySelect
+                value={regionId}
+                onValueChange={onRegionChange}
+                describedBy="country-help preference-status"
+                variant="settings"
+              />
+            </ItemActions>
+          </Item>
+        </ul>
+        <Alert id="preference-status" aria-live="polite" role="status" className="sr-only">
+          <AlertDescription>
+            {preferenceMessage ||
+              (isPreferenceReady
+                ? `${sourceLabels[resolutionSource]}.`
+                : "Checking saved country preference.")}
+          </AlertDescription>
+        </Alert>
       </section>
 
       <section className={styles.section} aria-labelledby="account-heading">
-        <Heading id="account-heading" level={2} textStyle="section-title">
+        <h2 id="account-heading" className="text-section-title font-semibold">
           Account
-        </Heading>
-        <div className={styles.card}>
-          <div className={styles.row}>
-            <div>
-              <Text as="strong" textStyle="row-label">
-                Base account
-              </Text>
-              <Text as="small" textStyle="metadata" tone="muted">
+        </h2>
+        <ul className={styles.card}>
+          <Item render={<li />} className={styles.contentRow}>
+            <ItemContent>
+              <ItemTitle className="text-row-label!">Base account</ItemTitle>
+              <ItemDescription className="text-metadata!">
                 {accountAddress ? (
                   <CopyableValue
                     value={accountAddress}
@@ -111,34 +114,33 @@ export function AccountSettings({
                 ) : (
                   "Setup in progress"
                 )}
-              </Text>
-            </div>
-          </div>
-          <Button
-            className={styles.rowButton}
-            variant="quiet"
-            onClick={onSignOut}
-          >
-            <span className={styles.rowButtonContent}>
-              <Text as="span" textStyle="row-label">
-                Sign out
-              </Text>
-              <ArrowRightIcon
-                size={20}
-                weight="regular"
-                aria-hidden="true"
-                focusable="false"
-              />
-            </span>
-          </Button>
-        </div>
+              </ItemDescription>
+            </ItemContent>
+          </Item>
+          <li>
+            <Item
+              render={<Button variant="ghost" />}
+              className={styles.actionRow}
+              onClick={onSignOut}
+              aria-describedby="sign-out-hint"
+            >
+              <ItemContent>
+                <ItemTitle className="text-row-label!">Sign out</ItemTitle>
+              </ItemContent>
+              <ItemActions aria-hidden="true">
+                <ChevronRight />
+              </ItemActions>
+              <span id="sign-out-hint" hidden>Sign out of Home</span>
+            </Item>
+          </li>
+        </ul>
       </section>
 
       <section className={styles.section} aria-labelledby="disclosures-heading">
-        <Heading id="disclosures-heading" level={2} textStyle="section-title">
+        <h2 id="disclosures-heading" className="text-section-title font-semibold">
           Disclosures &amp; terms
-        </Heading>
-        <div className={styles.card}>
+        </h2>
+        <ul className={styles.card}>
           <DisclosureRow title="Availability">
             Features and providers vary by country. Tokenized stock trading
             requires issuer and provider eligibility verification.
@@ -189,52 +191,30 @@ export function AccountSettings({
           </DisclosureRow>
           <DisclosureRow title="Terms">
             <span className={styles.termLinks}>
-              <a
-                href="https://www.coinbase.com/legal"
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href="https://www.coinbase.com/legal" target="_blank" rel="noreferrer">
                 Coinbase legal
               </a>
-              <a
-                href="https://terms.ripio.com/"
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href="https://terms.ripio.com/" target="_blank" rel="noreferrer">
                 Ripio terms
               </a>
-              <a
-                href="https://morpho.org/terms-of-use/"
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href="https://morpho.org/terms-of-use/" target="_blank" rel="noreferrer">
                 Morpho terms
               </a>
             </span>
           </DisclosureRow>
-        </div>
+        </ul>
       </section>
     </div>
   );
 }
 
-function DisclosureRow({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
+function DisclosureRow({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className={`${styles.row} ${styles.disclosureRow}`}>
-      <div>
-        <Text as="strong" textStyle="row-label">
-          {title}
-        </Text>
-        <Text as="div" textStyle="metadata" tone="muted">
-          {children}
-        </Text>
-      </div>
-    </div>
+    <Item render={<li />} className={`${styles.contentRow} ${styles.disclosureRow}`}>
+      <ItemContent>
+        <ItemTitle className="text-row-label!">{title}</ItemTitle>
+        <ItemDescription className="line-clamp-none text-metadata!">{children}</ItemDescription>
+      </ItemContent>
+    </Item>
   );
 }

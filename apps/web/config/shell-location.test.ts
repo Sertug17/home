@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
-  moneyFlowHref,
+  flowHref,
   parseInboundUrlIntent,
   parseShellLocation,
+  searchParamsToString,
   shellHref,
-  withoutMoneyFlowHref,
+  withoutFlowHref,
 } from "./shell-location";
 
 describe("shell location", () => {
@@ -35,7 +36,7 @@ describe("shell location", () => {
 
   test("parses the allowed inbound intents through one schema", () => {
     expect(parseInboundUrlIntent(new URLSearchParams(
-      "panel=invest&shelf=crypto&asset=cbbtc&return=coinbase&add-money=1&flow=send&action=11111111-1111-4111-8111-111111111111",
+      "panel=invest&shelf=crypto&asset=cbbtc&return=funding&add-money=1&flow=send&action=11111111-1111-4111-8111-111111111111",
     ))).toEqual({
       kind: "inbound-url-intent",
       location: {
@@ -44,11 +45,26 @@ describe("shell location", () => {
         shelf: "crypto",
         asset: "cbbtc",
       },
-      returnTo: "coinbase",
+      returnedFromFunding: true,
       addMoney: true,
       flow: "send",
       actionId: "11111111-1111-4111-8111-111111111111",
     });
+  });
+
+  test("allowlists every addressable money flow and opens Save flows on Save", () => {
+    const cases = [
+      ["send", "home"],
+      ["add-money", "home"],
+      ["receive", "home"],
+      ["save-deposit", "save"],
+      ["save-withdraw", "save"],
+    ] as const;
+    for (const [flow, panel] of cases) {
+      const intent = parseInboundUrlIntent(new URLSearchParams(`flow=${flow}`));
+      expect(intent.flow).toBe(flow);
+      expect(intent.location.panel).toBe(panel);
+    }
   });
 
   test("ignores malformed or unknown inbound values", () => {
@@ -64,11 +80,17 @@ describe("shell location", () => {
     })).toEqual({
       kind: "inbound-url-intent",
       location: { panel: "home", account: null, shelf: null, asset: null },
-      returnTo: null,
+      returnedFromFunding: false,
       addMoney: false,
       flow: null,
       actionId: null,
     });
+  });
+
+  test("accepts action ids only for Send", () => {
+    expect(parseInboundUrlIntent(new URLSearchParams(
+      "flow=receive&action=11111111-1111-4111-8111-111111111111",
+    )).actionId).toBeNull();
   });
 
   test("ignores invest params unless the panel is Invest", () => {
@@ -80,14 +102,32 @@ describe("shell location", () => {
 describe("money flow location", () => {
   test("adds and removes only allowlisted flow state without URL payloads", () => {
     const balances = new URLSearchParams("panel=balances");
-    expect(moneyFlowHref("/dashboard", null, balances)).toBe(
+    expect(flowHref("/dashboard", "send", null, balances)).toBe(
       "/dashboard?panel=balances&flow=send",
     );
-    expect(moneyFlowHref("/dashboard", "11111111-1111-4111-8111-111111111111", balances))
-      .toBe("/dashboard?panel=balances&flow=send&action=11111111-1111-4111-8111-111111111111");
-    expect(withoutMoneyFlowHref(
+    expect(flowHref(
       "/dashboard",
-      new URLSearchParams("flow=send&action=11111111-1111-4111-8111-111111111111"),
-    )).toBe("/dashboard");
+      "send",
+      "11111111-1111-4111-8111-111111111111",
+      balances,
+    )).toBe("/dashboard?panel=balances&flow=send&action=11111111-1111-4111-8111-111111111111");
+    expect(flowHref(
+      "/dashboard",
+      "receive",
+      "11111111-1111-4111-8111-111111111111",
+      balances,
+    )).toBe("/dashboard?panel=balances&flow=receive");
+    expect(withoutFlowHref(
+      "/dashboard",
+      new URLSearchParams("panel=balances&flow=send&action=11111111-1111-4111-8111-111111111111"),
+    )).toBe("/dashboard?panel=balances");
+  });
+});
+
+describe("searchParamsToString", () => {
+  test("serializes a server page's searchParams, including repeated keys", () => {
+    expect(searchParamsToString({ account: "signin", flow: "send", tags: ["a", "b"], missing: undefined }))
+      .toBe("account=signin&flow=send&tags=a&tags=b");
+    expect(searchParamsToString({})).toBe("");
   });
 });

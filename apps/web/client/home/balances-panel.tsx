@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MoneyTicker } from "@home/ui/money-ticker";
+import { Skeleton } from "@/components/ui/skeleton";
+import { MoneyTicker } from "@/components/money-ticker";
 import { CurrencyMark } from "@/components/currency-mark";
 import { BalanceRow } from "@/components/finance-rows";
 import {
@@ -55,6 +56,7 @@ export function balancesListKey(
       group: item.group ?? null,
       name: item.name,
       detail: item.detail ?? null,
+      imageUrl: item.imageUrl ?? null,
       displayBalance: item.displayBalance,
       displayContext: item.displayContext ?? null,
       currencyCode: item.currencyCode ?? null,
@@ -119,7 +121,7 @@ export function BalancesPage({
     <section className="balances-panel nested-home-panel" aria-label="Balances">
       {showBalanceStatus ? (
         <p
-          className="balance-status balance-status-panel"
+          className="balance-status balance-status-panel text-metadata"
           data-total-status={assetBalances?.totalStatus}
         >
           {balanceStatusLabel}
@@ -164,7 +166,7 @@ export function HomeBalancesList({
   }
   if (isLoading) return <ShimmerRows count={2} />;
   if (isUnavailable) return null;
-  return <p className="balances-empty">No balances yet</p>;
+  return <p className="balances-empty text-metadata">No balances yet</p>;
 }
 
 function IncrementalBalancesList({
@@ -205,7 +207,7 @@ function IncrementalBalancesList({
   if (items.length === 0) {
     if (isLoading) return <ShimmerRows count={2} />;
     if (isUnavailable) return null;
-    return <p className="balances-empty">No balances yet</p>;
+    return <p className="balances-empty text-metadata">No balances yet</p>;
   }
 
   return (
@@ -238,10 +240,10 @@ function HomeBalanceRowView({
       <li className="shimmer-row" data-shimmer="row">
         <CurrencyMark pending />
         <span className="shimmer-identity">
-          <span className="shimmer shimmer-line shimmer-line-wide" aria-hidden="true" />
-          <span className="shimmer shimmer-line shimmer-line-narrow" aria-hidden="true" />
+          <Skeleton className="shimmer-line shimmer-line-wide" />
+          <Skeleton className="shimmer-line shimmer-line-narrow" />
         </span>
-        <span className="shimmer shimmer-pill" aria-hidden="true" />
+        <Skeleton className="shimmer-pill" />
         <span className="sr-status">Updating…</span>
       </li>
     );

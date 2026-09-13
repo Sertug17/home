@@ -1,7 +1,9 @@
 "use client";
 
 import { PiggyBank } from "lucide-react";
-import { MoneyTicker } from "@home/ui/money-ticker";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { MoneyTicker } from "@/components/money-ticker";
 import type { FetchActivity } from "@/client/activity";
 import { FundingActions } from "@/client/funding/funding-actions";
 import { TransferActions } from "@/client/transfers";
@@ -25,15 +27,15 @@ function SectionTapIn({
   onOpen: () => void;
 }) {
   return (
-    <button
+    <Button
       className="section-tap-in"
-      type="button"
+      variant="ghost"
       onClick={onOpen}
       aria-label={title}
     >
-      <h2 id={headingId}>{title}</h2>
+      <h2 className="text-metadata" id={headingId}>{title}</h2>
       <span className="section-tap-in-affordance" aria-hidden="true">›</span>
-    </button>
+    </Button>
   );
 }
 
@@ -47,7 +49,7 @@ export function HomePanel({
   onOpenBalances,
   onOpenActivity,
   initialAddMoney = false,
-  returnedFromCoinbase = false,
+  returnedFromProvider = false,
   initialSendFlow = false,
   initialSendActionId = null,
   regionId,
@@ -61,7 +63,7 @@ export function HomePanel({
   onOpenBalances: () => void;
   onOpenActivity: () => void;
   initialAddMoney?: boolean;
-  returnedFromCoinbase?: boolean;
+  returnedFromProvider?: boolean;
   initialSendFlow?: boolean;
   initialSendActionId?: string | null;
   regionId: RegionId;
@@ -90,18 +92,17 @@ export function HomePanel({
         aria-busy={isLoading || isRevalidating || undefined}
       >
         {isLoading ? (
-          <span
-            className="shimmer balance-hero-shimmer"
+          <Skeleton
+            className="balance-hero-shimmer"
             data-shimmer="hero"
-            aria-hidden="true"
           />
         ) : (
-          <p className="balance-hero-total">
+          <div className="balance-hero-total text-amount font-mono">
             <MoneyTicker value={assetBalances?.displayTotal ?? "—"} />
-          </p>
+          </div>
         )}
         {showBalanceStatus ? (
-          <p className="balance-status" data-total-status={assetBalances?.totalStatus}>
+          <p className="balance-status text-metadata" data-total-status={assetBalances?.totalStatus}>
             {balanceStatusLabel}
           </p>
         ) : null}
@@ -111,13 +112,13 @@ export function HomePanel({
       <div className="action-row" aria-label="Money actions">
         <FundingActions
           initialOpen={initialAddMoney}
-          returnedFromCoinbase={returnedFromCoinbase}
+          returnedFromProvider={returnedFromProvider}
           regionId={regionId}
         />
         <TransferActions
           initialOpen={initialSendFlow}
           initialActionId={initialSendActionId}
-          availableByAsset={deriveSendAvailability(balanceItems)}
+          availableAssets={deriveSendAvailability(balanceItems)}
         />
       </div>
 
@@ -136,19 +137,19 @@ export function HomePanel({
       </section>
 
       {showSessionShimmer ? (
-        <button className="save-teaser" type="button" onClick={onOpenSave} aria-label="Save">
-          <span className="shimmer shimmer-save-icon" aria-hidden="true" />
-          <span className="shimmer shimmer-line shimmer-line-save" aria-hidden="true" />
-          <span className="shimmer shimmer-pill" aria-hidden="true" />
-        </button>
+        <Button className="save-teaser rounded-xl border border-border bg-background" variant="secondary" onClick={onOpenSave} aria-label="Save">
+          <Skeleton className="shimmer-save-icon" />
+          <Skeleton className="shimmer-line shimmer-line-save" />
+          <Skeleton className="shimmer-pill" />
+        </Button>
       ) : (
-        <button className="save-teaser" type="button" onClick={onOpenSave} aria-label="Save">
+        <Button className="save-teaser rounded-xl border border-border bg-background" variant="secondary" onClick={onOpenSave} aria-label="Save">
           <span className="save-teaser-icon" aria-hidden="true">
             <PiggyBank size={20} strokeWidth={1.9} />
           </span>
           <span className="save-teaser-label">Save</span>
           <span className="save-teaser-action">Earn <span aria-hidden="true">›</span></span>
-        </button>
+        </Button>
       )}
 
       {showSessionShimmer ? (

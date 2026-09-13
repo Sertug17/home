@@ -1,4 +1,4 @@
-import { Inline } from "@home/ui";
+import { Button } from "@/components/ui/button";
 import type { InvestAsset } from "@/config/invest-assets";
 import type { AssetMarkResolution } from "@/client/asset-mark/presentation";
 import type { MarketDataState } from "@/shared/invest/invest-market";
@@ -25,12 +25,14 @@ export function DiscoverShelf({
 }) {
   return (
     <section className={`${styles.shelf} surface-primary`} aria-labelledby={`${title.toLowerCase()}-shelf-title`}>
-      <Inline className={styles.shelfHeading} space="3">
-        <h3 id={`${title.toLowerCase()}-shelf-title`}>{title}</h3>
-        <button type="button" className={styles.seeAll} onClick={onSeeAll}>
+      <div className={styles.shelfHeading}>
+        <h3 className="text-row-label font-medium" id={`${title.toLowerCase()}-shelf-title`}>
+          {title}
+        </h3>
+        <Button variant="ghost" onClick={onSeeAll}>
           See all ›
-        </button>
-      </Inline>
+        </Button>
+      </div>
       {assets.length > 0 ? (
         <ul className={styles.rows}>
           {assets.map((asset) => (
@@ -44,7 +46,9 @@ export function DiscoverShelf({
           ))}
         </ul>
       ) : (
-        <p className={styles.shelfStatus}>{shelfStatusLabel(status)}</p>
+        <p className={`${styles.shelfStatus} text-metadata font-semibold text-muted-foreground`}>
+          {shelfStatusLabel(status)}
+        </p>
       )}
     </section>
   );

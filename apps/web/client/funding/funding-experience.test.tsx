@@ -17,21 +17,12 @@ type FundingWallet = Pick<
   "ownerKey" | "status" | "session" | "fetchAccountResource"
 >;
 
-function hosted() {
-  return {
-    url: HOSTED_URL,
-    asset: {
-      id: "usdc",
-      symbol: "USDC",
-      decimals: 6,
-      tokenAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    },
-    network: { name: "Base", chainId: 8453 },
-  };
-}
-
 function fundingBinding() {
   return { providerId: "ripio", displayName: "Ripio", region: "AR", assetId: "base:wars", assetSymbol: "wARS", assetDecimals: 18, currency: "ARS", paymentMethods: [{ id: "bank_transfer", label: "Bank transfer" }], quotes: true, kyc: null };
+}
+
+function redirectBinding() {
+  return { providerId: "coinbase", displayName: "Coinbase", region: "US", assetId: "base:usdc", assetSymbol: "USDC", assetDecimals: 6, currency: "USD", paymentMethods: [{ id: "hosted", label: "Coinbase" }], quotes: false, kyc: null };
 }
 
 function verifiedWallet(address: `0x${string}` = ADDRESS_A): FundingWallet {
@@ -60,19 +51,24 @@ afterEach(() => {
 });
 
 describe("FundingExperience", () => {
-  test("does not present a disabled regional candidate as receive support", () => {
-    render(
-      <FundingExperienceForWallet
-        wallet={verifiedWallet()}
-        navigateToHostedOnramp={() => {}}
-        initialStep="receive"
-        regionId="BR"
-      />,
-    );
+  test("does not present a disabled regional candidate as receive support", async () => {
+    await act(async () => {
+      render(
+        <FundingExperienceForWallet
+          wallet={verifiedWallet()}
+          navigateToRedirect={() => {}}
+          initialStep="receive"
+          regionId="BR"
+        />,
+      );
+    });
 
-    expect(page().getByText("USDC")).toBeTruthy();
-    expect(page().queryByText("BRZ")).toBeNull();
-    expect(page().getByText(/other tokens in Home's supported Base inventory/)).toBeTruthy();
+    expect(await page().findByRole("heading", { name: "Receive" })).toBeTruthy();
+    const supportedAssets = page().getByRole("region", {
+      name: "Supported receive assets on Base",
+    });
+    expect(supportedAssets.textContent).toContain("USDC");
+    expect(supportedAssets.textContent).not.toContain("BRZ");
   });
 
   test("lists configured provider bindings and creates an order with only the quote token", async () => {
@@ -88,18 +84,18 @@ describe("FundingExperience", () => {
         throw new Error("unexpected request");
       },
     };
-    render(<FundingExperienceForWallet wallet={wallet} navigateToHostedOnramp={() => {}} regionId="AR" />);
-    const provider = await page().findByRole("button", { name: /Deposit ARS Use Ripio/ });
+    render(<FundingExperienceForWallet wallet={wallet} navigateToRedirect={() => {}} regionId="AR" />);
+    const provider = await page().findByRole("button", { name: /Deposit ARS with Ripio/ });
     fireEvent.click(provider);
     expect(page().getByRole("dialog", { name: "Deposit ARS" })).toBeTruthy();
     for (const key of ["1", "0", "0", "0"]) fireEvent.click(page().getByRole("button", { name: key }));
     fireEvent.click(page().getByRole("button", { name: "Review quote" }));
     await page().findByRole("heading", { name: "Review quote" });
-    expect(page().getByText("Receive: 1000 wARS")).toBeTruthy();
-    expect(page().getByText("Rail: 10 ARS")).toBeTruthy();
+    expect(page().getByText((_, element) => element?.textContent === "Receive: 1.000\u00A0wARS")).toBeTruthy();
+    expect(page().getByText("Rail: $10,00")).toBeTruthy();
     fireEvent.click(page().getByRole("button", { name: "Confirm deposit" }));
     await page().findByRole("heading", { name: "Review payment details" });
-    expect(page().getByText("Provider: 12 ARS")).toBeTruthy();
+    expect(page().getByText("Provider: $12,00")).toBeTruthy();
     expect(page().queryByText("1234567890")).toBeNull();
     fireEvent.click(page().getByRole("button", { name: "View payment instructions" }));
     await page().findByText("Deposit pending");
@@ -117,8 +113,8 @@ describe("FundingExperience", () => {
       if (path === "/api/funding/orders") { orderBodies.push(options?.body); if (orderBodies.length === 1) throw new Error("lost response"); return { order: { id: "11111111-1111-4111-8111-111111111111", providerId: "ripio", state: "dispatch-ambiguous", fiatAmount: "1000", providerStatus: null, instructions: null } }; }
       throw new Error("unexpected request");
     } };
-    render(<FundingExperienceForWallet wallet={wallet} navigateToHostedOnramp={() => {}} regionId="AR" />);
-    fireEvent.click(await page().findByRole("button", { name: /Deposit ARS Use Ripio/ }));
+    render(<FundingExperienceForWallet wallet={wallet} navigateToRedirect={() => {}} regionId="AR" />);
+    fireEvent.click(await page().findByRole("button", { name: /Deposit ARS with Ripio/ }));
     for (const key of ["1", "0", "0", "0"]) fireEvent.click(page().getByRole("button", { name: key }));
     fireEvent.click(page().getByRole("button", { name: "Review quote" }));
     await page().findByRole("heading", { name: "Review quote" });
@@ -139,7 +135,7 @@ describe("FundingExperience", () => {
       if (path.startsWith("/api/funding/orders?")) return pendingOrder;
       throw new Error("unexpected request");
     } };
-    render(<FundingExperienceForWallet wallet={wallet} navigateToHostedOnramp={() => {}} regionId="AR" />);
+    render(<FundingExperienceForWallet wallet={wallet} navigateToRedirect={() => {}} regionId="AR" />);
     fireEvent.click(page().getByRole("button", { name: /Receive crypto/ }));
     expect(page().getByRole("dialog", { name: "Receive" })).toBeTruthy();
     await act(async () => { resolveOrder({ order: { id: "11111111-1111-4111-8111-111111111111", providerId: "ripio", state: "dispatch-ambiguous", fiatAmount: "1000", providerStatus: null, instructions: null } }); await pendingOrder; });
@@ -147,45 +143,67 @@ describe("FundingExperience", () => {
     expect(page().queryByText("Check Activity before trying again")).toBeNull();
   });
 
-  test("closing a pending hosted onramp prevents delayed navigation and stale persistence", async () => {
-    let resolveRequest!: (value: unknown) => void;
-    const pending = new Promise<unknown>((resolve) => {
-      resolveRequest = resolve;
-    });
+  test("opens a redirect instruction returned by a configured manifest binding", async () => {
     const navigations: string[] = [];
-    let closes = 0;
+    const wallet = {
+      ...verifiedWallet(),
+      fetchAccountResource: async (path: string) => {
+        if (path.startsWith("/api/funding/providers")) return { providers: [redirectBinding()] };
+        if (path.startsWith("/api/funding/orders?")) return { order: null };
+        if (path === "/api/funding/quotes") return { quoteToken: "signed-token", quote: { fiatAmount: "25", tokenAmountAtomic: "25000000", fees: [], expiresAt: "2099-01-01T00:00:00.000Z" } };
+        if (path === "/api/funding/orders") return { order: { id: "11111111-1111-4111-8111-111111111111", providerId: "coinbase", state: "awaiting-payment", fiatAmount: "25", expectedTokenAmountAtomic: "25000000", fees: [], providerStatus: null, instructions: { kind: "redirect", url: HOSTED_URL } } };
+        throw new Error("unexpected request");
+      },
+    };
 
     render(
       <FundingExperienceForWallet
-        wallet={{ ...verifiedWallet(), fetchAccountResource: async () => pending }}
-        navigateToHostedOnramp={(url) => navigations.push(url)}
+        wallet={wallet}
+        navigateToRedirect={(url) => navigations.push(url)}
         regionId="US"
-        onClose={() => {
-          closes += 1;
-        }}
       />,
     );
 
-    fireEvent.click(page().getByRole("button", { name: "Deposit USD with Coinbase" }));
-    fireEvent.click(page().getByRole("button", { name: "Continue to Coinbase" }));
-    await waitFor(() => expect(page().getByRole("button", { name: "Opening Coinbase…" })).toBeTruthy());
-    fireEvent.click(page().getByRole("button", { name: "Close add money" }));
+    fireEvent.click(await page().findByRole("button", { name: "Deposit USD with Coinbase" }));
+    for (const key of ["2", "5"]) fireEvent.click(page().getByRole("button", { name: key }));
+    fireEvent.click(page().getByRole("button", { name: "Review quote" }));
+    await page().findByRole("heading", { name: "Review quote" });
+    fireEvent.click(page().getByRole("button", { name: "Confirm deposit" }));
 
-    await act(async () => {
-      resolveRequest(hosted());
-      await pending;
-    });
+    await waitFor(() => expect(navigations).toEqual([HOSTED_URL]));
+    expect(page().getByRole("link", { name: "Continue to payment" }).getAttribute("href")).toBe(HOSTED_URL);
+  });
 
-    expect(closes).toBeGreaterThan(0);
+  test("a resumed open redirect order never auto-navigates; it keeps the explicit link", async () => {
+    const navigations: string[] = [];
+    const openOrder = { id: "11111111-1111-4111-8111-111111111111", providerId: "coinbase", state: "awaiting-payment", fiatAmount: "25", expectedTokenAmountAtomic: "25000000", fees: [], providerStatus: null, instructions: { kind: "redirect", url: HOSTED_URL } };
+    const wallet = {
+      ...verifiedWallet(),
+      fetchAccountResource: async (path: string) => {
+        if (path.startsWith("/api/funding/providers")) return { providers: [redirectBinding()] };
+        if (path.startsWith("/api/funding/orders")) return { order: openOrder };
+        throw new Error("unexpected request");
+      },
+    };
+
+    render(
+      <FundingExperienceForWallet
+        wallet={wallet}
+        navigateToRedirect={(url) => navigations.push(url)}
+        regionId="US"
+      />,
+    );
+
+    expect(await page().findByRole("link", { name: "Continue to payment" })).toBeTruthy();
+    await new Promise((resolve) => queueMicrotask(() => resolve(undefined)));
     expect(navigations).toEqual([]);
-    expect(window.sessionStorage.length).toBe(0);
   });
 
   test("hides the prior verified address as soon as the account boundary changes", () => {
     const view = render(
       <FundingExperienceForWallet
         wallet={verifiedWallet(ADDRESS_A)}
-        navigateToHostedOnramp={() => {}}
+        navigateToRedirect={() => {}}
         initialStep="receive"
       />,
     );
@@ -194,7 +212,7 @@ describe("FundingExperience", () => {
     view.rerender(
       <FundingExperienceForWallet
         wallet={{ ...verifiedWallet(ADDRESS_B), status: "validating", session: null }}
-        navigateToHostedOnramp={() => {}}
+        navigateToRedirect={() => {}}
         initialStep="receive"
       />,
     );
@@ -203,22 +221,24 @@ describe("FundingExperience", () => {
     expect(page().getByText(/Sign in and verify a Base account/)).toBeTruthy();
   });
 
-  test("signed-out empty state offers sign in without exposing funding actions", () => {
-    render(
-      <FundingExperienceForWallet
-        wallet={{
-          ownerKey: null,
-          status: "signed-out",
-          session: null,
-          fetchAccountResource: async () => {
-            throw new Error("signed out");
-          },
-        }}
-        navigateToHostedOnramp={() => {}}
-      />,
-    );
+  test("signed-out empty state offers sign in without exposing funding actions", async () => {
+    await act(async () => {
+      render(
+        <FundingExperienceForWallet
+          wallet={{
+            ownerKey: null,
+            status: "signed-out",
+            session: null,
+            fetchAccountResource: async () => {
+              throw new Error("signed out");
+            },
+          }}
+          navigateToRedirect={() => {}}
+        />,
+      );
+    });
 
-    expect(page().getByRole("heading", { name: "Add money" })).toBeTruthy();
+    expect(await page().findByRole("heading", { name: "Add money" })).toBeTruthy();
     expect(page().getByRole("link", { name: "Sign in" }).getAttribute("href")).toBe(
       "/?account=signin",
     );

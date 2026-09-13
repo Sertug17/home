@@ -3,7 +3,6 @@ export {
   PortfolioResponseError,
   parsePortfolioSnapshot,
 } from "./parse";
-export { usePortfolio } from "./use-portfolio";
 export type {
   FetchPortfolio,
   PortfolioAssetBalance,
@@ -34,7 +33,7 @@ export {
 export {
   PortfolioValuationResponseError,
   parsePortfolioValuationSnapshot,
-} from "@/shared/portfolio/parse-valuation";
+} from "@/shared/portfolio/contract";
 export { usePortfolioValuation } from "./use-portfolio-valuation";
 export type {
   FetchPortfolioValuation,

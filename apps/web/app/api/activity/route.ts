@@ -1,19 +1,12 @@
-import { isBaseAccountEnabled } from "@/shared/account/session-types";
-import { getCdpAccessTokenValidator } from "@/server/cdp/provider";
-import { createSessionHandler } from "@/server/cdp/session";
 import { createActivityHandler } from "@/server/activity/handler";
 import { getRecentBaseActivity } from "@/server/activity/reader";
+import { authorizeSession } from "@/server/auth/authorize";
 import { writeObservabilityEvent } from "@/server/observability/log";
 
 export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+/** Activity reads wait up to 20s on the CDP SQL transport (#300). */
 export const maxDuration = 30;
-
-const authorizeSession = createSessionHandler({
-  getValidator: getCdpAccessTokenValidator,
-  baseAccountEnabled: isBaseAccountEnabled(process.env.NEXT_PUBLIC_ENABLE_BASE_ACCOUNT),
-});
-
+export const dynamic = "force-dynamic";
 
 export const GET = createActivityHandler({
   authorize: authorizeSession,

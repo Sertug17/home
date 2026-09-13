@@ -2,9 +2,10 @@ import "../account/dom-test-harness";
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
-import { getHomeQueryClient, ownerQueryKey } from "@/client/query/query-client";
 import { activityOwnerKey } from "@/client/activity/use-activity";
-import type { ActionToastClock } from "./action-toasts";
+import { getHomeQueryClient, ownerQueryKey } from "@/client/query/query-client";
+import { announceActionFailure } from "./action-toast-events";
+import { toast } from "@/components/ui/toast";
 
 const { act, cleanup, render, waitFor } = await import("@testing-library/react");
 const { ActionToasts } = await import("./action-toasts");
@@ -14,6 +15,12 @@ const session: VerifiedAccountSession = {
   smartAccount: { address: "0x1111111111111111111111111111111111111111", chainId: 8453 },
   accountProvider: "cdp-embedded",
 };
+
+const otherSession: VerifiedAccountSession = {
+  ...session,
+  user: { subject: "other-toast-subject" },
+};
+
 const row = {
   id: "11111111-1111-4111-8111-111111111111",
   provider: "cdp-embedded",
@@ -27,68 +34,54 @@ const row = {
   status: "pending",
   createdAt: "2026-09-12T12:00:00.000Z",
   confirmedAt: "2026-09-12T12:01:00.000Z",
-  owner: {
-    subject: session.user.subject,
-    address: session.smartAccount!.address,
-    chainId: 8453,
-    accountProvider: session.accountProvider,
-  },
 };
 
-function fakeClock() {
-  let id = 0;
-  const timers = new Map<number, () => void>();
-  const clock: ActionToastClock = {
-    setTimer: (callback) => {
-      const timerId = ++id;
-      timers.set(timerId, callback);
-      return timerId;
-    },
-    clearTimer: (timer) => { timers.delete(timer as number); },
-  };
-  return {
-    clock,
-    advance() {
-      const callbacks = [...timers.values()];
-      timers.clear();
-      for (const callback of callbacks) callback();
-    },
-  };
-}
-
 afterEach(() => {
+  toast.close();
   cleanup();
   getHomeQueryClient().clear();
 });
 
-describe("action toasts", () => {
-  test("announces pending then confirmed actions and auto-dismisses both", async () => {
-    const fake = fakeClock();
+describe("action toast owner fence", () => {
+  test("shows each pending to confirmed status transition once", async () => {
     const view = render(
       <ActionToasts
         session={session}
         fetchOperations={async () => ({ actions: [row] })}
-        clock={fake.clock}
+        dismissAfterMs={0}
       />,
     );
 
-    const region = view.container.querySelector('[aria-live="polite"]');
-    expect(region).toBeTruthy();
-    await waitFor(() => expect(view.getByText("Sending $1.00 to 0x2222…222222")).toBeTruthy());
-
+    await view.findByText("Sending $1.00 to 0x2222…222222");
     act(() => {
       getHomeQueryClient().setQueryData(
         ownerQueryKey(activityOwnerKey(session), "actions"),
         { actions: [{ ...row, status: "confirmed" }] },
       );
     });
-    await waitFor(() => expect(view.getByText("Sent $1.00 to 0x2222…222222")).toBeTruthy());
-    expect(view.getByText("Sending $1.00 to 0x2222…222222")).toBeTruthy();
+    await waitFor(() => expect(view.getAllByText("Sent $1.00 to 0x2222…222222")).toHaveLength(1));
+  });
 
-    act(() => fake.advance());
-    await waitFor(() => {
-      expect(view.queryByText("Sending $1.00 to 0x2222…222222")).toBeNull();
-      expect(view.queryByText("Sent $1.00 to 0x2222…222222")).toBeNull();
-    });
+  test("closes all active toasts when the owner boundary changes", async () => {
+    const view = render(
+      <ActionToasts
+        session={session}
+        fetchOperations={async () => ({ actions: [] })}
+        dismissAfterMs={0}
+      />,
+    );
+
+    act(() => announceActionFailure("send", "Wallet unavailable"));
+    expect((await view.findByRole("alert")).textContent).toContain("Send failed: Wallet unavailable");
+
+    view.rerender(
+      <ActionToasts
+        session={otherSession}
+        fetchOperations={async () => ({ actions: [] })}
+        dismissAfterMs={0}
+      />,
+    );
+
+    await waitFor(() => expect(view.queryByRole("alert")).toBeNull());
   });
 });

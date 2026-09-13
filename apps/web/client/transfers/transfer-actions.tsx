@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { MoneyTicker } from "@/components/money-ticker";
 import {
   useCallback,
   useEffect,
@@ -14,15 +16,18 @@ import {
   useAccountWallet,
   type AccountWalletClient,
 } from "@/client/account/cdp-client";
+import { uiBoundary } from "@/client/account/owner-keys";
 import {
   commitClientUrl,
-  moneyFlowHref,
-  withoutMoneyFlowHref,
+  flowHref,
+  withoutFlowHref,
 } from "@/config/shell-location";
 import { markHomePerformance } from "@/client/observability/perf-marks";
+import { useOptionalHomeShellRouting } from "@/client/home/panel-routing";
+import { useHomeToast } from "@/client/home/use-home-toast";
 import { SendDialog } from "./send-dialog";
-import { TRANSFER_ASSETS, formatSendConfirmAmount } from "@/shared/transfers/transfer-helpers";
-import type { ConfirmedTransfer } from "@/shared/transfers/types";
+import { formatSendConfirmAmount, getTransferAsset } from "@/shared/transfers/transfer-helpers";
+import type { ConfirmedTransfer, TransferAssetAvailability } from "@/shared/transfers/types";
 import styles from "./transfers.module.css";
 
 const subscribeToMountedState = () => () => {};
@@ -32,7 +37,7 @@ const mountedServerSnapshot = () => false;
 export type TransferActionsProps = {
   initialOpen?: boolean;
   initialActionId?: string | null;
-  availableByAsset?: Partial<Record<"usdc" | "eth", string>>;
+  availableAssets?: readonly TransferAssetAvailability[];
 };
 
 type TransferWallet = Pick<
@@ -54,8 +59,9 @@ export function TransferActionsForWallet({
   wallet,
   initialOpen = false,
   initialActionId = null,
-  availableByAsset,
+  availableAssets,
 }: TransferActionsProps & { wallet: TransferWallet }) {
+  const routing = useOptionalHomeShellRouting();
   const [sendOpen, setSendOpen] = useState(false);
   const [modalOwner, setModalOwner] = useState<string | null>(null);
   const [success, setSuccess] = useState<{
@@ -68,35 +74,57 @@ export function TransferActionsForWallet({
     mountedClientSnapshot,
     mountedServerSnapshot,
   );
-  const boundary = walletBoundary(wallet);
+  const boundary = uiBoundary(wallet);
   const verifiedAddress =
     wallet.status === "verified" ? wallet.session?.smartAccount?.address ?? null : null;
-  const visibleSend = modalOwner === boundary && sendOpen;
+  const routeOpen = routing ? routing.state.flow === "send" : initialOpen;
+  const visibleSend = modalOwner === boundary && (routing ? routeOpen : sendOpen);
   const dropPrivate = modalOwner !== null && modalOwner !== boundary;
   const visibleSuccess = success && success.owner === boundary ? success.transfer : null;
+  const { add: addToast } = useHomeToast(boundary);
 
   useEffect(() => {
     if (boundary) markHomePerformance("action:first-interactive");
   }, [boundary]);
 
   useEffect(() => {
-    if (!initialOpen || !boundary) return;
+    if (!routeOpen || !boundary) return;
     const frame = window.requestAnimationFrame(() => {
       setSuccess(null);
       setModalOwner(boundary);
       setSendOpen(true);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [boundary, initialOpen]);
+  }, [boundary, routeOpen]);
 
   useEffect(() => {
-    const onPopState = () => {
-      const flow = new URLSearchParams(window.location.search).get("flow");
-      if (flow !== "send") setSendOpen(false);
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+    if (!visibleSuccess) return;
+    addToast({
+      id: `send:${visibleSuccess.transactionHash}`,
+      tone: "success",
+      role: "status",
+      duration: 6_000,
+      onClose: () => setSuccess(null),
+      message: (
+        <div className={styles.successContent}>
+          <span className={styles.successMark} aria-hidden="true">✓</span>
+          <div>
+            <strong className="text-row-label font-semibold">
+              Sent <MoneyTicker value={formatSendConfirmAmount(visibleSuccess.amountBaseUnits, visibleSuccess.assetId)} />
+            </strong>
+            <p className={`${styles.successDetail} text-metadata text-muted-foreground`}>
+              {getTransferAsset(visibleSuccess.assetId)?.symbol ?? visibleSuccess.assetId} · Base ·{" "}
+              <CopyableValue
+                value={visibleSuccess.recipient}
+                display={formatAddress(visibleSuccess.recipient)}
+                valueKind="address"
+              />
+            </p>
+          </div>
+        </div>
+      ),
+    });
+  }, [addToast, visibleSuccess]);
 
   const openSend = () => {
     if (!boundary) return;
@@ -104,15 +132,18 @@ export function TransferActionsForWallet({
     setSuccess(null);
     setModalOwner(boundary);
     setSendOpen(true);
-    commitClientUrl(moneyFlowHref("/dashboard"));
+    if (routing) routing.setFlow("send");
+    else commitClientUrl(flowHref("/dashboard", "send"));
   };
   const close = () => {
     setSendOpen(false);
     if (openedInAppRef.current) {
       openedInAppRef.current = false;
       window.history.back();
+    } else if (routing) {
+      routing.clearFlow({ mode: "replace" });
     } else {
-      commitClientUrl(withoutMoneyFlowHref("/dashboard"), "replace");
+      commitClientUrl(withoutFlowHref("/dashboard"), "replace");
     }
   };
   const finishClose = () => {
@@ -120,29 +151,25 @@ export function TransferActionsForWallet({
     setModalOwner(null);
   };
   const showReview = useCallback((actionId: string) => {
-    commitClientUrl(moneyFlowHref("/dashboard", actionId), "replace");
-  }, []);
+    if (routing) routing.setFlow("send", { actionId, mode: "replace" });
+    else commitClientUrl(flowHref("/dashboard", "send", actionId), "replace");
+  }, [routing]);
   const showFirstStep = useCallback(() => {
-    commitClientUrl(moneyFlowHref("/dashboard"), "replace");
-  }, []);
-
-  useEffect(() => {
-    if (!success) return;
-    const timer = window.setTimeout(() => setSuccess(null), 6000);
-    return () => window.clearTimeout(timer);
-  }, [success]);
+    if (routing) routing.setFlow("send", { mode: "replace" });
+    else commitClientUrl(flowHref("/dashboard", "send"), "replace");
+  }, [routing]);
 
   return (
     <div className={styles.actions} aria-label="Transfer actions">
-      <button
+      <Button
         className={styles.secondaryAction}
         data-action-trigger=""
-        type="button"
+        variant="secondary"
         disabled={!boundary}
         onClick={openSend}
       >
         Send
-      </button>
+      </Button>
 
       {mounted
         ? createPortal(
@@ -150,7 +177,7 @@ export function TransferActionsForWallet({
               open={visibleSend}
               address={verifiedAddress}
               immediate={dropPrivate}
-              availableByAsset={availableByAsset}
+              availableAssets={availableAssets}
               prepareMoneyAction={wallet.prepareMoneyAction}
               resumeMoneyAction={wallet.resumeMoneyAction}
               executeMoneyAction={wallet.executeMoneyAction}
@@ -168,29 +195,6 @@ export function TransferActionsForWallet({
           )
         : null}
 
-      {visibleSuccess ? (
-        <div className={styles.successToast} role="status">
-          <span className={styles.successMark} aria-hidden="true">✓</span>
-          <div>
-            <strong>Sent {formatSendConfirmAmount(visibleSuccess.amountBaseUnits, visibleSuccess.assetId)}</strong>
-            <p>
-              {TRANSFER_ASSETS[visibleSuccess.assetId].symbol} · Base ·{" "}
-              <CopyableValue
-                value={visibleSuccess.recipient}
-                display={formatAddress(visibleSuccess.recipient)}
-                valueKind="address"
-              />
-            </p>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
-}
-
-function walletBoundary(wallet: TransferWallet): string | null {
-  const session = wallet.status === "verified" ? wallet.session : null;
-  return wallet.ownerKey && session?.smartAccount
-    ? `${wallet.ownerKey}\u0000${session.user.subject}\u0000${session.smartAccount.address}\u0000${session.accountProvider}`
-    : null;
 }

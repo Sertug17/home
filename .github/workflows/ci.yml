@@ -41,14 +41,11 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Audit design-system adoption
-        run: bun run ds:audit
-
       - name: Check
         run: bun check
 
   browser-smoke:
-    name: Chromium smoke + WebKit MoneyModal
+    name: Chromium smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -73,12 +70,21 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Install Chromium and WebKit
+      - name: Install Chromium
         # Uses the pinned @playwright/test CLI; bare `bunx playwright` downloads the latest CLI and mismatched browser builds.
         run: bun run --cwd apps/web test:browser-install
 
-      - name: Test Chromium smoke and WebKit MoneyModal regression
+      - name: Test Chromium smoke
         run: bun run --cwd apps/web test:browser-smoke
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-smoke-results
+          path: apps/web/test-results
+          retention-days: 7
+          if-no-files-found: ignore
 
   delivery-automation-tests:
     name: delivery automation tests
@@ -124,6 +130,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/home_test
       ACTION_PG_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/home_test
       FUNDING_PG_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/home_test
     steps:
@@ -137,6 +144,9 @@ jobs:
 
       - name: Install
         run: bun install --frozen-lockfile
+
+      - name: Apply the Home database schema
+        run: bun run --cwd apps/web db:migrate
 
       - name: Test actions schema and funding stores against disposable PostgreSQL
         run: bun test apps/web/server/actions/store.postgres.test.ts apps/web/server/funding/core/postgres-store.integration.test.ts

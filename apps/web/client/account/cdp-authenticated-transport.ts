@@ -11,26 +11,21 @@ import { ACCOUNT_PROVIDER_HEADER } from "@/shared/account/session-types";
 import { TransferExecutionError } from "@/shared/transfers/types";
 import { browserHomeQueryClient, useHomeQueryClient } from "@/client/query/query-client";
 import {
+  deploymentHeaders,
+  throwIfDeploymentExpired,
+} from "@/client/query/deployment-headers";
+import {
   applyActionHandleEffects,
   createBalanceFreshnessState,
   resetBalanceFreshness,
   startBalanceFreshness,
 } from "@/client/query/after-action";
+import { dataOwnerKey } from "./owner-keys";
 
 type MoneyActionApiFetch = (path: string, init?: RequestInit) => Promise<unknown>;
 
-export function accountAuthorizationBoundary(
-  ownerKey: string,
-  session: VerifiedAccountSession,
-): string | null {
-  return session.smartAccount
-    ? `${ownerKey}\u0000${session.user.subject}\u0000${session.smartAccount.address}\u0000${session.accountProvider}`
-    : null;
-}
-
 const accountResourcePrefixes = [
   "/api/actions",
-  "/api/savings/actions",
   "/api/trades",
   "/api/borrow",
   "/api/funding",
@@ -89,6 +84,7 @@ function responseErrorDetails(payload: unknown): {
 export function useAuthenticatedTransport({
   session,
   status,
+  verification,
   ownerKey,
   ownerFence,
   getAccessToken,
@@ -97,6 +93,7 @@ export function useAuthenticatedTransport({
 }: {
   session: VerifiedAccountSession | null;
   status: AccountSessionStatus;
+  verification: "provisional" | "server" | null;
   ownerKey: string | null;
   ownerFence: OwnerGenerationFence;
   getAccessToken: () => Promise<string | null>;
@@ -121,7 +118,7 @@ export function useAuthenticatedTransport({
       signal?: AbortSignal,
       query?: string,
     ): Promise<unknown> => {
-      if (!session || status !== "verified" || !ownerKey) {
+      if (!session || status !== "verified" || verification !== "server" || !ownerKey) {
         throw new Error("Authenticated resource is unavailable.");
       }
       const accessToken = await getAccessToken();
@@ -129,6 +126,7 @@ export function useAuthenticatedTransport({
         throw new Error("Authenticated resource is unavailable.");
       }
 
+      const skewHeaders = deploymentHeaders();
       let response: Response;
       try {
         response = await (sessionFetch ?? fetch)(
@@ -136,6 +134,7 @@ export function useAuthenticatedTransport({
           {
             method: "GET",
             headers: {
+              ...skewHeaders,
               Accept: "application/json",
               ...(authentication === "cdp" ? { Authorization: `Bearer ${accessToken}` } : {}),
               [ACCOUNT_PROVIDER_HEADER]: session.accountProvider,
@@ -156,6 +155,7 @@ export function useAuthenticatedTransport({
         } catch {
           // Fixed-endpoint callers only need the bounded status/code seam.
         }
+        throwIfDeploymentExpired(response, skewHeaders, details.code);
         const unavailable = new Error("Authenticated resource is unavailable.");
         Object.assign(unavailable, { status: response.status, ...details });
         throw unavailable;
@@ -166,7 +166,7 @@ export function useAuthenticatedTransport({
         throw new Error("Authenticated resource is unavailable.");
       }
     },
-    [authentication, getAccessToken, ownerKey, session, sessionFetch, status],
+    [authentication, getAccessToken, ownerKey, session, sessionFetch, status, verification],
   );
 
   const startActionBalanceFreshness = useCallback((actionId: string) => startBalanceFreshness({
@@ -180,11 +180,10 @@ export function useAuthenticatedTransport({
   const fetchAccountResource = useCallback(
     async (path: string, options: AccountResourceOptions = {}): Promise<unknown> => {
       const safePath = normalizeAccountResourcePath(path);
-      if (!session?.smartAccount || status !== "verified" || !ownerKey) {
+      if (!session?.smartAccount || status !== "verified" || verification !== "server" || !ownerKey) {
         throw new TransferExecutionError("stale-session");
       }
-      const boundary = accountAuthorizationBoundary(ownerKey, session);
-      const identity = ownerFence.capture(ownerKey, boundary);
+      const identity = ownerFence.capture();
       const assertActive = () => {
         if (!ownerFence.isCurrent(identity)) {
           throw new TransferExecutionError("stale-session");
@@ -198,11 +197,13 @@ export function useAuthenticatedTransport({
       if (method === "GET" && options.body !== undefined) {
         throw new TransferExecutionError("invalid-request");
       }
+      const skewHeaders = deploymentHeaders();
       let response: Response;
       try {
         response = await (sessionFetch ?? fetch)(safePath, {
           method,
           headers: {
+            ...skewHeaders,
             Accept: "application/json",
             ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
             ...(authentication === "cdp" ? { Authorization: `Bearer ${accessToken}` } : {}),
@@ -227,6 +228,7 @@ export function useAuthenticatedTransport({
         } catch {
           // Money-action callers only need the bounded status/code seam.
         }
+        throwIfDeploymentExpired(response, skewHeaders, details.code);
         const failure = new TransferExecutionError(
           response.status === 409 ? "submission-pending" : "unavailable",
         );
@@ -237,11 +239,11 @@ export function useAuthenticatedTransport({
         const value = await response.json();
         assertActive();
         if (/^\/api\/actions\/[^/]+\/handle$/.test(new URL(safePath, "https://home.invalid").pathname)) {
-          const dataOwnerKey = `${session.user.subject}\u0000${session.smartAccount.address.toLowerCase()}\u00008453\u0000${session.accountProvider}`;
+          const ownerDataKey = dataOwnerKey(session);
           void applyActionHandleEffects({
             path: safePath,
             body: options.body,
-            dataOwnerKey,
+            dataOwnerKey: ownerDataKey,
             queryClient,
             startBalanceFreshness: startActionBalanceFreshness,
           });
@@ -252,7 +254,7 @@ export function useAuthenticatedTransport({
         throw new TransferExecutionError("unavailable", error);
       }
     },
-    [authentication, getAccessToken, ownerFence, ownerKey, queryClient, session, sessionFetch, startActionBalanceFreshness, status],
+    [authentication, getAccessToken, ownerFence, ownerKey, queryClient, session, sessionFetch, startActionBalanceFreshness, status, verification],
   );
 
   const fetchMoneyActionApi = useCallback<MoneyActionApiFetch>(
@@ -265,10 +267,6 @@ export function useAuthenticatedTransport({
     [fetchAccountResource],
   );
 
-  const fetchPortfolio = useCallback(
-    (signal?: AbortSignal) => fetchVerifiedResource("/api/portfolio", signal),
-    [fetchVerifiedResource],
-  );
   const fetchPortfolioValuation = useCallback(
     (region: import("@/config/regions").RegionId, signal?: AbortSignal) =>
       fetchVerifiedResource(
@@ -290,7 +288,6 @@ export function useAuthenticatedTransport({
   );
 
   return {
-    fetchPortfolio,
     fetchPortfolioValuation,
     fetchActivity,
     fetchSavingsPositions,

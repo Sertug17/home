@@ -1,16 +1,16 @@
 "use client";
 
-import { Button, Text } from "@home/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Toaster } from "@/components/ui/toast";
+import { useCallback, useEffect, useRef } from "react";
+import { useHomeToast, type HomeToastRole, type HomeToastTone } from "./use-home-toast";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import { formatAddress, formatFiatAmount, formatPresentationTokenAmount } from "@/shared/formatting";
 import { ownerQueryKey, ownerQueryMeta, useHomeQuery } from "@/client/query/query-client";
 import { activityOwnerKey } from "@/client/activity/use-activity";
 import { actionFailureEvent } from "./action-toast-events";
-import styles from "./action-toasts.module.css";
+
 const defaultDismissAfterMs = 5_000;
 
-type Toast = { id: number; message: string };
 type ToastAction = {
   id: string;
   kind: string;
@@ -27,32 +27,18 @@ type ToastAction = {
   };
 };
 
-export type ActionToastClock = {
-  setTimer: (callback: () => void, delayMs: number) => unknown;
-  clearTimer: (timer: unknown) => void;
-};
-
-const browserClock: ActionToastClock = {
-  setTimer: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
-};
-
 export function ActionToasts({
   session,
   fetchOperations,
-  clock = browserClock,
   dismissAfterMs = defaultDismissAfterMs,
 }: {
   session: VerifiedAccountSession | null;
   fetchOperations: (signal?: AbortSignal) => Promise<unknown>;
-  clock?: ActionToastClock;
   dismissAfterMs?: number;
 }) {
   const ownerKey = session?.smartAccount ? activityOwnerKey(session) : null;
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const nextId = useRef(0);
-  const timers = useRef(new Map<number, unknown>());
   const seenStatuses = useRef(new Map<string, ToastAction["status"]>());
+  const { add, closeAll } = useHomeToast(ownerKey);
   const actions = useHomeQuery({
     queryKey: ownerKey ? ownerQueryKey(ownerKey, "actions") : ["unauthenticated", "action-toasts-disabled"],
     enabled: ownerKey !== null,
@@ -64,23 +50,15 @@ export function ActionToasts({
     select: parseToastActions,
   });
 
-  const dismiss = useCallback((id: number) => {
-    const timer = timers.current.get(id);
-    if (timer !== undefined) clock.clearTimer(timer);
-    timers.current.delete(id);
-    setToasts((current) => current.filter((toast) => toast.id !== id));
-  }, [clock, setToasts]);
+  const addToast = useCallback((
+    message: string,
+    tone: HomeToastTone = "neutral",
+    role: HomeToastRole = "status",
+  ) => {
+    add({ message, tone, role, duration: dismissAfterMs });
+  }, [add, dismissAfterMs]);
 
-  const addToast = useCallback((message: string) => {
-    const id = ++nextId.current;
-    setToasts((current) => [...current, { id, message }]);
-    timers.current.set(id, clock.setTimer(() => dismiss(id), dismissAfterMs));
-  }, [clock, dismiss, dismissAfterMs, setToasts]);
-
-  useEffect(() => () => {
-    for (const timer of timers.current.values()) clock.clearTimer(timer);
-    timers.current.clear();
-  }, [clock]);
+  useEffect(() => () => closeAll(), [closeAll]);
 
   useEffect(() => {
     if (!actions.data) return;
@@ -92,7 +70,7 @@ export function ActionToasts({
         if (message) addToast(message);
       } else if (action.status === "confirmed" && previous && previous !== "confirmed") {
         const message = actionToastMessage(action, "confirmed");
-        if (message) addToast(message);
+        if (message) addToast(message, "success");
       }
       seenStatuses.current.set(statusKey, action.status);
     }
@@ -102,24 +80,13 @@ export function ActionToasts({
     const onFailure = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
       if (!isRecord(detail) || typeof detail.kind !== "string" || typeof detail.reason !== "string") return;
-      addToast(`${failedVerb(detail.kind)} failed: ${detail.reason}`);
+      addToast(`${failedVerb(detail.kind)} failed: ${detail.reason}`, "error", "alert");
     };
     window.addEventListener(actionFailureEvent, onFailure);
     return () => window.removeEventListener(actionFailureEvent, onFailure);
   }, [addToast]);
 
-  return (
-    <div className={styles.region} aria-live="polite" aria-relevant="additions">
-      {toasts.map((toast) => (
-        <div className={`${styles.toast} surface-primary`} key={toast.id}>
-          <Text as="span" textStyle="body" className={styles.message}>{toast.message}</Text>
-          <Button variant="quiet" className={styles.dismiss} onClick={() => dismiss(toast.id)} aria-label={`Dismiss ${toast.message}`}>
-            Dismiss
-          </Button>
-        </div>
-      ))}
-    </div>
-  );
+  return <Toaster />;
 }
 
 function parseToastActions(value: unknown): ToastAction[] {
@@ -168,21 +135,32 @@ function actionToastMessage(action: ToastAction, status: ToastAction["status"]):
   }
   if (operation === "deposit") return `${status === "pending" ? "Depositing" : "Deposited"} ${formatted}`;
   if (operation === "withdraw") return `${status === "pending" ? "Withdrawing" : "Withdrawn"} ${formatted}`;
+  if (operation === "supply-collateral") return `${status === "pending" ? "Adding collateral" : "Added collateral"} ${formatted}`;
+  if (operation === "withdraw-collateral") return `${status === "pending" ? "Withdrawing collateral" : "Withdrew collateral"} ${formatted}`;
   return null;
 }
 
-function operationKind(kind: string): "send" | "deposit" | "withdraw" | null {
+function operationKind(kind: string): "send" | "deposit" | "withdraw" | "supply-collateral" | "withdraw-collateral" | null {
   if (kind === "send") return "send";
-  if (kind === "savings-deposit" || kind === "save-deposit") return "deposit";
-  if (kind === "savings-withdraw" || kind === "save-withdraw") return "withdraw";
+  if (kind === "savings-deposit") return "deposit";
+  if (kind === "savings-withdraw") return "withdraw";
+  if (kind === "supply-collateral") return "supply-collateral";
+  if (kind === "withdraw-collateral") return "withdraw-collateral";
   return null;
 }
 
 function failedVerb(kind: string): string {
-  const operation = operationKind(kind);
-  if (operation === "deposit") return "Deposit";
-  if (operation === "withdraw") return "Withdrawal";
-  return "Send";
+  switch (kind) {
+    case "send": return "Send";
+    case "savings-deposit": return "Deposit";
+    case "savings-withdraw": return "Withdrawal";
+    case "supply-collateral": return "Adding collateral";
+    case "withdraw-collateral": return "Withdrawing collateral";
+    case "borrow": return "Borrow";
+    case "repay": return "Repayment";
+    case "trade": return "Trade";
+    default: return "Action";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

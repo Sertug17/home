@@ -1,8 +1,13 @@
+import "server-only";
+
+import { emitServerEvent } from "@/server/observability/log";
+import type { PrepareActionResponse } from "@/shared/actions/contracts/prepare";
 import type { VerifiedAccountSession } from "@/shared/account/session-types";
 import type { BorrowPreviewRequest } from "@/shared/borrowing/types";
 import type { SavingsActionInput } from "@/server/savings/types";
-import type { TransferRequest } from "@/shared/transfers/types";
-import { readAuthorizedMoneyActionSession } from "@/server/money-actions/session";
+import { TransferExecutionError, type TransferRequest } from "@/shared/transfers/types";
+import { isActionKind, type ActionKind } from "@/shared/money-actions/types";
+import { authorizeSession } from "@/server/auth/authorize";
 import { issueSendMoneyAction } from "@/server/money-actions/prepare-send";
 import { issueMoneyAction } from "@/server/money-actions/issue";
 import { prepareSavingsAction, SavingsActionError } from "@/server/savings/prepare";
@@ -21,33 +26,60 @@ export function createPrepareActionHandler(dependencies: {
   prepareSavings?: typeof prepareSavingsAction;
 }) {
   return async function POST(request: Request): Promise<Response> {
-    const boundary = await dependencies.authorize(request);
-    if (!boundary.ok) return boundary;
-    const session = await readAuthorizedMoneyActionSession(request, boundary);
-    if (!session?.smartAccount) return privateError("AUTH_UNAVAILABLE", "A verified Base account is required.", 503);
+    const session = await authorizeSession(request, dependencies.authorize);
+    if (session instanceof Response) return session;
+    if (!session.smartAccount) return privateError("AUTH_UNAVAILABLE", "A verified Base account is required.", 503);
     const body = await readJson(request);
-    if (!isRecord(body) || typeof body.kind !== "string" || !isRecord(body.params)) {
+    if (!isRecord(body) || !isActionKind(body.kind) || !isRecord(body.params)) {
       return privateError("INVALID_ACTION", "A valid action kind and parameters are required.", 400);
     }
+    const startedAt = Date.now();
+    const fail = (code: string, message: string, status: number) => {
+      emitServerEvent("action-prepare", {
+        route: "/api/actions/prepare",
+        code,
+        outcome: "failed",
+        provider: session.accountProvider,
+        owner: { subject: session.user.subject, accountProvider: session.accountProvider },
+        durationMs: Date.now() - startedAt,
+      });
+      return privateError(code, message, status);
+    };
     try {
       const action = await prepare(session, body.kind, body.params, request.signal, dependencies);
-      return privateJson(action, 201);
+      return privateJson(action satisfies PrepareActionResponse, 201);
     } catch (error) {
       if (error instanceof SavingsActionError) {
-        const status = error.reason === "limit-exceeded" ? 409 : error.reason === "rate-limited" ? 429 : error.reason === "invalid-input" ? 400 : 502;
-        return privateError("SAVINGS_ACTION_UNAVAILABLE", error.message, status);
+        switch (error.reason) {
+          case "invalid-input":
+            return fail("SAVINGS_ACTION_INVALID", error.message, 400);
+          case "unsupported-vault":
+          case "unsupported-asset":
+            return fail("SAVINGS_ACTION_UNSUPPORTED", error.message, 422);
+          case "limit-exceeded":
+            return fail("SAVINGS_ACTION_LIMIT_EXCEEDED", error.message, 409);
+          case "rate-limited":
+            return fail("SAVINGS_ACTION_RATE_LIMITED", error.message, 429);
+          case "rpc":
+            return fail("SAVINGS_ACTION_RPC", error.message, 502);
+          default:
+            return fail("SAVINGS_ACTION_UNAVAILABLE", error.message, 502);
+        }
       }
       if (error instanceof BorrowPreparationError) {
-        return privateError(error.code.toUpperCase().replaceAll("-", "_"), error.message, error.code === "stale-state" ? 409 : 400);
+        return fail(error.code.toUpperCase().replaceAll("-", "_"), error.message, error.code === "stale-state" ? 409 : 400);
       }
-      return privateError("ACTION_PREPARE_UNAVAILABLE", "The action could not be prepared safely.", 502);
+      if (error instanceof TransferExecutionError && error.reason === "invalid-request") {
+        return fail("INVALID_SEND_REQUEST", "Use a valid Base recipient, asset, and integer amount.", 400);
+      }
+      return fail("ACTION_PREPARE_UNAVAILABLE", "The action could not be prepared safely.", 502);
     }
   };
 }
 
 async function prepare(
   session: VerifiedAccountSession,
-  kind: string,
+  kind: ActionKind,
   params: Record<string, unknown>,
   signal: AbortSignal,
   dependencies: { prepareSavings?: typeof prepareSavingsAction },
@@ -64,9 +96,13 @@ async function prepare(
     const draft = await (dependencies.prepareSavings ?? prepareSavingsAction)({ session, action: input, signal });
     return issueMoneyAction(session, draft);
   }
-  if (kind === "borrow") {
+  if (kind === "supply-collateral" || kind === "borrow" || kind === "repay" || kind === "withdraw-collateral") {
     if (!session.smartAccount) throw new BorrowPreparationError("invalid-input", "A verified Base account is required.");
     const request = params as unknown as BorrowPreviewRequest;
+    const requestedKind = request.operation === "repay-all" ? "repay" : request.operation;
+    if (requestedKind !== kind) {
+      throw new BorrowPreparationError("invalid-input", "The borrowing operation does not match the action kind.");
+    }
     const rpc = getBaseBorrowing;
     const snapshot = await rpc.readSnapshot(session.smartAccount.address, signal);
     const preparation = await prepareBorrowAction({

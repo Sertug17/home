@@ -8,7 +8,8 @@ import { getHomeQueryClient, ownerQueryKey } from "@/client/query/query-client";
 
 const { act, cleanup, render, waitFor } = await import("@testing-library/react");
 const { useEffect } = await import("react");
-const { AccountWalletSessionOwner, useAccountWallet } = await import("./cdp-client");
+const { useAccountWallet } = await import("./cdp-client");
+const { AccountWalletSessionOwner } = await import("./cdp-session-lifecycle");
 const { connectWithBaseProvider, restoreWithBaseProvider } = await import("./base-account-connector");
 
 const OWNER_A = "owner-a";
@@ -72,7 +73,6 @@ function prepared(active: VerifiedAccountSession): PreparedMoneyAction {
   if (!active.smartAccount) throw new Error("Fixture session requires an account.");
   return {
     id: ACTION_ID,
-    reviewHash: "a".repeat(64),
     owner: {
       subject: active.user.subject,
       address: active.smartAccount.address,
