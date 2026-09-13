@@ -101,6 +101,22 @@ describe("balance freshness across cached regions", () => {
       regions: [{ id: "US", initial: "10", fresh: "10" }],
       expectedMoved: false,
     },
+    {
+      name: "a stale inactive region cached first does not report a false move",
+      regions: [
+        { id: "US", initial: "5", fresh: "10", updatedAt: 1_000 },
+        { id: "DE", initial: "10", fresh: "10", updatedAt: 2_000 },
+      ],
+      expectedMoved: false,
+    },
+    {
+      name: "a stale inactive region cached last does not report a false move",
+      regions: [
+        { id: "DE", initial: "10", fresh: "10", updatedAt: 2_000 },
+        { id: "US", initial: "5", fresh: "10", updatedAt: 1_000 },
+      ],
+      expectedMoved: false,
+    },
   ] as const;
 
   for (const scenario of cases) {
@@ -116,6 +132,7 @@ describe("balance freshness across cached regions", () => {
         queryClient.setQueryData(
           ownerQueryKey(ownerKey, "valuation", region.id),
           valuationSnapshot(region.initial),
+          "updatedAt" in region ? { updatedAt: region.updatedAt } : undefined,
         );
       }
       queryClient.fetchQuery = (async (options: { queryKey: readonly unknown[] }) => {

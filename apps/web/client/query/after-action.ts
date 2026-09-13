@@ -117,7 +117,13 @@ export async function startBalanceFreshness(input: {
   const hasSnapshot = valuationQueries.some((q) => isPortfolioValuationSnapshot(q.state.data));
   if (!hasSnapshot || !isLatestStart()) return;
   const initial: Record<string, string | null> = Object.fromEntries(assetIds.map((id) => [id, null]));
-  for (const q of valuationQueries) {
+  // Regions refresh independently; an inactive region's snapshot can be hours
+  // old. Merge oldest → newest so the freshest non-null balance wins and older
+  // snapshots only fill gaps, otherwise a stale region reports a false move.
+  const byFreshness = [...valuationQueries].sort(
+    (a, b) => a.state.dataUpdatedAt - b.state.dataUpdatedAt,
+  );
+  for (const q of byFreshness) {
     const data = q.state.data;
     if (!isPortfolioValuationSnapshot(data)) continue;
     const found = selectAffectedBalances(data, assetIds);
