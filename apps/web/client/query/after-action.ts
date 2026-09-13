@@ -1,7 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { VerifiedAccountSession } from "@/client/account/session-client";
 import { dataOwnerKey as dataOwnerKeyForSession } from "@/client/account/owner-keys";
-import { freshUntilMoved, type BalanceSnapshot } from "./fresh-until-moved";
+import {
+  freshUntilMoved,
+  type BalanceSnapshot,
+  type FreshUntilMovedClock,
+} from "./fresh-until-moved";
 import { ownerQueryKey, ownerQueryMeta } from "./query-client";
 import { parsePortfolioValuationSnapshot } from "@/shared/portfolio/contract";
 import type { PortfolioValuationSnapshot } from "@/shared/portfolio/valuation-types";
@@ -90,6 +94,7 @@ export async function startBalanceFreshness(input: {
   queryClient: QueryClient;
   fetchVerifiedResource: FetchVerifiedResource;
   state: BalanceFreshnessState;
+  clock?: FreshUntilMovedClock;
 }): Promise<void> {
   const { actionId, session, queryClient, fetchVerifiedResource, state } = input;
   if (!session?.smartAccount || state.moved.has(actionId)) return;
@@ -122,6 +127,7 @@ export async function startBalanceFreshness(input: {
   }
   const run = freshUntilMoved({
     initial,
+    clock: input.clock,
     readFresh: async () => {
       const merged: Record<string, string | null> = Object.fromEntries(assetIds.map((id) => [id, null]));
       for (const valuationQuery of valuationQueries) {
