@@ -204,3 +204,8 @@ describe("funding open-order contract", () => {
     expect(fundingOrderMatchesQuery(order, { ...query, assetId: "base:usdc" })).toBe(false);
   });
 });
+
+test("matches a region-wide query with no providerId against any provider", () => {
+  expect(fundingOrderMatchesQuery(order, { region: "AR" })).toBe(true);
+  expect(fundingOrderMatchesQuery(order, { region: "CO" })).toBe(false);
+});

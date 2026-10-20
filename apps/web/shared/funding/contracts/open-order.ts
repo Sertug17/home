@@ -57,7 +57,7 @@ export function readFundingOpenOrderResponse(value: unknown): FundingOpenOrderRe
 }
 
 export function fundingOrderMatchesQuery(order: FundingOrderSummary, query: FundingOpenOrderQuery): boolean {
-  return order.providerId === query.providerId && order.region === query.region &&
+  return (query.providerId === undefined || order.providerId === query.providerId) && order.region === query.region &&
     (query.paymentMethod === undefined || order.paymentMethod === query.paymentMethod) &&
     (query.assetId === undefined || order.assetId === query.assetId);
 }
